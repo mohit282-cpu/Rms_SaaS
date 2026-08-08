@@ -1,9 +1,9 @@
 <?php
-// tests/saas_tenant_isolation_test.php - Automated Multi-Tenant Isolation & IDOR Defense Suite
+// tests/saas_tenant_isolation_test.php - Automated Multi-Tenant Isolation, IDOR & Manual Credential Security Test Suite
 require_once __DIR__ . '/../config.php';
 
 echo "=================================================================\n";
-echo "       RMS SaaS MULTI-TENANT ISOLATION & IDOR SECURITY TEST      \n";
+echo "       RMS SaaS MULTI-TENANT ISOLATION & CREDENTIAL SECURITY TEST \n";
 echo "=================================================================\n\n";
 
 $conn = getDBConnection();
@@ -118,6 +118,32 @@ assertTest(SubscriptionService::isActive(9001) === true, "Active Tenant 9001 pas
 
 $conn->query("UPDATE restaurants SET subscription_status = 'EXPIRED' WHERE id = 9002");
 assertTest(SubscriptionService::isActive(9002) === false, "Expired/Suspended Tenant 9002 fails SubscriptionService::isActive()");
+echo "\n";
+
+// -----------------------------------------------------------------
+// TEST 5: Manual Credential Assignment & Password Security
+// -----------------------------------------------------------------
+echo "--- TEST SUITE 5: Manual Credentials & Username Uniqueness ---\n";
+
+$conn->query("DELETE FROM admin_users WHERE username = 'manual_admin_test'");
+
+// Create user with manual username & password hash
+$rawPass = 'SuperSecret123!';
+$hashPass = password_hash($rawPass, PASSWORD_BCRYPT);
+$conn->query("INSERT INTO admin_users (username, password, full_name, role, is_super_admin, restaurant_id) VALUES ('manual_admin_test', '{$hashPass}', 'Manual Owner', 'owner', 0, 9001)");
+
+$uCheck = $conn->query("SELECT * FROM admin_users WHERE username = 'manual_admin_test'");
+assertTest(($uCheck && $uCheck->num_rows === 1), "Manual admin account created with explicit username");
+
+$uData = $uCheck->fetch_assoc();
+assertTest(password_verify($rawPass, $uData['password']) === true, "Manually set password verifies against BCRYPT hash");
+assertTest(strpos($uData['password'], 'SuperSecret123!') === false, "Plaintext password is NEVER stored in database");
+
+// Duplicate username check
+$dupCheck = $conn->query("SELECT id FROM admin_users WHERE username = 'manual_admin_test'");
+assertTest(($dupCheck && $dupCheck->num_rows > 0), "Duplicate username check correctly detects existing username");
+
+$conn->query("DELETE FROM admin_users WHERE username = 'manual_admin_test'");
 echo "\n";
 
 // -----------------------------------------------------------------

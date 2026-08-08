@@ -82,12 +82,13 @@ if (!empty($idempotency_key)) {
 // SERVER-SIDE PRICE & STOCK VALIDATION (Fixes RMS-001, RMS-024, RMS-025, RMS-026, RMS-037)
 $calculated_total = 0.0;
 $validated_items = [];
+$tenantId = TenantContext::getTenantId();
 
 // Constants for limits
 $MAX_ITEM_QTY = 50;
 $MAX_ORDER_VAL = 50000.00;
 
-$price_stmt = $conn->prepare("SELECT id, name, price, stock_quantity, status FROM menu_items WHERE id = ? FOR UPDATE");
+$price_stmt = $conn->prepare("SELECT id, name, price, stock_quantity, status FROM menu_items WHERE id = ? AND restaurant_id = ? FOR UPDATE");
 
 foreach ($cart as $item) {
     $item_id = intval($item['id'] ?? 0);
@@ -99,7 +100,7 @@ foreach ($cart as $item) {
         Response::error("Maximum quantity per item is limited to $MAX_ITEM_QTY", 400);
     }
 
-    $price_stmt->bind_param("i", $item_id);
+    $price_stmt->bind_param("ii", $item_id, $tenantId);
     $price_stmt->execute();
     $res = $price_stmt->get_result();
     $db_item = $res->fetch_assoc();
@@ -140,7 +141,7 @@ foreach ($cart as $item) {
                 // Lookup addon in DB if ID provided, or sanitize name and calculate standard extra price
                 $e_price = 0.0;
                 if ($e_id > 0) {
-                    $addon_res = $conn->query("SELECT price FROM menu_addons WHERE id = $e_id AND status = 'active' LIMIT 1");
+                    $addon_res = $conn->query("SELECT price FROM menu_addons WHERE id = $e_id AND restaurant_id = {$tenantId} AND status = 'active' LIMIT 1");
                     if ($addon_res && $a_row = $addon_res->fetch_assoc()) {
                         $e_price = floatval($a_row['price']);
                     }
@@ -180,8 +181,8 @@ if ($calculated_total > $MAX_ORDER_VAL) {
     Response::error("Maximum total order value cannot exceed Rs. " . number_format($MAX_ORDER_VAL, 2), 400);
 }
 
+try {
     // Transactional Database Insertion & Dining Session Management (Fixes RMS-022, RMS-023)
-    $tenantId = TenantContext::getTenantId();
     $conn->begin_transaction();
 
     // 1. Get or create active dining session for this table with ROW LOCKING
@@ -265,8 +266,10 @@ if ($calculated_total > $MAX_ORDER_VAL) {
     header('Location: order-success.php?order_id=' . $order_id);
     exit;
     
-} catch (Exception $e) {
-    $conn->rollback();
+} catch (Throwable $e) {
+    if (isset($conn) && $conn->in_transaction) {
+        $conn->rollback();
+    }
     if ($is_ajax) {
         Response::error('Failed to place order: ' . $e->getMessage(), 500);
     }

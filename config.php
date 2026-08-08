@@ -1,4 +1,9 @@
 <?php
+// Global Output Buffering to prevent headers already sent errors on redirects
+if (ob_get_level() === 0) {
+    ob_start();
+}
+
 // Load PSR-4 Autoloader & Environment Configurations
 require_once __DIR__ . '/app/Helpers/Autoloader.php';
 Autoloader::register();

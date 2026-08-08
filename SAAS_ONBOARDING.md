@@ -1,66 +1,48 @@
-# SaaS Restaurant Onboarding Workflow & Governance
+# RMS SaaS Onboarding & Manual Provisioning Standard
 
 ## Overview
-The onboarding workflow for new restaurant businesses follows a controlled, Super-Admin-governed lifecycle to prevent spam account creation and ensure verified setup.
+RMS SaaS uses a controlled, Super Admin-governed onboarding workflow. Restaurant credentials and usernames are **never automatically generated**. Super Admins manually assign administrator usernames and passwords when provisioning accounts.
 
 ---
 
-## Onboarding Sequence Diagram
+## Workflow Steps
 
 ```
-Restaurant Owner             Landing Page             Super Admin Panel           Restaurant Portal
-      |                           |                           |                           |
-      |--- 1. Submits Request --->|                           |                           |
-      |                           |--- 2. Create PENDING ---->|                           |
-      |                           |       Request Notification|                           |
-      |                           |                           |                           |
-      |                           |                           |--- 3. Reviews Request --->|
-      |                           |                           |--- 4. Contacts Owner ---->|
-      |                           |                           |--- 5. Approves Request -->|
-      |                           |                           |--- 6. Creates Tenant ---->|
-      |                           |                           |       Account & Owner User|
-      |<-- 7. Receives Creds -----|---------------------------|                           |
-      |   (Username & Temp Pass)  |                           |                           |
-      |                           |                           |                           |
-      |--- 8. Logs In ------------------------------------------------------------------->|
-      |--- 9. Forces Password Change ---------------------------------------------------->|
-      |--- 10. Completes Setup Wizard (0–100%) ------------------------------------------>|
-      |--- 11. Goes Live ---------------------------------------------------------------->|
+Public Request Form (index.php)
+       ↓
+Pending Queue (super-admin/requests.php)
+       ↓
+Super Admin Review & Approval
+       ↓
+Manual Account Creation (super-admin/create-restaurant.php)
+  - Restaurant Details (Name, Owner, Email, Phone, PAN, Address, Type, Plan, Status)
+  - Manual Credentials (Admin Username *, Admin Password *, Confirm Password *)
+       ↓
+BCRYPT Password Hashing & Tenant Binding
+       ↓
+Credential Delivery Screen (Copy Credentials Action)
+       ↓
+Manual Credential Transmission to Restaurant Administrator
+       ↓
+Restaurant Login & 8-Step Setup Wizard
 ```
 
 ---
 
-## Step-by-Step Lifecycle
+## Security & Credential Rules
 
-### Step 1: Public Request Submission (`index.php#request-demo`)
-- Prospective restaurant owner fills out the request form.
-- Form creates record in `restaurant_requests` table with status `PENDING`.
-- Automated Super Admin notification is logged to `notifications`.
-
-### Step 2: Super Admin Governance (`super-admin/requests.php`)
-- Super Admin receives notification banner on dashboard.
-- Super Admin reviews restaurant details, table count, PAN number, and contact info.
-- Super Admin updates status to `CONTACTED` or clicks `Approve & Onboard`.
-
-### Step 3: Account & Credentials Provisioning (`super-admin/create-restaurant.php`)
-- Form pre-fills restaurant data from approved request.
-- System generates:
-  - Unique `uuid` (`rest_...`)
-  - Formatted `restaurant_code` (`RMS-000125`)
-  - Owner User account in `admin_users`
-  - Secure random temporary password
-  - Sets `force_password_change = 1`
-  - Active subscription record in `subscriptions`
-
-### Step 4: Restaurant First Login & Setup Wizard (`admin/setup-wizard.php`)
-- Owner logs in with temporary credentials.
-- Prompted immediately to update password (`change-password.php`).
-- Redirected to 8-step interactive Setup Wizard:
-  1. Restaurant Information & Contact
-  2. Logo Upload
-  3. Dining Tables Creation
-  4. Menu Categories & Items
-  5. Payment Gateway Setup
-  6. Staff User Accounts & Roles
-  7. Table QR Code Generation
-  8. Finalize & Go Live (Progress 100%)
+1. **No Auto-Generated Credentials:** Usernames and passwords MUST NOT be automatically created or derived from restaurant names. Super Admin enters both manually.
+2. **Username Uniqueness & Validation:**
+   - Case-normalized (`strtolower`).
+   - Format: 4–30 characters (`/^[a-zA-Z0-9_]{4,30}$/`).
+   - Duplicate usernames return: `"Username already exists. Please choose another username."`
+3. **Password Security:**
+   - Passwords hashed using `password_hash($password, PASSWORD_BCRYPT)`.
+   - Zero plaintext storage in database, audit logs, API responses, or local storage.
+4. **Credential Delivery:**
+   - Displays a confirmation card with a **"Copy Credentials"** button.
+   - Credentials sent manually to the restaurant owner via phone, SMS, or secure messaging.
+5. **Super Admin Governance:**
+   - Reset Administrator Password (manual input of New Password + Confirm Password).
+   - Change Administrator Username (validating uniqueness).
+   - Activate / Suspend / Disable tenant account status.

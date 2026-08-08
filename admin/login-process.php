@@ -18,17 +18,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $conn = getDBConnection();
-    $authenticated = false;
 
     if ($conn) {
-        $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id, force_password_change FROM admin_users WHERE username = ? LIMIT 1");
+        $stmt = $conn->prepare("
+            SELECT u.id, u.username, u.password, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.force_password_change, r.status as tenant_status 
+            FROM admin_users u
+            LEFT JOIN restaurants r ON u.restaurant_id = r.id
+            WHERE u.username = ? LIMIT 1
+        ");
+        
         if ($stmt) {
             $stmt->bind_param("s", $username);
             $stmt->execute();
             $res = $stmt->get_result();
             if ($user = $res->fetch_assoc()) {
                 if (password_verify($password, $user['password'])) {
-                    $authenticated = true;
+                    // Check if tenant account is ACTIVE
+                    if (!$user['is_super_admin'] && !empty($user['tenant_status']) && $user['tenant_status'] !== 'ACTIVE') {
+                        RateLimiter::hit('admin_login', 5, 300);
+                        Security::logAudit("LOGIN_BLOCKED_SUSPENDED", "Login blocked for inactive/suspended tenant account: {$username}");
+                        $_SESSION['error'] = 'Your restaurant account is currently ' . strtolower($user['tenant_status']) . '. Please contact system administrator.';
+                        header('Location: login.php');
+                        exit;
+                    }
 
                     // Clear rate limiter history on successful login
                     RateLimiter::clear('admin_login');
