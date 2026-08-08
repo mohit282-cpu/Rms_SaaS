@@ -1,0 +1,691 @@
+/* ==========================================================================
+   MINIMAL SPATIAL CAFE DESIGN SYSTEM & MOBILE PWA SHELL
+   QR Restaurant - Mobile-First Native PWA Experience
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap');
+
+:root {
+    /* Minimal Cafe Warm Dark Palette */
+    --bg-canvas: #0c0907;             /* Deep Espresso Base */
+    --bg-canvas-alt: #130f0b;         /* Dark Roasted Coffee */
+    --glass-card: rgba(26, 20, 15, 0.86); /* Frosted Mocha Glass */
+    --glass-card-hover: rgba(36, 28, 21, 0.94);
+    --glass-border: rgba(229, 169, 60, 0.18); /* Warm Honey Gold Border */
+    --glass-border-bright: rgba(229, 169, 60, 0.38);
+    --glass-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+
+    /* Accents */
+    --primary: #d99b26;                /* Warm Golden Honey */
+    --primary-hover: #e5a93c;
+    --primary-glow: rgba(217, 155, 38, 0.35);
+    --secondary: #c07a3e;              /* Cinnamon Warmth */
+    --accent-cream: #fdf8f2;
+    --accent-cyan: #38bdf8;
+    --success: #22c55e;
+    --success-glow: rgba(34, 197, 94, 0.35);
+    --danger: #f43f5e;
+    --danger-glow: rgba(244, 63, 94, 0.4);
+    --warning: #f59e0b;
+
+    /* Typography */
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --text-primary: #fdfaf6;
+    --text-secondary: #e2d7c7;
+    --text-muted: #9e9384;
+
+    /* Radius & Transitions */
+    --radius-sm: 12px;
+    --radius-md: 18px;
+    --radius-lg: 26px;
+    --radius-pill: 9999px;
+    --transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    --transition-spring: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Touch & Mobile Viewport Rules */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    touch-action: manipulation; /* Prevents double-tap zoom delays */
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    width: 100%;
+    min-height: 100%;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain; /* Prevents browser pull-to-refresh interfering with app scroll */
+    user-select: none;
+}
+
+body {
+    padding-bottom: calc(90px + env(safe-area-inset-bottom)); /* Safe Area Notch Padding */
+}
+
+/* Micro-animations: Touch Scale Feedback */
+button:active, .add-to-cart-btn:active, .checkout-btn:active, .category-btn:active, .mobile-nav-item:active, .payment-choice-card:active {
+    transform: scale(0.96) !important;
+    transition: transform 0.1s ease !important;
+}
+
+/* Warm Ambient Coffee Aura Background */
+body::before, body::after {
+    content: '';
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(110px);
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.45;
+}
+
+body::before {
+    width: 320px;
+    height: 320px;
+    top: -80px;
+    left: -80px;
+    background: radial-gradient(circle, var(--primary) 0%, rgba(217, 155, 38, 0) 70%);
+}
+
+body::after {
+    width: 360px;
+    height: 360px;
+    bottom: -100px;
+    right: -100px;
+    background: radial-gradient(circle, var(--secondary) 0%, rgba(192, 122, 62, 0) 70%);
+}
+
+/* Centered Mobile App Shell (360px - 440px optimized) */
+.mobile-app-shell {
+    max-width: 440px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    padding: 0 14px;
+}
+
+/* Spatial Glass Cards */
+.spatial-card {
+    background: var(--glass-card);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--glass-shadow);
+    transition: var(--transition-spring);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Mobile Header Bar */
+.header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+    background: rgba(12, 9, 7, 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.header .mobile-app-shell, .header .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0;
+}
+
+.logo {
+    color: var(--text-primary);
+    font-size: 1.15rem;
+    font-weight: 800;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-serif);
+    letter-spacing: 0.2px;
+}
+
+.table-badge {
+    background: rgba(229, 169, 60, 0.12);
+    border: 1px solid var(--glass-border);
+    color: var(--primary);
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    font-weight: 700;
+    font-size: 0.8rem;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+}
+
+/* Full-Width Mobile Hero Banner */
+.hero-banner {
+    position: relative;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin: 12px 0 16px;
+    height: 140px;
+    background: linear-gradient(135deg, rgba(217, 155, 38, 0.25) 0%, rgba(192, 122, 62, 0.4) 100%), #1f1812;
+    border: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 16px;
+    box-shadow: var(--glass-shadow);
+}
+
+.hero-banner-title {
+    font-family: var(--font-serif);
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.hero-banner-sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+/* PINNED ERGONOMIC MOBILE BOTTOM NAVIGATION BAR */
+.mobile-nav-bar {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 440px;
+    height: calc(68px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 9999;
+    background: rgba(16, 12, 9, 0.95);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border-top: 1px solid var(--glass-border-bright);
+    border-radius: 24px 24px 0 0;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 -12px 35px rgba(0, 0, 0, 0.75);
+}
+
+.mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.7rem;
+    font-weight: 700;
+    gap: 2px;
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    transition: var(--transition);
+    position: relative;
+    cursor: pointer;
+    border: none;
+    background: none;
+    flex: 1;
+    min-height: 48px;
+}
+
+.mobile-nav-item.active {
+    color: var(--primary);
+}
+
+.mobile-nav-icon {
+    font-size: 1.3rem;
+    transition: transform 0.2s ease;
+}
+
+.mobile-nav-item.active .mobile-nav-icon {
+    transform: scale(1.15) translateY(-2px);
+}
+
+.mobile-nav-badge {
+    position: absolute;
+    top: 4px;
+    right: 18px;
+    background: var(--secondary);
+    color: white;
+    font-size: 0.68rem;
+    font-weight: 800;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 8px rgba(192, 122, 62, 0.8);
+}
+
+/* Dietary Tags (Veg / Non-Veg) */
+.dietary-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1.5px solid;
+    padding: 2px;
+    flex-shrink: 0;
+}
+
+.dietary-tag.veg {
+    border-color: #22c55e;
+}
+
+.dietary-tag.veg::after {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: #22c55e;
+}
+
+.dietary-tag.non-veg {
+    border-color: #ef4444;
+}
+
+.dietary-tag.non-veg::after {
+    content: '';
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 7px solid #ef4444;
+}
+
+/* Minimal Cafe Horizontal Food Cards */
+.menu-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.menu-item {
+    background: var(--glass-card);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: var(--transition-spring);
+    min-height: 96px;
+}
+
+.menu-item-image {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 248, 242, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+}
+
+.menu-item-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.popular-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: var(--primary);
+    color: #0c0907;
+    font-size: 0.6rem;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill);
+}
+
+.menu-item-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.menu-item-name {
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.menu-item-description {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.25;
+}
+
+.menu-item-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.menu-item-price {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--primary);
+}
+
+.add-to-cart-btn, .checkout-btn {
+    min-height: 44px; /* Ergonomic Touch Target */
+    touch-action: manipulation;
+}
+
+.add-to-cart-btn {
+    background: linear-gradient(135deg, var(--primary) 0%, #b87c19 100%);
+    color: #0c0907;
+    border: none;
+    padding: 8px 18px;
+    border-radius: var(--radius-pill);
+    font-weight: 800;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: var(--transition-spring);
+    box-shadow: 0 4px 12px var(--primary-glow);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Quantity Control Buttons */
+.quantity-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-pill);
+    padding: 3px 8px;
+    min-height: 44px;
+}
+
+.quantity-btn {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    font-weight: 800;
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+}
+
+.quantity-value {
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    min-width: 20px;
+    text-align: center;
+}
+
+/* Floating Sticky Cart Bar (Slides ABOVE Mobile Bottom Navigation) */
+.floating-cart-bar {
+    position: fixed;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 28px);
+    max-width: 412px;
+    z-index: 998;
+    background: linear-gradient(135deg, var(--primary) 0%, #b87c19 100%);
+    color: #0c0907;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: var(--radius-pill);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 10px 30px var(--primary-glow);
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 0.95rem;
+    transition: var(--transition-spring);
+}
+
+/* Modals & Mobile Bottom Sheets */
+.custom-modal, .spatial-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: var(--transition);
+}
+
+.custom-modal.active, .spatial-modal.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.custom-modal-overlay, .spatial-modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(12, 9, 7, 0.85);
+    backdrop-filter: blur(12px);
+}
+
+.custom-modal-content, .spatial-modal-content {
+    position: relative;
+    z-index: 2;
+    background: rgba(22, 17, 13, 0.96);
+    backdrop-filter: blur(30px);
+    border: 1px solid var(--glass-border-bright);
+    border-radius: 28px 28px 0 0;
+    padding: 24px 20px calc(32px + env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.8);
+    transform: translateY(100%);
+    transition: var(--transition-spring);
+}
+
+.custom-modal.active .custom-modal-content,
+.spatial-modal.active .spatial-modal-content {
+    transform: translateY(0);
+}
+
+.custom-modal-close, .spatial-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-muted);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Kitchen Display System (KDS) Item Checkboxes */
+.kds-item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+    cursor: pointer;
+}
+
+.kds-item-row.completed-item {
+    opacity: 0.45;
+    text-decoration: line-through;
+    background: rgba(255,255,255,0.02);
+}
+
+.kds-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 2px solid var(--glass-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+}
+
+.kds-item-row.completed-item .kds-checkbox {
+    background: var(--success);
+    border-color: var(--success);
+    color: black;
+}
+
+/* Elapsed Time Badges */
+.elapsed-badge {
+    font-size: 0.76rem;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.elapsed-badge.green {
+    background: rgba(34, 197, 94, 0.18);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.elapsed-badge.yellow {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fde68a;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.elapsed-badge.red-flash {
+    background: rgba(244, 63, 94, 0.25);
+    color: #fda4af;
+    border: 1px solid var(--danger);
+    animation: alertPulse 1.2s infinite alternate;
+}
+
+@keyframes alertPulse {
+    0% { box-shadow: 0 0 10px rgba(244, 63, 94, 0.4); transform: scale(1); }
+    100% { box-shadow: 0 0 22px rgba(244, 63, 94, 0.8); transform: scale(1.05); }
+}
+
+/* Admin 2x2 Summary Grid */
+.admin-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.admin-summary-card {
+    background: var(--glass-card);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.admin-summary-num {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary);
+    margin-top: 6px;
+}
+
+/* Instant Availability Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--glass-border);
+    transition: .3s;
+    border-radius: 34px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--success);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(22px);
+}

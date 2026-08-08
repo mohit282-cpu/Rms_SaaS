@@ -1,0 +1,21 @@
+# RMS_System Environment & Security Ignore Rules (Fixes RMS-019)
+.env
+.env.*
+!.env.example
+
+# Runtime & Security Storage
+/storage/logs/
+/storage/backups/
+*.log
+*.sql
+*.bak
+
+# User Upload Isolation
+/uploads/
+/images/payment/
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
