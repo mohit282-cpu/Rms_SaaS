@@ -34,6 +34,13 @@ class RateLimiter {
     }
 
     /**
+     * Check if rate limit is not exceeded (returns true if allowed)
+     */
+    public static function check($key, $maxAttempts = 5, $decaySeconds = 300): bool {
+        return !self::isExceeded($key, $maxAttempts, $decaySeconds);
+    }
+
+    /**
      * Hit / Record an attempt for a key
      */
     public static function hit($key, $maxAttempts = 5, $decaySeconds = 300) {

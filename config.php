@@ -17,6 +17,8 @@ define('QR_SECRET_KEY', getenv('JWT_SECRET') ?: 'RMS_SECURE_HMAC_SECRET_KEY_2026
 require_once __DIR__ . '/helpers/Security.php';
 require_once __DIR__ . '/helpers/CSRF.php';
 require_once __DIR__ . '/helpers/Auth.php';
+require_once __DIR__ . '/helpers/TenantContext.php';
+require_once __DIR__ . '/helpers/SubscriptionService.php';
 require_once __DIR__ . '/helpers/RateLimiter.php';
 require_once __DIR__ . '/helpers/Response.php';
 require_once __DIR__ . '/helpers/Inventory.php';
@@ -875,7 +877,78 @@ function ensureDatabaseSchema($conn) {
     ensureIndex($conn, 'orders', 'idx_orders_status_pay', 'status, payment_status');
     ensureIndex($conn, 'orders', 'idx_orders_pay_status', 'payment_status, status');
     ensureIndex($conn, 'orders', 'idx_orders_table_status', 'table_number, status');
+
+    // Run SaaS Multi-Tenancy Migrations and Column Checks
+    applySaaSMultiTenancyMigration($conn);
 }
+
+/**
+ * Execute SaaS Schema Migrations & Multi-Tenant Column Integrity Checks
+ */
+function applySaaSMultiTenancyMigration($conn) {
+    if (!$conn) return;
+
+    // 1. Execute SQL Migration File if tables missing
+    $checkSaas = $conn->query("SHOW TABLES LIKE 'restaurants'");
+    if (!$checkSaas || $checkSaas->num_rows == 0) {
+        $migrationSql = @file_get_contents(__DIR__ . '/database/migrations/004_saas_multi_tenancy.sql');
+        if (!empty($migrationSql)) {
+            $statements = array_filter(array_map('trim', explode(';', $migrationSql)));
+            foreach ($statements as $stmt) {
+                if (!empty($stmt)) {
+                    @$conn->query($stmt);
+                }
+            }
+        }
+    }
+
+    // 2. Tenant-Owned Entities Column Audit (Ensure restaurant_id exists on all tenant tables)
+    $tenantTables = [
+        'admin_users', 'categories', 'menu_items', 'tables', 'dining_sessions',
+        'orders', 'order_items', 'inventory_categories', 'inventory_units',
+        'suppliers', 'inventory_items', 'recipes', 'inventory_transactions',
+        'assets', 'payment_gateways', 'payment_transactions', 'audit_logs',
+        'waiter_calls', 'landing_page_settings'
+    ];
+
+    foreach ($tenantTables as $table) {
+        $tblCheck = $conn->query("SHOW TABLES LIKE '$table'");
+        if ($tblCheck && $tblCheck->num_rows > 0) {
+            $colsRes = $conn->query("SHOW COLUMNS FROM `$table` LIKE 'restaurant_id'");
+            if ($colsRes && $colsRes->num_rows == 0) {
+                try {
+                    $conn->query("ALTER TABLE `$table` ADD COLUMN restaurant_id INT NOT NULL DEFAULT 1");
+                    $conn->query("ALTER TABLE `$table` ADD INDEX idx_tenant_rest (restaurant_id)");
+                } catch (Throwable $e) {}
+            }
+            // Backfill 0 or NULL to 1
+            @$conn->query("UPDATE `$table` SET restaurant_id = 1 WHERE restaurant_id IS NULL OR restaurant_id = 0");
+        }
+    }
+
+    // 3. Admin Users table columns check (force_password_change, is_super_admin)
+    $auColsRes = $conn->query("SHOW COLUMNS FROM admin_users");
+    $auCols = [];
+    if ($auColsRes) {
+        while ($r = $auColsRes->fetch_assoc()) {
+            $auCols[] = strtolower($r['Field']);
+        }
+    }
+    if (!in_array('force_password_change', $auCols)) {
+        try { $conn->query("ALTER TABLE admin_users ADD COLUMN force_password_change TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
+    }
+    if (!in_array('is_super_admin', $auCols)) {
+        try { $conn->query("ALTER TABLE admin_users ADD COLUMN is_super_admin TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
+    }
+
+    // 4. Ensure Super Admin account exists
+    $saCheck = $conn->query("SELECT id FROM admin_users WHERE is_super_admin = 1 OR role = 'super_admin' LIMIT 1");
+    if (!$saCheck || $saCheck->num_rows == 0) {
+        $saPass = password_hash('SuperAdmin@2026', PASSWORD_DEFAULT);
+        $conn->query("INSERT IGNORE INTO admin_users (username, password, full_name, role, is_super_admin, restaurant_id) VALUES ('superadmin', '$saPass', 'Platform Super Admin', 'super_admin', 1, 1)");
+    }
+}
+
 
 /**
  * Create an index on a table if it does not already exist.

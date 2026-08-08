@@ -33,12 +33,20 @@ $isAssetSection = in_array($currentPage, $assetPages);
 
 <!-- DESKTOP SIDEBAR NAVIGATION -->
 <aside class="hidden md:flex flex-col fixed top-0 left-0 bottom-0 w-64 bg-zinc-950/95 backdrop-blur-2xl border-r border-zinc-800/80 z-50 select-none">
+    <?php if (isset($_SESSION['impersonating_superadmin'])): ?>
+        <!-- Impersonation Notice Banner -->
+        <div class="bg-purple-500/20 border-b border-purple-500/40 p-2.5 text-center text-[10px] font-bold text-purple-300">
+            👤 Support Impersonation Mode
+            <a href="logout.php?exit_impersonation=1" class="block font-black text-amber-400 hover:underline mt-0.5">Exit to Super Admin →</a>
+        </div>
+    <?php endif; ?>
+
     <!-- Brand Header -->
     <div class="p-4 border-b border-zinc-800/80 flex items-center gap-3 shrink-0">
-        <div class="w-9 h-9 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-lg shrink-0">☕</div>
+        <div class="w-9 h-9 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-lg shrink-0">⚡</div>
         <div class="overflow-hidden">
-            <h2 class="font-black text-xs text-white leading-tight truncate">QR Cafe POS</h2>
-            <p class="text-[9px] text-amber-400 font-bold truncate tracking-tight">Enterprise Restaurant Management</p>
+            <h2 class="font-black text-xs text-white leading-tight truncate">RMS Portal</h2>
+            <p class="text-[9px] text-amber-400 font-bold truncate tracking-tight">Tenant ID: #<?= TenantContext::getTenantId() ?></p>
         </div>
     </div>
 

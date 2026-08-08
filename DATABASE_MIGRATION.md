@@ -1,50 +1,56 @@
-# Database Migration & Schema Documentation
+# SaaS Multi-Tenant Database Migration Strategy
 
-## Database Overview
-The QR Cafe POS system uses MySQL 8.0+ (`utf8mb4_unicode_ci` / `InnoDB`). All tables utilize primary keys, indexed foreign key relationships, transactional row locking support, and unique constraints for data integrity.
-
----
-
-## Migration History & Package Scripts (`database/migrations/`)
-
-### 1. `001_initial_schema.sql` (Core POS & Session Tables)
-- **`admin_users`**: User authentication, role assignment (`admin`, `manager`, `cashier`, `kitchen`).
-- **`categories`**: Menu category hierarchy.
-- **`menu_items`**: Menu catalog with pricing, preparation times, allergens, and stock tracking.
-- **`tables`**: Floor layout, table capacity, QR tokens (`qr_token`), and occupancy status.
-- **`dining_sessions`**: Active table sessions (`session_token`), running totals, status.
-- **`orders`**: POS order batches, idempotency keys (`idempotency_key`), table number, total amount, status.
-- **`order_items`**: Line items per order batch.
-
-### 2. `002_inventory_assets.sql` (Enterprise Inventory & Asset Management)
-- **`inventory_categories`**: Stock category tracking (Vegetables, Meat, Beverages, etc.).
-- **`inventory_units`**: Unit conversions (kg, L, pcs, box).
-- **`suppliers`**: Vendor registry, PAN/VAT info, payment terms.
-- **`inventory_items`**: Ingredient master list, current stock, min/max thresholds, purchase/average cost.
-- **`recipes`**: Bill of Materials (BOM) linking menu items to raw ingredients with waste percentage.
-- **`inventory_transactions`**: Immutable stock movement audit log (`purchase`, `sale`, `waste`, `adjustment`, `restock`).
-- **`assets`**: Asset register, tag tracking, serial numbers, locations, depreciation calculations.
-
-### 3. `003_security_idempotency.sql` (FinTech Gateways, Idempotency & Audit Logs)
-- **`payment_gateways`**: Gateway credentials (eSewa, Khalti, Fonepay, ConnectIPS, IME Pay).
-- **`payment_transactions`**: Payment verification log, `gateway_transaction_id` unique constraint, `idempotency_key`.
-- **`audit_logs`**: Immutable security event log (logins, role changes, payment configuration updates).
-- **`waiter_calls`**: Table assistance requests and resolution tracking.
+## Migration Approach
+The database migration strategy converts the single-tenant RMS database schema into a multi-tenant schema non-destructively. Existing single-restaurant data is automatically migrated into Tenant 1 ("Default Restaurant") without data loss.
 
 ---
 
-## Required Unique Constraints & Indexes
+## 1. Migration File Sequence
+Migrations are stored in `database/migrations/`:
 
+1. `001_initial_schema.sql` - Core POS Tables (`admin_users`, `categories`, `menu_items`, `tables`, `dining_sessions`, `orders`, `order_items`)
+2. `002_inventory_assets.sql` - Inventory & Asset Tables (`inventory_categories`, `suppliers`, `inventory_items`, `recipes`, `inventory_transactions`, `assets`)
+3. `003_security_idempotency.sql` - Payment Gateways, Payment Transactions, Audit Logs, Waiter Calls
+4. `004_saas_multi_tenancy.sql` - SaaS Core Tables (`restaurants`, `subscription_plans`, `subscriptions`, `restaurant_requests`, `notifications`) and `restaurant_id` column additions.
+
+---
+
+## 2. Multi-Tenant Table Architecture
+
+### New Platform Tables
+- **`restaurants`**: Central tenant account registry (id, uuid, restaurant_code, name, owner_name, email, phone, status, subscription_plan_id, subscription_status, subscription_end).
+- **`subscription_plans`**: Master plan definition tiers (Starter, Business, Pro, Enterprise).
+- **`subscriptions`**: Active tenant subscription contracts.
+- **`restaurant_requests`**: Onboarding request queue generated from landing website.
+- **`notifications`**: Super Admin and tenant notifications.
+
+### Tenant-Owned Entity Tables
+All entity tables contain `restaurant_id INT NOT NULL DEFAULT 1` and associated index `idx_tenant_rest`:
+- `admin_users`
+- `categories`
+- `menu_items`
+- `tables`
+- `dining_sessions`
+- `orders`
+- `order_items`
+- `inventory_categories`
+- `inventory_units`
+- `suppliers`
+- `inventory_items`
+- `recipes`
+- `inventory_transactions`
+- `assets`
+- `payment_gateways`
+- `payment_transactions`
+- `audit_logs`
+- `waiter_calls`
+- `landing_page_settings`
+
+---
+
+## 3. Backward Compatibility Backfill
+During bootstrap, `applySaaSMultiTenancyMigration($conn)` executes:
 ```sql
--- Idempotency Constraints
-ALTER TABLE orders ADD UNIQUE INDEX idx_orders_idempotency (idempotency_key);
-ALTER TABLE payment_transactions ADD UNIQUE INDEX idx_pay_tx_id (transaction_id);
-ALTER TABLE payment_transactions ADD UNIQUE INDEX idx_pay_idem (idempotency_key);
-ALTER TABLE tables ADD UNIQUE INDEX idx_tables_qr_token (qr_token);
-
--- Performance Indexes
-ALTER TABLE orders ADD INDEX idx_orders_created (created_at);
-ALTER TABLE orders ADD INDEX idx_orders_status_pay (status, payment_status);
-ALTER TABLE orders ADD INDEX idx_orders_table_status (table_number, status);
-ALTER TABLE inventory_transactions ADD INDEX idx_trans_order_item (order_id, inventory_item_id, transaction_type);
+UPDATE `{table}` SET restaurant_id = 1 WHERE restaurant_id IS NULL OR restaurant_id = 0;
 ```
+This guarantees that pre-existing single-restaurant data remains immediately operational under Tenant 1 (`RMS-000001`).

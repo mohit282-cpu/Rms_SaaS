@@ -153,6 +153,73 @@ class Auth {
     }
 
     /**
+     * Check if active session is Super Admin
+     */
+    public static function isSuperAdmin(): bool {
+        self::startSession();
+        return (isset($_SESSION['is_super_admin']) && $_SESSION['is_super_admin'] === true) ||
+               (isset($_SESSION['role']) && strtoupper($_SESSION['role']) === 'SUPER_ADMIN');
+    }
+
+    /**
+     * Require Super Admin authorization guard
+     */
+    public static function requireSuperAdmin() {
+        if (!self::isSuperAdmin()) {
+            $isJson = (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+            if ($isJson) {
+                http_response_code(403);
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Super Admin access required.']);
+                exit;
+            }
+            header('Location: /RMS_System/super-admin/login.php');
+            exit;
+        }
+    }
+
+    /**
+     * Require Restaurant Tenant Login
+     */
+    public static function requireRestaurant() {
+        self::requireAdmin();
+        if (class_exists('TenantContext')) {
+            TenantContext::requireTenant();
+        }
+    }
+
+    /**
+     * Check if user has specific permission based on role
+     */
+    public static function checkPermission(string $permission): bool {
+        self::startSession();
+        if (self::isSuperAdmin()) return true;
+
+        $role = strtoupper($_SESSION['role'] ?? 'OWNER');
+        
+        $rolePermissions = [
+            'OWNER' => ['*'],
+            'MANAGER' => ['orders.*', 'payments.*', 'inventory.*', 'tables.*', 'menu.*', 'reports.view'],
+            'CASHIER' => ['orders.view', 'orders.create', 'payments.view', 'payments.settle', 'tables.view'],
+            'KITCHEN' => ['orders.view', 'orders.update'],
+            'WAITER' => ['orders.view', 'orders.create', 'tables.view', 'waiter_calls.manage'],
+            'INVENTORY_MANAGER' => ['inventory.*', 'suppliers.*', 'purchase_orders.*', 'recipes.*']
+        ];
+
+        if (isset($rolePermissions[$role])) {
+            $perms = $rolePermissions[$role];
+            if (in_array('*', $perms)) return true;
+            if (in_array($permission, $perms)) return true;
+            
+            // Check wildcards like 'orders.*'
+            list($group) = explode('.', $permission);
+            if (in_array($group . '.*', $perms)) return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Clear and destroy active session cleanly (Secure Logout)
      */
     public static function logout() {
@@ -170,3 +237,4 @@ class Auth {
         session_destroy();
     }
 }
+

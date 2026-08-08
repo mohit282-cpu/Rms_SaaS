@@ -1,0 +1,123 @@
+<?php
+// super-admin/login.php - Platform Super Admin Authentication Portal
+require_once __DIR__ . '/../config.php';
+
+Auth::startSession();
+
+// If already logged in as Super Admin, redirect to index
+if (Auth::isSuperAdmin()) {
+    header('Location: index.php');
+    exit;
+}
+
+$error = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Validate CSRF Token
+    if (!CSRF::verifyToken($_POST['csrf_token'] ?? '')) {
+        $error = "CSRF security verification failed. Please refresh and try again.";
+    } else {
+        $username = Security::sanitize(trim($_POST['username'] ?? ''));
+        $password = trim($_POST['password'] ?? '');
+
+        // Rate Limit check
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        if (!RateLimiter::check("superadmin_login_" . $ip, 5, 300)) {
+            $error = "Too many failed login attempts. Please wait 5 minutes.";
+        } else {
+            $conn = getDBConnection();
+            if (!$conn) {
+                $error = "Database connection error.";
+            } else {
+                $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id FROM admin_users WHERE username = ? AND (is_super_admin = 1 OR role = 'super_admin') LIMIT 1");
+                if ($stmt) {
+                    $stmt->bind_param("s", $username);
+                    $stmt->execute();
+                    $user = $stmt->get_result()->fetch_assoc();
+                    $stmt->close();
+
+                    if ($user && password_verify($password, $user['password'])) {
+                        // Successful login
+                        RateLimiter::clear("superadmin_login_" . $ip);
+                        Auth::regenerateSession();
+                        $_SESSION['admin_id'] = $user['id'];
+                        $_SESSION['admin_logged_in'] = true;
+                        $_SESSION['is_super_admin'] = true;
+                        $_SESSION['role'] = 'SUPER_ADMIN';
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['full_name'] = $user['full_name'];
+                        $_SESSION['restaurant_id'] = 1;
+
+                        Security::logAudit("SUPER_ADMIN_LOGIN", "Super Admin logged in successfully: " . $user['username']);
+                        header('Location: index.php');
+                        exit;
+                    } else {
+                        RateLimiter::hit("superadmin_login_" . $ip, 5, 300);
+                        Security::logAudit("SUPER_ADMIN_FAILED_LOGIN", "Failed login attempt for username: " . $username);
+                        $error = "Invalid Super Admin credentials.";
+                    }
+                }
+            }
+        }
+    }
+}
+
+$csrfField = CSRF::getField();
+?>
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-zinc-950 text-zinc-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin Portal Login - RMS SaaS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style> body { font-family: 'Plus Jakarta Sans', sans-serif; } </style>
+</head>
+<body class="h-full flex items-center justify-center p-4 bg-zinc-950 antialiased selection:bg-amber-500 selection:text-zinc-950">
+    <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl space-y-6">
+        <div class="text-center space-y-2">
+            <div class="w-14 h-14 bg-gradient-to-tr from-amber-500 to-amber-400 rounded-2xl flex items-center justify-center text-zinc-950 text-2xl font-black mx-auto shadow-xl shadow-amber-500/20">
+                ⚡
+            </div>
+            <h1 class="text-2xl font-black text-white tracking-tight">Super Admin Portal</h1>
+            <p class="text-xs text-zinc-400 font-medium">RMS SaaS Platform Operations & Governance</p>
+        </div>
+
+        <?php if ($error): ?>
+            <div class="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold text-center">
+                ⚠️ <?= htmlspecialchars($error) ?>
+            </div>
+        <?php endif; ?>
+
+        <form method="POST" class="space-y-4">
+            <?= $csrfField ?>
+            <div>
+                <label class="block text-xs font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Super Admin Username</label>
+                <input type="text" name="username" required placeholder="e.g. superadmin" class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors font-medium">
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Master Password</label>
+                <input type="password" name="password" required placeholder="••••••••••••" class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors font-medium">
+            </div>
+
+            <button type="submit" class="w-full h-12 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 text-zinc-950 font-black text-sm hover:from-amber-400 hover:to-amber-300 transition-all active:scale-[0.98] shadow-lg shadow-amber-500/20 flex items-center justify-center space-x-2">
+                <span>Authenticate Platform Access</span>
+                <span>→</span>
+            </button>
+        </form>
+
+        <div class="pt-4 border-t border-zinc-800 text-center space-y-2">
+            <a href="../index.php" class="text-xs font-bold text-zinc-500 hover:text-amber-400 transition-colors block">
+                ← Return to Public Website
+            </a>
+            <div class="text-[10px] text-zinc-600 font-semibold">
+                Default Credentials (if unseeded): <strong>superadmin</strong> / <strong>SuperAdmin@2026</strong>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

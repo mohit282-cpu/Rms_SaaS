@@ -26,10 +26,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } elseif (strlen($new_password) < 8) {
             $_SESSION['error'] = 'New password must be at least 8 characters long.';
         } else {
-            $admin_user = $_SESSION['admin_user'] ?? 'admin';
-            $stmt = $conn->prepare("SELECT password FROM users WHERE username = ?");
+            $admin_id = (int)($_SESSION['admin_id'] ?? 1);
+            $stmt = $conn->prepare("SELECT password FROM admin_users WHERE id = ? LIMIT 1");
             if ($stmt) {
-                $stmt->bind_param("s", $admin_user);
+                $stmt->bind_param("i", $admin_id);
                 $stmt->execute();
                 $res = $stmt->get_result();
                 $user = $res ? $res->fetch_assoc() : null;
@@ -37,23 +37,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 if ($user && password_verify($current_password, $user['password'])) {
                     $new_hash = password_hash($new_password, PASSWORD_BCRYPT);
-                    $up_stmt = $conn->prepare("UPDATE users SET password = ? WHERE username = ?");
+                    $up_stmt = $conn->prepare("UPDATE admin_users SET password = ?, force_password_change = 0 WHERE id = ?");
                     if ($up_stmt) {
-                        $up_stmt->bind_param("ss", $new_hash, $admin_user);
+                        $up_stmt->bind_param("si", $new_hash, $admin_id);
                         $up_stmt->execute();
                         $up_stmt->close();
 
-                        // Log audit trail
-                        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-                        $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 250);
-                        $audit = $conn->prepare("INSERT INTO audit_logs (username, event_type, description, ip_address, user_agent) VALUES (?, 'PASSWORD_CHANGED', 'Administrator password updated successfully', ?, ?)");
-                        if ($audit) {
-                            $audit->bind_param("sss", $admin_user, $ip, $ua);
-                            $audit->execute();
-                            $audit->close();
-                        }
+                        unset($_SESSION['force_password_change']);
 
-                        $_SESSION['success'] = 'Administrator password changed successfully!';
+                        // Log audit trail
+                        Security::logAudit("PASSWORD_CHANGED", "User ID {$admin_id} changed password successfully");
+                        $_SESSION['success'] = 'Password changed successfully! Your temporary password restriction has been removed.';
                     }
                 } else {
                     $_SESSION['error'] = 'Current password verification failed.';

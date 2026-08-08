@@ -1,18 +1,21 @@
-# API Security Matrix
+# API Security & Tenant Isolation Matrix
 
-Complete inventory of application API endpoints detailing access controls, authentication requirements, rate limiting, and transaction boundaries.
+## API Governance Policy
+Every HTTP API and Server-Sent Event (SSE) endpoint must enforce strict authentication, tenant scoping, role-based authorization, rate limiting, and CSRF protection.
 
-| Endpoint Path | HTTP Method | Authentication | Required Role / Permission | CSRF Verification | Rate Limit | Idempotency Key | Transaction Isolated | Audit Logged |
-|---|---|---|---|---|---|---|---|---|
-| `place-order.php` | POST | Customer Session | Table Session | Yes | 10 / min | Yes (`HTTP_IDEMPOTENCY_KEY`) | Yes | Yes |
-| `order-success.php` | GET | Customer Session | Table Session Match | No (Read) | Standard | No | No | No |
-| `api/get-order-status.php` | GET | Session / Staff | Table Session or Staff | No (Read) | Standard | No | No | No |
-| `api/call-waiter.php` | POST | Customer Session | Table Session | Yes (Resolve) | 3 / 2 min | No | No | Yes |
-| `api/call-waiter.php` | POST (Resolve) | Staff Session | Kitchen / Admin | Yes | 30 / min | No | Yes | Yes |
-| `api/update-order.php` | POST | Staff Session | Kitchen / Admin / Cashier | Yes | 60 / min | No | Yes | Yes |
-| `api/orders-stream.php` | GET | Staff Session | Kitchen / Admin / Cashier | No (Read) | Polling | No | No | No |
-| `api/kitchen-stream.php` | GET | Staff Session | Kitchen / Admin | No (Read) | Polling | No | No | No |
-| `api/inventory.php` | GET/POST | Staff Session | Inventory Manager / Admin | Yes (Write) | 30 / min | No | Yes | Yes |
-| `api/assets.php` | GET/POST | Staff Session | Manager / Admin | Yes (Write) | 30 / min | No | Yes | Yes |
-| `api/payment-settings.php` | POST | Staff Session | Admin Only | Yes | 10 / min | No | Yes | Yes |
-| `api/health.php` | GET | Public | None | No (Read) | Standard | No | No | No |
+---
+
+## Endpoint Security Specifications
+
+| Endpoint | Method | Auth Guard | Tenant Isolation Enforcement | CSRF | Rate Limit |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `/index.php` (Request Form) | POST | Public | Inserts into `restaurant_requests` with `PENDING` | Required | 3 / hr |
+| `/super-admin/login.php` | POST | Public | Authenticates Super Admin (`is_super_admin = 1`) | Required | 5 / 5 min |
+| `/super-admin/create-restaurant.php` | POST | Super Admin | Creates tenant + owner user + subscription | Required | 10 / min |
+| `/super-admin/restaurants.php` | POST | Super Admin | Tenant suspend/activate/reset credentials | Required | 20 / min |
+| `/admin/login-process.php` | POST | Staff | Binds session `restaurant_id` & checks temp pass | Required | 5 / 5 min |
+| `/admin/setup-wizard.php` | POST | Restaurant Owner | Scoped setup edits (`restaurant_id = TenantContext::getTenantId()`) | Required | 30 / min |
+| `/place-order.php` | POST | Customer QR | Session table token + `restaurant_id = TenantContext::getTenantId()` | Required | 10 / min |
+| `/api/orders-stream.php` | GET | KDS / Staff | Filters SSE orders stream by `restaurant_id` | Session | N/A (Stream) |
+| `/api/inventory.php` | POST | Staff | `TenantContext::assertOwnership()` for item edits | Required | 30 / min |
+| `/api/assets.php` | POST | Staff | `TenantContext::assertOwnership()` for asset edits | Required | 30 / min |

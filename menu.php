@@ -16,7 +16,7 @@ $conn = getDBConnection();
 // 1. Primary Auth Path: Cryptographically Secure Token (menu.php?token=5fd8a0fdb6e7411fb58d94c6abbe27e2)
 if ($requested_token !== null && $requested_token !== '') {
     if ($conn) {
-        $stmt = $conn->prepare("SELECT id, table_number, status, qr_token FROM tables WHERE qr_token = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE qr_token = ? LIMIT 1");
         if ($stmt) {
             $stmt->bind_param("s", $requested_token);
             $stmt->execute();
@@ -30,6 +30,8 @@ if ($requested_token !== null && $requested_token !== '') {
                     $is_access_valid = true;
                     $_SESSION['customer_table_id'] = $row['table_number'];
                     $_SESSION['customer_table_token'] = $row['qr_token'];
+                    $_SESSION['customer_restaurant_id'] = (int)($row['restaurant_id'] ?? 1);
+                    $_SESSION['restaurant_id'] = (int)($row['restaurant_id'] ?? 1);
                 }
             } else {
                 // Invalid or fake token attempt -> Log Audit Event

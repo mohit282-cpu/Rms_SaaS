@@ -180,30 +180,30 @@ if ($calculated_total > $MAX_ORDER_VAL) {
     Response::error("Maximum total order value cannot exceed Rs. " . number_format($MAX_ORDER_VAL, 2), 400);
 }
 
-// Transactional Database Insertion & Dining Session Management (Fixes RMS-022, RMS-023)
-$conn->begin_transaction();
+    // Transactional Database Insertion & Dining Session Management (Fixes RMS-022, RMS-023)
+    $tenantId = TenantContext::getTenantId();
+    $conn->begin_transaction();
 
-try {
     // 1. Get or create active dining session for this table with ROW LOCKING
     $tbl_safe = $conn->real_escape_string($table_number);
     $session_id = null;
     $batch_num = 1;
 
-    $ds_res = $conn->query("SELECT id, running_total FROM dining_sessions WHERE table_number = '$tbl_safe' AND status = 'active' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+    $ds_res = $conn->query("SELECT id, running_total FROM dining_sessions WHERE table_number = '$tbl_safe' AND restaurant_id = {$tenantId} AND status = 'active' ORDER BY id DESC LIMIT 1 FOR UPDATE");
     if ($ds_res && $ds_row = $ds_res->fetch_assoc()) {
         $session_id = intval($ds_row['id']);
         // Calculate next batch number atomically
-        $b_res = $conn->query("SELECT COUNT(*) as b_cnt FROM orders WHERE dining_session_id = $session_id FOR UPDATE");
+        $b_res = $conn->query("SELECT COUNT(*) as b_cnt FROM orders WHERE dining_session_id = $session_id AND restaurant_id = {$tenantId} FOR UPDATE");
         if ($b_res && $b_row = $b_res->fetch_assoc()) {
             $batch_num = intval($b_row['b_cnt']) + 1;
         }
     } else {
         // Create new active dining session
         $sess_token = bin2hex(random_bytes(16));
-        $ds_stmt = $conn->prepare("INSERT INTO dining_sessions (session_token, table_number, customer_name, status, running_total) VALUES (?, ?, ?, 'active', 0.00)");
+        $ds_stmt = $conn->prepare("INSERT INTO dining_sessions (restaurant_id, session_token, table_number, customer_name, status, running_total) VALUES (?, ?, ?, ?, 'active', 0.00)");
         if ($ds_stmt) {
             $c_name_ds = !empty($customer_name) ? $customer_name : 'Guest';
-            $ds_stmt->bind_param("sss", $sess_token, $table_number, $c_name_ds);
+            $ds_stmt->bind_param("isss", $tenantId, $sess_token, $table_number, $c_name_ds);
             $ds_stmt->execute();
             $session_id = $conn->insert_id;
             $ds_stmt->close();
@@ -211,15 +211,8 @@ try {
     }
 
     // Insert order batch
-    $stmt = $conn->prepare("INSERT INTO orders (table_number, customer_name, notes, status, total_amount, payment_status, dining_session_id, batch_number, idempotency_key) VALUES (?, ?, ?, 'new', ?, 'pending', ?, ?, ?)");
-    $stmt->bind_param("sssdiis", $table_number, $customer_name, $notes, $calculated_total, $session_id, $batch_num, $idempotency_key);
-    
-    if (!$stmt->execute()) {
-        throw new Exception("Order insertion failed: " . $stmt->error);
-    }
-    
-    $order_id = $conn->insert_id;
-    $stmt->close();
+    $stmt = $conn->prepare("INSERT INTO orders (restaurant_id, table_number, customer_name, notes, status, total_amount, payment_status, dining_session_id, batch_number, idempotency_key) VALUES (?, ?, ?, ?, 'new', ?, 'pending', ?, ?, ?)");
+    $stmt->bind_param("isssdiis", $tenantId, $table_number, $customer_name, $notes, $calculated_total, $session_id, $batch_num, $idempotency_key);
     
     if (!$stmt->execute()) {
         throw new Exception("Order insertion failed: " . $stmt->error);
@@ -230,16 +223,16 @@ try {
 
     // Update running total of dining session
     if ($session_id) {
-        $conn->query("UPDATE dining_sessions SET running_total = running_total + $calculated_total, status = 'active' WHERE id = $session_id");
+        $conn->query("UPDATE dining_sessions SET running_total = running_total + $calculated_total, status = 'active' WHERE id = $session_id AND restaurant_id = {$tenantId}");
     }
 
     // Update table status to occupied
-    $conn->query("UPDATE tables SET status = 'occupied', guest_count = GREATEST(guest_count, 1) WHERE table_number = '$tbl_safe'");
+    $conn->query("UPDATE tables SET status = 'occupied', guest_count = GREATEST(guest_count, 1) WHERE table_number = '$tbl_safe' AND restaurant_id = {$tenantId}");
 
-    $item_stmt = $conn->prepare("INSERT INTO order_items (order_id, menu_item_id, quantity, price) VALUES (?, ?, ?, ?)");
+    $item_stmt = $conn->prepare("INSERT INTO order_items (restaurant_id, order_id, menu_item_id, quantity, price) VALUES (?, ?, ?, ?, ?)");
     
     foreach ($validated_items as $v_item) {
-        $item_stmt->bind_param("iiid", $order_id, $v_item['id'], $v_item['quantity'], $v_item['price']);
+        $item_stmt->bind_param("iiiid", $tenantId, $order_id, $v_item['id'], $v_item['quantity'], $v_item['price']);
         if (!$item_stmt->execute()) {
             throw new Exception("Item insertion failed: " . $item_stmt->error);
         }

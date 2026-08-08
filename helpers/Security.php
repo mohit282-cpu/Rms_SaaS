@@ -111,4 +111,25 @@ class Security {
 
         return $newFilename;
     }
+
+    /**
+     * Log Security Audit Trail Event into audit_logs table
+     */
+    public static function logAudit($eventType, $description) {
+        $conn = getDBConnection();
+        if (!$conn) return;
+
+        $userId = (int)($_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? 1);
+        $username = Security::sanitize($_SESSION['username'] ?? $_SESSION['admin_username'] ?? $_SESSION['full_name'] ?? 'System');
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
+        $tenantId = (isset($_SESSION['restaurant_id']) && $_SESSION['restaurant_id'] > 0) ? (int)$_SESSION['restaurant_id'] : 1;
+
+        $stmt = $conn->prepare("INSERT INTO audit_logs (restaurant_id, user_id, username, event_type, description, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        if ($stmt) {
+            $stmt->bind_param("iisssss", $tenantId, $userId, $username, $eventType, $description, $ip, $ua);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
 }

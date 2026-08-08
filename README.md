@@ -1,62 +1,21 @@
-# QR Cafe POS — Restaurant Management System
+# RMS SaaS — Multi-Restaurant Enterprise Platform
 
-> A complete, self-hosted restaurant management platform that turns a printed QR code into a full digital ordering experience — from table-side menu browsing and live kitchen tickets to inventory control and asset tracking.
+> A production-ready, multi-tenant Restaurant Management System (RMS) SaaS platform that powers multiple independent restaurant environments from a single shared application codebase while maintaining absolute logical data isolation.
 
 [![PHP](https://img.shields.io/badge/PHP-8.1%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0%2B-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
-[![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-F7DF1E?logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+[![Multi-Tenancy](https://img.shields.io/badge/Multi--Tenancy-Isolated-amber?logo=security&logoColor=white)](#multi-tenancy)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Apache](https://img.shields.io/badge/Apache-2.4-D22128?logo=apache&logoColor=white)](https://httpd.apache.org/)
-[![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?logo=pwa&logoColor=white)](#known-limitations)
-[![Version](https://img.shields.io/badge/Version-v2.0.0--Pro-1F2937)](https://github.com/Wearing-wind/RMS_System)
-
----
-
-## Table of Contents
-
-- [Project Status](#project-status)
-- [Project Overview](#project-overview)
-- [Problem → Solution](#problem--solution)
-- [Key Features](#key-features)
-- [Module Map](#module-map)
-- [Roles & Permissions](#roles--permissions)
-- [Architecture Overview](#architecture-overview)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Database Architecture](#database-architecture)
-- [Payments](#payments)
-- [Security](#security)
-- [Realtime Updates](#realtime-updates)
-- [Installation & Setup](#installation--setup)
-- [Environment Variables](#environment-variables)
-- [Local Development](#local-development)
-- [API Reference](#api-reference)
-- [Testing & QA Status](#testing--qa-status)
-- [Known Limitations](#known-limitations)
-- [Roadmap](#roadmap)
-- [Deployment](#deployment)
-- [Contributing](#contributing)
-- [License](#license)
-- [Author](#author)
-- [Support](#support)
-
----
-
-## Project Status
-
-| Aspect | Status |
-| --- | --- |
-| **Codebase** | Production-oriented, actively developed |
-| **Version** | `v2.0.0-Pro` (per project documentation — **not** verifiable from code alone) |
-| **License** | Not specified in this repository (no `LICENSE` file) — see [License](#license) |
-| **Testing** | Documented QA run: 42/42 PASS; security audit: 38/38 resolved (self-reported in `QA_REPORT.md` / `SECURITY_AUDIT.md`) |
-| **Known gaps** | See [Known Limitations](#known-limitations) |
+[![Version](https://img.shields.io/badge/SaaS_Version-v3.0.0--Enterprise-emerald)](#project-status)
 
 ---
 
 ## Project Overview
 
-**QR Cafe POS** is a single-codebase restaurant management system for restaurants, cafes, and QSRs. Customers scan a QR code on their table to open the menu in their phone browser, place an order, and track it live until it reaches their table. Staff manage the floor through a realtime **Operations Center**, the kitchen through a dedicated **Kitchen Display System (KDS)**, and back-office teams control inventory, suppliers, purchase orders, and physical assets — all from one Apache/PHP + MySQL deployment with **no build step and no external services**.
+**RMS SaaS** is an enterprise multi-restaurant platform featuring three distinct operational surfaces:
+1. **Public Landing Website (`index.php`):** Features SaaS capabilities, module showcases, subscription tiers, and an interactive onboarding request form.
+2. **Super Admin Platform Panel (`super-admin/`):** Full governance over onboarding requests, tenant account creation, temporary credential generation, account suspension, subscription management, and support impersonation.
+3. **Isolated Restaurant Portal (`admin/`):** Restaurant-specific workspace for POS orders, dining tables, QR codes, KDS kitchen tickets, ingredient inventory, asset equipment, payment gateways, staff RBAC, and an 8-step setup wizard.
 
 It was designed to run on shared hosting / XAMPP, uses vanilla JavaScript with AJAX polling for realtime updates (no WebSockets required), and ships with an SQL schema that the application can create automatically at boot.
 
