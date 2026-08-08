@@ -132,7 +132,7 @@ class Inventory {
              VALUES (?,?,?,?,?,?,?,?,?,?,?)"
         );
         if (!$stmt) return false;
-        $stmt->bind_param("issdsiddss", $itemId, $type, $qty, $direction, $refTypeSql, $refIdSql, $before, $after, $unitCost, $notesSql, $creator);
+        $stmt->bind_param("issssiddsss", $itemId, $type, $qty, $direction, $refTypeSql, $refIdSql, $before, $after, $unitCost, $notesSql, $creator);
         $ok = $stmt->execute();
         $stmt->close();
         return $ok;

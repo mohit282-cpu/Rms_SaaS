@@ -449,7 +449,7 @@ try {
         ORDER BY created_at DESC LIMIT 12
     ");
     if ($feedStmt) {
-        $feedStmt->bind_param("isissisi", $tenantId, $todayStart, $tenantId, $todayStart, $tenantId, $tenantId, $todayStart, $tenantId, $todayStart);
+        $feedStmt->bind_param("isisiisis", $tenantId, $todayStart, $tenantId, $todayStart, $tenantId, $tenantId, $todayStart, $tenantId, $todayStart);
         $feedStmt->execute();
         $res = $feedStmt->get_result();
         while ($act = $res->fetch_assoc()) { $activity_feed[] = $act; }

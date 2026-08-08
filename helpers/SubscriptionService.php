@@ -22,14 +22,23 @@ class SubscriptionService {
         if (!$tenant) return false;
 
         $status = strtoupper($tenant['subscription_status'] ?? '');
-        if (in_array($status, ['SUSPENDED', 'CANCELLED', 'EXPIRED'])) {
+        $endDate = trim((string)($tenant['subscription_end'] ?? ''));
+        $isOpenEnded = ($endDate === '' || $endDate === '0000-00-00' || $endDate === '0000-00-00 00:00:00');
+
+        // Manual suspension/cancellation always blocks
+        if (in_array($status, ['SUSPENDED', 'CANCELLED'])) {
             return false;
         }
 
-        if (!empty($tenant['subscription_end']) && strtotime($tenant['subscription_end']) < strtotime('today')) {
+        if (!$isOpenEnded && strtotime($endDate) < strtotime('today')) {
             // Update subscription status in DB to EXPIRED if date has passed
             $conn->query("UPDATE restaurants SET subscription_status = 'EXPIRED' WHERE id = " . (int)$restaurantId);
             return false;
+        }
+
+        // A stale EXPIRED flag on an open-ended (undated) subscription should not block access
+        if ($status === 'EXPIRED' && $isOpenEnded) {
+            $conn->query("UPDATE restaurants SET subscription_status = 'ACTIVE' WHERE id = " . (int)$restaurantId);
         }
 
         return true;
@@ -60,7 +69,10 @@ class SubscriptionService {
 
         if (!$tenant || empty($tenant['subscription_end'])) return 0;
 
-        $diff = strtotime($tenant['subscription_end']) - time();
+        $endDate = trim($tenant['subscription_end']);
+        if ($endDate === '0000-00-00' || $endDate === '0000-00-00 00:00:00') return 36500;
+
+        $diff = strtotime($endDate) - time();
         return max(0, (int)ceil($diff / (60 * 60 * 24)));
     }
 
