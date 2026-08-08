@@ -84,7 +84,7 @@ if ($orders_res) {
 
 // 3. Pending Waiter Call Alerts
 $waiter_res = $conn->query("
-    SELECT * FROM waiter_calls 
+    SELECT id, table_number, status, created_at FROM waiter_calls 
     WHERE restaurant_id = $tenantId
     AND status = 'pending' 
     ORDER BY created_at DESC LIMIT 10

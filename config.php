@@ -182,7 +182,7 @@ function ensureDatabaseSchema($conn) {
     // 1. Categories table check
     @$conn->query("CREATE TABLE IF NOT EXISTS categories (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL UNIQUE,
+        name VARCHAR(100) NOT NULL,
         description VARCHAR(255),
         parent_id INT DEFAULT NULL,
         icon VARCHAR(50) DEFAULT '🍽️',
@@ -277,7 +277,7 @@ function ensureDatabaseSchema($conn) {
     // 3. Tables table check
     @$conn->query("CREATE TABLE IF NOT EXISTS tables (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        table_number VARCHAR(20) NOT NULL UNIQUE,
+        table_number VARCHAR(20) NOT NULL,
         qr_code VARCHAR(255),
         zone VARCHAR(50) DEFAULT 'Ground Floor',
         capacity INT DEFAULT 4,
@@ -332,7 +332,7 @@ function ensureDatabaseSchema($conn) {
     // 5. Payment Gateways & Transactions tables
     @$conn->query("CREATE TABLE IF NOT EXISTS payment_gateways (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(50) NOT NULL UNIQUE,
+        name VARCHAR(50) NOT NULL,
         merchant_code VARCHAR(100) DEFAULT '',
         public_key VARCHAR(255) DEFAULT '',
         secret_key VARCHAR(255) DEFAULT '',
@@ -524,7 +524,7 @@ function ensureDatabaseSchema($conn) {
     // 10. Inventory Categories
     @$conn->query("CREATE TABLE IF NOT EXISTS inventory_categories (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL UNIQUE,
+        name VARCHAR(100) NOT NULL,
         description VARCHAR(255) DEFAULT '',
         icon VARCHAR(50) DEFAULT '📦',
         display_order INT DEFAULT 0,
@@ -543,7 +543,7 @@ function ensureDatabaseSchema($conn) {
     // 11. Inventory Units
     @$conn->query("CREATE TABLE IF NOT EXISTS inventory_units (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(50) NOT NULL UNIQUE,
+        name VARCHAR(50) NOT NULL,
         abbreviation VARCHAR(10) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
@@ -606,7 +606,7 @@ function ensureDatabaseSchema($conn) {
     // 14. Purchase Orders
     @$conn->query("CREATE TABLE IF NOT EXISTS purchase_orders (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        po_number VARCHAR(50) NOT NULL UNIQUE,
+        po_number VARCHAR(50) NOT NULL,
         supplier_id INT NOT NULL,
         status ENUM('draft','approved','ordered','partial','received','cancelled','completed') DEFAULT 'draft',
         subtotal DECIMAL(12,2) DEFAULT 0.00,
@@ -758,7 +758,7 @@ function ensureDatabaseSchema($conn) {
     // 23. Asset Categories
     @$conn->query("CREATE TABLE IF NOT EXISTS asset_categories (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL UNIQUE,
+        name VARCHAR(100) NOT NULL,
         description VARCHAR(255) DEFAULT '',
         icon VARCHAR(50) DEFAULT '🏗️',
         depreciation_method ENUM('straight_line','declining_balance','none') DEFAULT 'straight_line',
@@ -777,7 +777,7 @@ function ensureDatabaseSchema($conn) {
     // 24. Assets Register
     @$conn->query("CREATE TABLE IF NOT EXISTS assets (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        asset_code VARCHAR(50) NOT NULL UNIQUE,
+        asset_code VARCHAR(50) NOT NULL,
         qr_token VARCHAR(64) DEFAULT '',
         barcode VARCHAR(100) DEFAULT '',
         name VARCHAR(200) NOT NULL,

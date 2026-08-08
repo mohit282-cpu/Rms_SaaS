@@ -19,15 +19,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $new_status = Security::sanitize($_POST['status'] ?? '');
 
     if ($order_id > 0 && in_array($new_status, ['new', 'preparing', 'ready', 'completed', 'cancelled'])) {
+        require_once __DIR__ . '/../helpers/OrderService.php';
+
+        // Resolve requester role for state-machine authorization (RMS-012)
+        $userRole = 'admin';
+        if (Auth::isKitchenLoggedIn() && !Auth::isAdminLoggedIn()) {
+            $userRole = 'kitchen';
+        }
+
+        // Route through the centralized state machine: validates transitions,
+        // locks the row (FOR UPDATE), detects concurrent modifications, and
+        // atomically handles inventory deduction/restock (RMS-008..011, RMS-027, RMS-028).
+        $result = OrderService::transitionStatus($conn, $order_id, $new_status, $userRole);
+        if (!$result['success']) {
+            Response::error($result['message'], 400);
+        }
+
         $conn->begin_transaction();
         try {
-            $stmt = $conn->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
-            if ($stmt) {
-                $stmt->bind_param("sii", $new_status, $order_id, $tenantId);
-                $stmt->execute();
-                $stmt->close();
-            }
-
             // If order completed, update table status if no other active orders remain on table
             if ($new_status === 'completed') {
                 $t_stmt = $conn->prepare("SELECT table_number FROM orders WHERE id = ? AND restaurant_id = ? LIMIT 1");

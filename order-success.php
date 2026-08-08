@@ -19,14 +19,14 @@ $calculated_total = 0;
 
 if ($conn && $order_id > 0) {
     // Require order table_number + restaurant to match active session (Fixes RMS-004 / tenant isolation)
-    $stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? AND table_number = ? AND restaurant_id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT id, table_number, status, total_amount, notes, batch_number, created_at FROM orders WHERE id = ? AND table_number = ? AND restaurant_id = ? LIMIT 1");
     $stmt->bind_param("isi", $order_id, $table_num, $tenant_id);
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
     if ($order) {
-        $items_stmt = $conn->prepare("SELECT oi.*, m.name as item_name FROM order_items oi JOIN menu_items m ON oi.menu_item_id = m.id WHERE oi.order_id = ?");
+        $items_stmt = $conn->prepare("SELECT oi.quantity, oi.price, m.name as item_name FROM order_items oi JOIN menu_items m ON oi.menu_item_id = m.id WHERE oi.order_id = ?");
         $items_stmt->bind_param("i", $order_id);
         $items_stmt->execute();
         $res = $items_stmt->get_result();
@@ -41,7 +41,7 @@ if ($conn && $order_id > 0) {
 // Fetch Payment QR Settings
 $setting = null;
 if ($conn) {
-    $res = $conn->query("SELECT * FROM payment_settings WHERE is_active = 1 AND restaurant_id = $tenant_id LIMIT 1");
+    $res = $conn->query("SELECT payment_note, qr_code_image FROM payment_settings WHERE is_active = 1 AND restaurant_id = $tenant_id LIMIT 1");
     if ($res && $res->num_rows > 0) {
         $setting = $res->fetch_assoc();
     }
@@ -53,12 +53,12 @@ $session_grand_total = 0.0;
 
 if ($conn && !empty($table_num)) {
     $tbl_safe = $conn->real_escape_string($table_num);
-    $b_res = $conn->query("SELECT * FROM orders WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $b_res = $conn->query("SELECT id, table_number, status, total_amount, batch_number, created_at FROM orders WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
     if ($b_res) {
         while ($b_row = $b_res->fetch_assoc()) {
             $b_id = intval($b_row['id']);
             $b_items = [];
-            $bi_res = $conn->query("SELECT oi.*, m.name as item_name FROM order_items oi JOIN menu_items m ON oi.menu_item_id = m.id WHERE oi.order_id = $b_id");
+            $bi_res = $conn->query("SELECT oi.quantity, oi.price, m.name as item_name FROM order_items oi JOIN menu_items m ON oi.menu_item_id = m.id WHERE oi.order_id = $b_id");
             if ($bi_res) {
                 while ($bi = $bi_res->fetch_assoc()) {
                     $b_items[] = $bi;

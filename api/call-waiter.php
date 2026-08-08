@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // GET pending calls: Requires Kitchen / Admin session (tenant-scoped)
     $staffTenant = (int)AuthorizationService::requireStaffApi();
 
-    $stmt = $conn->prepare("SELECT * FROM waiter_calls WHERE restaurant_id = ? AND status = 'pending' ORDER BY created_at DESC");
+    $stmt = $conn->prepare("SELECT id, table_number, status, created_at FROM waiter_calls WHERE restaurant_id = ? AND status = 'pending' ORDER BY created_at DESC");
     $stmt->bind_param("i", $staffTenant);
     $stmt->execute();
     $result = $stmt->get_result();

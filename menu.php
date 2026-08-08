@@ -59,9 +59,9 @@ elseif ($requested_table !== null && $requested_table !== '') {
         $tbl_safe = $conn->real_escape_string($requested_table);
         $existing_ctx = (int)($_SESSION['customer_restaurant_id'] ?? 0);
         if ($existing_ctx > 0) {
-            $t_res = $conn->query("SELECT * FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $existing_ctx LIMIT 1");
+            $t_res = $conn->query("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $existing_ctx LIMIT 1");
         } else {
-            $t_res = $conn->query("SELECT * FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
+            $t_res = $conn->query("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
         }
         
         if (!$t_res || $t_res->num_rows === 0) {
@@ -167,7 +167,7 @@ if ($conn) {
 // Fetch Active Addons for Modal Customizations
 $addons = [];
 if ($conn) {
-    $a_res = $conn->query("SELECT * FROM menu_addons WHERE status = 'active' AND restaurant_id = $tenant_id ORDER BY id ASC");
+    $a_res = $conn->query("SELECT id, name, price, status FROM menu_addons WHERE status = 'active' AND restaurant_id = $tenant_id ORDER BY id ASC");
     if ($a_res) {
         while ($a = $a_res->fetch_assoc()) {
             $addons[] = $a;
@@ -261,7 +261,7 @@ if ($conn) {
                 <div class="flex gap-2 overflow-x-auto no-scrollbar">
                     <?php if (!$db_error): ?>
                         <?php
-                        $categories_result = $conn->query("SELECT * FROM categories WHERE restaurant_id = $tenant_id ORDER BY name");
+                        $categories_result = $conn->query("SELECT id, name FROM categories WHERE restaurant_id = $tenant_id ORDER BY name");
                         $categories = [];
                         while ($cat = $categories_result->fetch_assoc()) {
                             $categories[] = $cat;
@@ -291,13 +291,14 @@ if ($conn) {
                     <div id="menuGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
                         <?php
                         $category_filter = isset($_GET['category']) ? intval($_GET['category']) : 0;
+                        $public_item_cols = "id, name, description, price, image, category_id, status, is_popular, preparation_time, dietary_type, addons";
                         if ($category_filter > 0) {
-                            $stmt = $conn->prepare("SELECT * FROM menu_items WHERE status != 'inactive' AND category_id = ? AND restaurant_id = ? ORDER BY name");
+                            $stmt = $conn->prepare("SELECT $public_item_cols FROM menu_items WHERE status != 'inactive' AND category_id = ? AND restaurant_id = ? ORDER BY name");
                             $stmt->bind_param("ii", $category_filter, $tenant_id);
                             $stmt->execute();
                             $result = $stmt->get_result();
                         } else {
-                            $result = $conn->query("SELECT * FROM menu_items WHERE status != 'inactive' AND restaurant_id = $tenant_id ORDER BY category_id, name");
+                            $result = $conn->query("SELECT $public_item_cols FROM menu_items WHERE status != 'inactive' AND restaurant_id = $tenant_id ORDER BY category_id, name");
                         }
 
                         if ($result && $result->num_rows > 0) {

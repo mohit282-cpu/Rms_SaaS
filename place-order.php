@@ -2,12 +2,6 @@
 // place-order.php - Hardened Order Processing Engine (Server-Side Price Validation & Transaction Protection)
 require_once 'config.php';
 
-// Rate Limit: Max 10 order attempts per minute per client
-RateLimiter::enforce('place_order', 10, 60);
-
-// Enforce CSRF verification for POST submissions
-CSRF::requireValidToken();
-
 $conn = getDBConnection();
 
 if ($conn === null) {
@@ -15,6 +9,14 @@ if ($conn === null) {
 }
 
 $tenantId = TenantContext::getTenantId();
+
+// Rate Limit: Max 10 order attempts per minute per tenant + client IP.
+// Tenant-scoped key prevents one tenant's traffic from starving other tenants.
+$rl_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+RateLimiter::enforce('place_order_' . (int)$tenantId . '_' . $rl_ip, 10, 60);
+
+// Enforce CSRF verification for POST submissions
+CSRF::requireValidToken();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: menu.php');

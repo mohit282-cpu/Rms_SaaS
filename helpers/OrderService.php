@@ -75,10 +75,12 @@ class OrderService {
                 return ['success' => false, 'message' => "Invalid status transition from '$currentState' to '$nextState'"];
             }
 
-            // Role-specific restrictions (Fixes RMS-012)
-            if (in_array($userRole, ['kitchen', 'kds'], true) && in_array($nextState, ['completed', 'refund_requested', 'refunded'], true)) {
+            // Role-specific restrictions (Fixes RMS-012): Kitchen/KDS must never
+            // initiate refunds or payment-state changes, but may complete (served)
+            // an order, which correctly triggers inventory consumption.
+            if (in_array($userRole, ['kitchen', 'kds'], true) && in_array($nextState, ['refund_requested', 'refunded'], true)) {
                 $conn->rollback();
-                return ['success' => false, 'message' => 'Kitchen role is not authorized to complete or refund orders'];
+                return ['success' => false, 'message' => 'Kitchen role is not authorized to refund or modify payment state'];
             }
 
             // Perform atomic state update (RMS-010 fix)

@@ -2,13 +2,17 @@
 // admin/login-process.php - Hardened Multi-Tenant Authentication Controller
 require_once '../config.php';
 
-// Enforce Rate Limiting (5 attempts per 5 minutes)
-RateLimiter::enforce('admin_login', 5, 300);
+// Per-IP + per-username rate limiting (5 attempts per 5 minutes).
+// Global buckets are avoided so one tenant/IP cannot lock out the whole platform.
+$login_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$rl_username = Security::sanitize($_POST['username'] ?? '');
+$login_rl_key = 'admin_login_' . ($rl_username !== '' ? $rl_username : 'anon') . '_' . $login_ip;
+RateLimiter::enforce($login_rl_key, 5, 300);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     CSRF::requireValidToken();
 
-    $username = Security::sanitize($_POST['username'] ?? '');
+    $username = $rl_username;
     $password = $_POST['password'] ?? '';
     
     if (empty($username) || empty($password)) {
@@ -35,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (password_verify($password, $user['password'])) {
                     // Check if tenant account is ACTIVE
                     if (!$user['is_super_admin'] && !empty($user['tenant_status']) && $user['tenant_status'] !== 'ACTIVE') {
-                        RateLimiter::hit('admin_login', 5, 300);
+                        RateLimiter::hit($login_rl_key, 5, 300);
                         Security::logAudit("LOGIN_BLOCKED_SUSPENDED", "Login blocked for inactive/suspended tenant account: {$username}");
                         $_SESSION['error'] = 'Your restaurant account is currently ' . strtolower($user['tenant_status']) . '. Please contact system administrator.';
                         header('Location: login.php');
@@ -43,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     // Clear rate limiter history on successful login
-                    RateLimiter::clear('admin_login');
+                    RateLimiter::clear($login_rl_key);
 
                     // Regenerate session ID to prevent Session Fixation Attacks
                     Auth::regenerateSession();
@@ -85,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Record failed attempt
-    RateLimiter::hit('admin_login', 5, 300);
+    RateLimiter::hit($login_rl_key, 5, 300);
 
     $_SESSION['error'] = 'Invalid username or password.';
     header('Location: login.php');

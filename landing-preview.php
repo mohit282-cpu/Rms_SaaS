@@ -4,7 +4,7 @@ require_once 'config.php';
 
 $conn = getDBConnection();
 $preview_tenant_id = (int)TenantContext::getTenantId();
-$res = $conn ? $conn->query("SELECT * FROM landing_page_settings WHERE restaurant_id = $preview_tenant_id LIMIT 1") : null;
+$res = $conn ? $conn->query("SELECT brand_name, brand_logo, brand_logo_image, hero_badge, hero_title, hero_subtitle, hero_cta_primary, hero_cta_secondary, about_title, about_text, location_address, contact_phone, contact_email, hero_image FROM landing_page_settings WHERE restaurant_id = $preview_tenant_id LIMIT 1") : null;
 $settings = ($res && $res->num_rows > 0) ? $res->fetch_assoc() : [];
 
 $defaults = [
