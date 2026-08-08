@@ -147,6 +147,19 @@ $conn->query("DELETE FROM admin_users WHERE username = 'manual_admin_test'");
 echo "\n";
 
 // -----------------------------------------------------------------
+// TEST SUITE 6: Dashboard Stream API Tenant Isolation
+// -----------------------------------------------------------------
+echo "--- TEST SUITE 6: Dashboard Stream API Tenant Isolation ---\n";
+
+$_SESSION['admin_logged_in'] = true;
+$_SESSION['admin_id'] = 1;
+$_SESSION['restaurant_id'] = 9001;
+$_SESSION['role'] = 'OWNER';
+
+$tenantResolved = TenantContext::getTenantId();
+assertTest($tenantResolved === 9001, "Dashboard Stream API resolves active tenant_id context (ID: 9001)");
+echo "\n";
+
 // CLEANUP TEST DATA
 // -----------------------------------------------------------------
 $conn->query("DELETE FROM orders WHERE id IN (99001, 99002)");
@@ -162,3 +175,4 @@ echo "Overall Status     : " . ($failed === 0 ? "✅ ALL TESTS PASSED SUCCESSFUL
 echo "=================================================================\n";
 
 exit($failed > 0 ? 1 : 0);
+

@@ -8,6 +8,20 @@ if (!$conn) {
     die("Database connection error");
 }
 $csrfToken = CSRF::generateToken();
+
+// Resolve authenticated tenant context for header badge
+$tenantId = TenantContext::getTenantId();
+$tenantName = 'Restaurant Workspace';
+$tStmt = $conn->prepare("SELECT restaurant_name FROM restaurants WHERE id = ? LIMIT 1");
+if ($tStmt) {
+    $tStmt->bind_param("i", $tenantId);
+    $tStmt->execute();
+    $tRes = $tStmt->get_result();
+    if ($tRow = $tRes->fetch_assoc()) {
+        $tenantName = $tRow['restaurant_name'];
+    }
+    $tStmt->close();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-zinc-950 text-zinc-100">
@@ -15,7 +29,7 @@ $csrfToken = CSRF::generateToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#09090b">
-    <title>Operations Center - QR Cafe POS</title>
+    <title>Operations Center - <?= htmlspecialchars($tenantName) ?></title>
     <link rel="manifest" href="../manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -54,8 +68,11 @@ $csrfToken = CSRF::generateToken();
             <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                 <div class="flex items-center justify-between">
                     <div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <h1 class="text-lg md:text-xl font-black text-white">Restaurant Operations Center</h1>
+                            <span class="px-2.5 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-amber-400 text-[10px] font-mono font-bold">
+                                Tenant ID: #<?= $tenantId ?> (<?= htmlspecialchars($tenantName) ?>)
+                            </span>
                             <span id="connStatusBadge" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
                                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Live Stream
                             </span>
@@ -515,7 +532,6 @@ $csrfToken = CSRF::generateToken();
                 if (consecutiveFailures >= 3) updateConnectionStatus('offline');
                 else updateConnectionStatus('reconnecting');
                 renderStreamError((err && err.message) ? err.message : 'Unable to connect to live order service.');
-                markMetricsUnavailable();
             }
             scheduleNextPoll();
         }
