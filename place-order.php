@@ -14,6 +14,8 @@ if ($conn === null) {
     Response::error('Database connection failed', 500);
 }
 
+$tenantId = TenantContext::getTenantId();
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: menu.php');
     exit;
@@ -61,7 +63,7 @@ if (empty($cart) || !is_array($cart)) {
 $idempotency_key = $_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? $_POST['idempotency_key'] ?? ($input_data['idempotency_key'] ?? '');
 if (!empty($idempotency_key)) {
     $idempotency_key = Security::sanitize($idempotency_key);
-    $idem_stmt = $conn->prepare("SELECT id, table_number, total_amount FROM orders WHERE idempotency_key = ? LIMIT 1");
+    $idem_stmt = $conn->prepare("SELECT id, table_number, total_amount FROM orders WHERE idempotency_key = ? AND restaurant_id = {$tenantId} LIMIT 1");
     $idem_stmt->bind_param("s", $idempotency_key);
     $idem_stmt->execute();
     $existing_order = $idem_stmt->get_result()->fetch_assoc();
@@ -82,7 +84,6 @@ if (!empty($idempotency_key)) {
 // SERVER-SIDE PRICE & STOCK VALIDATION (Fixes RMS-001, RMS-024, RMS-025, RMS-026, RMS-037)
 $calculated_total = 0.0;
 $validated_items = [];
-$tenantId = TenantContext::getTenantId();
 
 // Constants for limits
 $MAX_ITEM_QTY = 50;
@@ -124,7 +125,7 @@ foreach ($cart as $item) {
     // STRICT SERVER-SIDE PRICE CALCULATION (Prevents Client Price Modification Attacks - RMS-001)
     $server_unit_price = floatval($db_item['price']);
     
-    // Addon Price calculation - Validated against DB menu_addons or predefined allowlist
+    // Addon Price calculation - Validated against DB menu_addons only (client prices are NEVER trusted - RMS-001)
     $addon_extra_cost = 0.0;
     $custom_text = '';
     if (!empty($item['customizations'])) {
@@ -135,22 +136,31 @@ foreach ($cart as $item) {
         if (!empty($c['extras']) && is_array($c['extras'])) {
             $extra_names = [];
             foreach ($c['extras'] as $ex) {
-                $e_id = intval($ex['id'] ?? 0);
-                $e_name = Security::sanitize($ex['name'] ?? '');
-                
-                // Lookup addon in DB if ID provided, or sanitize name and calculate standard extra price
+                // Support both object payloads ({id, name}) and plain name strings
+                if (is_array($ex)) {
+                    $e_id = intval($ex['id'] ?? 0);
+                    $e_name = trim(Security::sanitize($ex['name'] ?? ''));
+                } else {
+                    $e_id = 0;
+                    $e_name = trim(Security::sanitize($ex));
+                }
+                if ($e_name === '') continue;
+
+                // Resolve the extra price strictly from the DB catalog by ID or name.
+                // NOTE: menu_addons is a shared catalog table (no restaurant_id column),
+                // so it must NOT be tenant-filtered here.
                 $e_price = 0.0;
-                if ($e_id > 0) {
-                    $addon_res = $conn->query("SELECT price FROM menu_addons WHERE id = $e_id AND restaurant_id = {$tenantId} AND status = 'active' LIMIT 1");
-                    if ($addon_res && $a_row = $addon_res->fetch_assoc()) {
-                        $e_price = floatval($a_row['price']);
-                    }
+                $addon_stmt = $conn->prepare("SELECT price FROM menu_addons WHERE status = 'active' AND (id = ? OR name = ?) LIMIT 1");
+                if ($addon_stmt) {
+                    $addon_stmt->bind_param("is", $e_id, $e_name);
+                    $addon_stmt->execute();
+                    $a_row = $addon_stmt->get_result()->fetch_assoc();
+                    $addon_stmt->close();
+                    if ($a_row) $e_price = floatval($a_row['price']);
                 }
-                
-                if (!empty($e_name)) {
-                    $extra_names[] = $e_name;
-                    $addon_extra_cost += $e_price;
-                }
+
+                $extra_names[] = $e_name;
+                $addon_extra_cost += $e_price;
             }
             if (!empty($extra_names)) {
                 $custom_text .= ' [+' . implode(', ', $extra_names) . ']';
@@ -213,7 +223,10 @@ try {
 
     // Insert order batch
     $stmt = $conn->prepare("INSERT INTO orders (restaurant_id, table_number, customer_name, notes, status, total_amount, payment_status, dining_session_id, batch_number, idempotency_key) VALUES (?, ?, ?, ?, 'new', ?, 'pending', ?, ?, ?)");
-    $stmt->bind_param("isssdiis", $tenantId, $table_number, $customer_name, $notes, $calculated_total, $session_id, $batch_num, $idempotency_key);
+    // Insert NULL (not '') when no idempotency key is supplied so the UNIQUE index
+    // on idempotency_key does not reject repeat orders.
+    $insert_idem_key = ($idempotency_key !== '') ? $idempotency_key : null;
+    $stmt->bind_param("isssdiis", $tenantId, $table_number, $customer_name, $notes, $calculated_total, $session_id, $batch_num, $insert_idem_key);
     
     if (!$stmt->execute()) {
         throw new Exception("Order insertion failed: " . $stmt->error);
@@ -267,7 +280,7 @@ try {
     exit;
     
 } catch (Throwable $e) {
-    if (isset($conn) && $conn->in_transaction) {
+    if (isset($conn) && $conn->in_transaction()) {
         $conn->rollback();
     }
     if ($is_ajax) {

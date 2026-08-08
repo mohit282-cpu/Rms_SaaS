@@ -1,14 +1,14 @@
 <?php
-// super-admin/includes/header.php
+// super-admin/includes/header.php - Super Admin Dashboard Header & Navigation Bar
 require_once __DIR__ . '/../../config.php';
 Auth::requireSuperAdmin();
 
 $conn = getDBConnection();
-$unreadNotifs = 0;
+$actionableRequests = 0;
 if ($conn) {
-    $nRes = $conn->query("SELECT COUNT(*) as cnt FROM notifications WHERE restaurant_id IS NULL AND is_read = 0");
+    $nRes = $conn->query("SELECT COUNT(*) as cnt FROM restaurant_requests WHERE status IN ('PENDING', 'CONTACTED')");
     if ($nRes && $row = $nRes->fetch_assoc()) {
-        $unreadNotifs = (int)$row['cnt'];
+        $actionableRequests = (int)$row['cnt'];
     }
 }
 $currentPage = basename($_SERVER['PHP_SELF']);
@@ -17,7 +17,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 <html lang="en" class="h-full bg-zinc-950 text-zinc-100">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title><?= htmlspecialchars($pageTitle ?? 'Super Admin Dashboard') ?> - RMS SaaS Platform</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -51,9 +51,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     </a>
                     <a href="requests.php" class="px-3.5 py-2 rounded-xl text-xs font-bold relative transition-all <?= $currentPage === 'requests.php' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50' ?>">
                         📬 Requests
-                        <?php if ($unreadNotifs > 0): ?>
+                        <?php if ($actionableRequests > 0): ?>
                             <span class="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-black leading-none text-zinc-950 bg-amber-400 rounded-full animate-pulse">
-                                <?= $unreadNotifs ?>
+                                <?= $actionableRequests ?>
                             </span>
                         <?php endif; ?>
                     </a>
@@ -76,7 +76,23 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         Logout 🚪
                     </a>
                 </div>
+
+                <!-- Mobile Navigation Toggle -->
+                <button type="button" onclick="document.getElementById('sa-mobile-nav').classList.toggle('hidden');" class="md:hidden p-2 rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
             </div>
+        </div>
+
+        <!-- Mobile Responsive Dropdown Navigation -->
+        <div id="sa-mobile-nav" class="hidden md:hidden border-t border-zinc-800 bg-zinc-900 p-4 space-y-2">
+            <a href="index.php" class="block px-3 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:bg-zinc-800">📊 Overview</a>
+            <a href="restaurants.php" class="block px-3 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:bg-zinc-800">🏪 Restaurants</a>
+            <a href="requests.php" class="block px-3 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:bg-zinc-800">📬 Requests (<?= $actionableRequests ?>)</a>
+            <a href="subscriptions.php" class="block px-3 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:bg-zinc-800">💳 Subscriptions</a>
+            <a href="../index.php" target="_blank" class="block px-3 py-2 rounded-xl text-xs font-bold text-amber-400 hover:bg-zinc-800">🌐 Public Landing Site ↗</a>
         </div>
     </header>
     <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">

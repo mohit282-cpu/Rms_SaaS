@@ -60,7 +60,6 @@ $isAssetSection = in_array($currentPage, $assetPages);
             <?php echo sidebarLink('orders.php', '📋', 'Orders Queue', $currentPage, 'orders'); ?>
             <?php echo sidebarLink('menu-items.php', '🍔', 'Menu Catalog', $currentPage, 'menu-items'); ?>
             <?php echo sidebarLink('categories.php', '🏷️', 'Categories', $currentPage, 'categories'); ?>
-            <?php echo sidebarLink('landing-page.php', '🌐', 'Landing Site', $currentPage, 'landing-page'); ?>
             <?php echo sidebarLink('payment-settings.php', '💳', 'Payment Configuration', $currentPage, 'payment-settings'); ?>
             <?php if ($isAdminOrManager): ?>
                 <?php echo sidebarLink('change-password.php', '🔐', 'Security & IAM', $currentPage, 'security'); ?>
