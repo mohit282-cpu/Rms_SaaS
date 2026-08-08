@@ -6,6 +6,7 @@
 # Runtime & Security Storage
 /storage/logs/
 /storage/backups/
+/storage/.app_secret
 *.log
 *.sql
 *.bak
