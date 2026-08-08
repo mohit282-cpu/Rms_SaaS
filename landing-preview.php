@@ -3,7 +3,8 @@
 require_once 'config.php';
 
 $conn = getDBConnection();
-$res = $conn ? $conn->query("SELECT * FROM landing_page_settings LIMIT 1") : null;
+$preview_tenant_id = (int)TenantContext::getTenantId();
+$res = $conn ? $conn->query("SELECT * FROM landing_page_settings WHERE restaurant_id = $preview_tenant_id LIMIT 1") : null;
 $settings = ($res && $res->num_rows > 0) ? $res->fetch_assoc() : [];
 
 $defaults = [

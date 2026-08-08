@@ -948,8 +948,8 @@ function applySaaSMultiTenancyMigration($conn) {
         'goods_receipts', 'inventory_waste', 'stock_audits', 'inventory_alerts',
         'assets', 'asset_categories', 'asset_maintenance', 'asset_warranties',
         'asset_transfers', 'asset_depreciation', 'asset_logs',
-        'payment_gateways', 'payment_transactions', 'audit_logs',
-        'waiter_calls', 'landing_page_settings'
+        'payment_gateways', 'payment_settings', 'payment_transactions', 'audit_logs',
+        'waiter_calls', 'landing_page_settings', 'menu_addons'
     ];
 
     foreach ($tenantTables as $table) {
@@ -1019,6 +1019,14 @@ function requireAdminLogin() {
     // Enforce tenant context + account status + subscription on every admin page.
     if (class_exists('TenantContext')) {
         TenantContext::requireTenant();
+    }
+    // Force password change whenever temporary/default credentials are in use.
+    if (!empty($_SESSION['force_password_change'])) {
+        $currentPage = basename($_SERVER['SCRIPT_NAME'] ?? '');
+        if ($currentPage !== 'change-password.php') {
+            header('Location: change-password.php');
+            exit;
+        }
     }
 }
 

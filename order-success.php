@@ -10,6 +10,7 @@ if (!isset($_SESSION['customer_table_id']) || empty($_SESSION['customer_table_id
 }
 
 $table_num = strval($_SESSION['customer_table_id']);
+$tenant_id = (int)($_SESSION['customer_restaurant_id'] ?? 0);
 $order_id = isset($_GET['order_id']) ? intval($_GET['order_id']) : 0;
 
 $order = null;
@@ -17,9 +18,9 @@ $order_items = [];
 $calculated_total = 0;
 
 if ($conn && $order_id > 0) {
-    // Require order table_number to match active session table (Fixes RMS-004)
-    $stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? AND table_number = ? LIMIT 1");
-    $stmt->bind_param("is", $order_id, $table_num);
+    // Require order table_number + restaurant to match active session (Fixes RMS-004 / tenant isolation)
+    $stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? AND table_number = ? AND restaurant_id = ? LIMIT 1");
+    $stmt->bind_param("isi", $order_id, $table_num, $tenant_id);
     $stmt->execute();
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -40,7 +41,7 @@ if ($conn && $order_id > 0) {
 // Fetch Payment QR Settings
 $setting = null;
 if ($conn) {
-    $res = $conn->query("SELECT * FROM payment_settings WHERE is_active = 1 LIMIT 1");
+    $res = $conn->query("SELECT * FROM payment_settings WHERE is_active = 1 AND restaurant_id = $tenant_id LIMIT 1");
     if ($res && $res->num_rows > 0) {
         $setting = $res->fetch_assoc();
     }
@@ -52,7 +53,7 @@ $session_grand_total = 0.0;
 
 if ($conn && !empty($table_num)) {
     $tbl_safe = $conn->real_escape_string($table_num);
-    $b_res = $conn->query("SELECT * FROM orders WHERE table_number = '$tbl_safe' AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $b_res = $conn->query("SELECT * FROM orders WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
     if ($b_res) {
         while ($b_row = $b_res->fetch_assoc()) {
             $b_id = intval($b_row['id']);
@@ -74,7 +75,7 @@ if ($conn && !empty($table_num)) {
 $is_session_settled = false;
 if ($conn && !empty($table_num)) {
     $tbl_safe = $conn->real_escape_string($table_num);
-    $t_check = $conn->query("SELECT status FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
+    $t_check = $conn->query("SELECT status FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id LIMIT 1");
     if ($t_check && $t_row = $t_check->fetch_assoc()) {
         if ($t_row['status'] === 'vacant') {
             $is_session_settled = true;
@@ -122,7 +123,7 @@ $menu_url = 'menu.php?token=' . $table_qr_token;
     <!-- Header -->
     <header class="sticky top-0 z-40 bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-800/80 px-4 py-3.5">
         <div class="max-w-4xl mx-auto flex items-center justify-between gap-3">
-            <a href="menu.php?table=<?php echo urlencode($table_num); ?>" class="flex items-center gap-2 font-extrabold text-xs text-amber-400">
+            <a href="<?php echo $menu_url; ?>" class="flex items-center gap-2 font-extrabold text-xs text-amber-400">
                 <span>← Back to Menu</span>
             </a>
             <div class="flex items-center gap-2">
@@ -142,7 +143,7 @@ $menu_url = 'menu.php?token=' . $table_qr_token;
             <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center space-y-3">
                 <div class="text-4xl">❓</div>
                 <h2 class="font-black text-white text-lg">No Active Order Found</h2>
-                <a href="menu.php?table=<?php echo urlencode($table_num); ?>" class="inline-block px-6 py-2.5 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs">Browse Menu</a>
+                <a href="<?php echo $menu_url; ?>" class="inline-block px-6 py-2.5 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs">Browse Menu</a>
             </div>
         <?php else: ?>
 
@@ -189,7 +190,7 @@ $menu_url = 'menu.php?token=' . $table_qr_token;
                         <?php endif; ?>
                     </div>
 
-                    <a href="menu.php?table=<?php echo urlencode($table_num); ?>" class="h-14 w-full rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-zinc-950 font-black text-sm flex items-center justify-center active:scale-95 shadow-xl shadow-amber-500/20">
+                    <a href="<?php echo $menu_url; ?>" class="h-14 w-full rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-zinc-950 font-black text-sm flex items-center justify-center active:scale-95 shadow-xl shadow-amber-500/20">
                         🛒 Back to Menu & Order Again
                     </a>
                 </section>

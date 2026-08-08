@@ -58,7 +58,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $kitchen_pass = $_POST['kitchen_password'] ?? '';
         if (!empty($kitchen_pass)) {
             $k_hash = password_hash($kitchen_pass, PASSWORD_BCRYPT);
-            $conn->query("UPDATE users SET password = '$k_hash' WHERE username = 'kitchen'");
+            $tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+            $kCheck = $conn->query("SELECT id FROM landing_page_settings WHERE restaurant_id = $tenantId LIMIT 1");
+            if ($kCheck && $kCheck->num_rows > 0) {
+                $kStmt = $conn->prepare("UPDATE landing_page_settings SET kds_password = ? WHERE restaurant_id = ?");
+                if ($kStmt) {
+                    $kStmt->bind_param("si", $k_hash, $tenantId);
+                    $kStmt->execute();
+                    $kStmt->close();
+                }
+            } else {
+                $kStmt = $conn->prepare("INSERT INTO landing_page_settings (restaurant_id, kds_password) VALUES (?, ?)");
+                if ($kStmt) {
+                    $kStmt->bind_param("is", $tenantId, $k_hash);
+                    $kStmt->execute();
+                    $kStmt->close();
+                }
+            }
             $_SESSION['success'] = 'Kitchen Display (KDS) PIN code updated successfully!';
         }
     }

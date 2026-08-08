@@ -34,6 +34,15 @@ if (!isset($_SESSION['customer_table_id']) || empty($_SESSION['customer_table_id
     die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><title>403 Session Expired</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center"><div class="max-w-md bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4"><div class="text-5xl">🔒</div><h1 class="text-xl font-black text-white">Session Expired</h1><p class="text-xs text-zinc-400">Please scan the table QR code again to place an order.</p></div></body></html>');
 }
 
+// Tenant context is mandatory (fail closed): never place an order for restaurant_id 0
+if ($tenantId <= 0) {
+    if ($is_ajax) {
+        Response::error('Session expired. Please scan table QR code again.', 403);
+    }
+    http_response_code(403);
+    die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><title>403 Session Expired</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center"><div class="max-w-md bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4"><div class="text-5xl">🔒</div><h1 class="text-xl font-black text-white">Session Expired</h1><p class="text-xs text-zinc-400">Please scan the table QR code again to place an order.</p></div></body></html>');
+}
+
 $table_number = strval($_SESSION['customer_table_id']);
 
 // Parse Payload
@@ -146,13 +155,11 @@ foreach ($cart as $item) {
                 }
                 if ($e_name === '') continue;
 
-                // Resolve the extra price strictly from the DB catalog by ID or name.
-                // NOTE: menu_addons is a shared catalog table (no restaurant_id column),
-                // so it must NOT be tenant-filtered here.
+                // Resolve the extra price strictly from the DB catalog by ID or name (tenant-scoped).
                 $e_price = 0.0;
-                $addon_stmt = $conn->prepare("SELECT price FROM menu_addons WHERE status = 'active' AND (id = ? OR name = ?) LIMIT 1");
+                $addon_stmt = $conn->prepare("SELECT price FROM menu_addons WHERE status = 'active' AND restaurant_id = ? AND (id = ? OR name = ?) LIMIT 1");
                 if ($addon_stmt) {
-                    $addon_stmt->bind_param("is", $e_id, $e_name);
+                    $addon_stmt->bind_param("iis", $tenantId, $e_id, $e_name);
                     $addon_stmt->execute();
                     $a_row = $addon_stmt->get_result()->fetch_assoc();
                     $addon_stmt->close();

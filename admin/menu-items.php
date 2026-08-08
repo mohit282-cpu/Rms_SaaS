@@ -8,8 +8,10 @@ if (!$conn) {
     die("Database connection error");
 }
 
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+
 // Fetch Categories for Dropdowns
-$categories_res = $conn->query("SELECT * FROM categories ORDER BY name ASC");
+$categories_res = $conn->query("SELECT * FROM categories WHERE restaurant_id = $tenantId ORDER BY name ASC");
 $categories = [];
 if ($categories_res) {
     while ($cat = $categories_res->fetch_assoc()) {
@@ -51,15 +53,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         if ($action === 'create') {
-            $stmt = $conn->prepare("INSERT INTO menu_items (name, sku, category_id, description, price, cost_price, stock_quantity, min_stock_level, preparation_time, dietary_type, status, is_popular, allergens, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO menu_items (restaurant_id, name, sku, category_id, description, price, cost_price, stock_quantity, min_stock_level, preparation_time, dietary_type, status, is_popular, allergens, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             if ($stmt) {
-                $stmt->bind_param("ssisddiiissiis", $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path);
+                $stmt->bind_param("i" . "ssisddiiissiis", $tenantId, $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path);
                 $stmt->execute();
                 $stmt->close();
             }
             $_SESSION['success'] = "Menu item '$name' created successfully!";
         } elseif ($action === 'edit' && $id > 0) {
-            $sql = "UPDATE menu_items SET name = '" . $conn->real_escape_string($name) . "', sku = '" . $conn->real_escape_string($sku) . "', category_id = $category_id, description = '" . $conn->real_escape_string($description) . "', price = $price, cost_price = $cost_price, stock_quantity = $stock_quantity, min_stock_level = $min_stock_level, preparation_time = $preparation_time, dietary_type = '$dietary_type', status = '$status', is_popular = $is_popular, allergens = '" . $conn->real_escape_string($allergens) . "', image = '" . $conn->real_escape_string($image_path) . "' WHERE id = $id";
+            $sql = "UPDATE menu_items SET name = '" . $conn->real_escape_string($name) . "', sku = '" . $conn->real_escape_string($sku) . "', category_id = $category_id, description = '" . $conn->real_escape_string($description) . "', price = $price, cost_price = $cost_price, stock_quantity = $stock_quantity, min_stock_level = $min_stock_level, preparation_time = $preparation_time, dietary_type = '$dietary_type', status = '$status', is_popular = $is_popular, allergens = '" . $conn->real_escape_string($allergens) . "', image = '" . $conn->real_escape_string($image_path) . "' WHERE id = $id AND restaurant_id = $tenantId";
             $conn->query($sql);
             $_SESSION['success'] = "Menu item '$name' updated successfully!";
         }
@@ -67,13 +69,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $id = intval($_POST['id'] ?? 0);
         $new_status = Security::sanitize($_POST['status'] ?? 'active');
         if ($id > 0) {
-            $conn->query("UPDATE menu_items SET status = '$new_status' WHERE id = $id");
+            $conn->query("UPDATE menu_items SET status = '$new_status' WHERE id = $id AND restaurant_id = $tenantId");
             $_SESSION['success'] = "Item status updated to " . strtoupper($new_status);
         }
     } elseif ($action === 'delete') {
         $id = intval($_POST['id'] ?? 0);
         if ($id > 0) {
-            $conn->query("DELETE FROM menu_items WHERE id = $id");
+            $conn->query("DELETE FROM menu_items WHERE id = $id AND restaurant_id = $tenantId");
             $_SESSION['success'] = "Menu item deleted successfully";
         }
     }

@@ -141,24 +141,26 @@ class OrderService {
                 $invItemId = intval($rec['inventory_item_id']);
                 $neededQty = floatval($rec['quantity']) * $qtyOrdered;
 
-                // Idempotent constraint check (Fixes RMS-027)
+                // Idempotent constraint check (Fixes RMS-027): skip if already deducted
                 $chkStmt = $conn->prepare("SELECT id FROM inventory_transactions WHERE reference_type = 'order' AND reference_id = ? AND inventory_item_id = ? AND type = 'consumption' LIMIT 1");
                 $chkStmt->bind_param("ii", $orderId, $invItemId);
                 $chkStmt->execute();
-                $chkStmt->get_result();
+                $alreadyConsumed = $chkStmt->get_result()->fetch_row();
                 $chkStmt->close();
 
-                $updStmt = $conn->prepare("UPDATE inventory_items SET current_stock = GREATEST(0, current_stock - ?) WHERE id = ? AND restaurant_id = ?");
-                $updStmt->bind_param("dii", $neededQty, $invItemId, $tenantId);
-                $updStmt->execute();
-                $updStmt->close();
+                if (!$alreadyConsumed) {
+                    $updStmt = $conn->prepare("UPDATE inventory_items SET current_stock = GREATEST(0, current_stock - ?) WHERE id = ? AND restaurant_id = ?");
+                    $updStmt->bind_param("dii", $neededQty, $invItemId, $tenantId);
+                    $updStmt->execute();
+                    $updStmt->close();
 
-                $logStmt = $conn->prepare("INSERT INTO inventory_transactions (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, notes, created_by) VALUES (?, ?, 'consumption', ?, 'out', 'order', ?, ?, ?)");
-                $note = "POS Order #$orderId fulfillment";
-                $creator = 'system';
-                $logStmt->bind_param("iidisss", $tenantId, $invItemId, $neededQty, $orderId, $note, $creator);
-                $logStmt->execute();
-                $logStmt->close();
+                    $logStmt = $conn->prepare("INSERT INTO inventory_transactions (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, notes, created_by) VALUES (?, ?, 'consumption', ?, 'out', 'order', ?, ?, ?)");
+                    $note = "POS Order #$orderId fulfillment";
+                    $creator = 'system';
+                    $logStmt->bind_param("iidiss", $tenantId, $invItemId, $neededQty, $orderId, $note, $creator);
+                    $logStmt->execute();
+                    $logStmt->close();
+                }
             }
         }
     }
@@ -200,7 +202,7 @@ class OrderService {
                 $logStmt = $conn->prepare("INSERT INTO inventory_transactions (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, notes, created_by) VALUES (?, ?, 'return', ?, 'in', 'order', ?, ?, ?)");
                 $note = "Refund Restock for Order #$orderId";
                 $creator = 'system';
-                $logStmt->bind_param("iidisss", $tenantId, $invItemId, $restockQty, $orderId, $note, $creator);
+                $logStmt->bind_param("iidiss", $tenantId, $invItemId, $restockQty, $orderId, $note, $creator);
                 $logStmt->execute();
                 $logStmt->close();
             }

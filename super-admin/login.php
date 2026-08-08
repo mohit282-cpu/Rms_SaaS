@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$conn) {
                 $error = "Database connection error.";
             } else {
-                $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id FROM admin_users WHERE username = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
+                $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id, force_password_change FROM admin_users WHERE username = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
                 if ($stmt) {
                     $stmt->bind_param("s", $username);
                     $stmt->execute();
@@ -47,8 +47,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['username'] = $user['username'];
                         $_SESSION['full_name'] = $user['full_name'];
                         $_SESSION['restaurant_id'] = 1;
+                        $_SESSION['force_password_change'] = (int)($user['force_password_change'] ?? 0);
 
                         Security::logAudit("SUPER_ADMIN_LOGIN", "Super Admin logged in successfully: " . $user['username']);
+
+                        // Enforce mandatory password change for accounts using known/default credentials
+                        if (!empty($user['force_password_change'])) {
+                            header('Location: ../admin/change-password.php');
+                            exit;
+                        }
                         header('Location: index.php');
                         exit;
                     } else {
@@ -114,9 +121,6 @@ $csrfField = CSRF::getField();
             <a href="../index.php" class="text-xs font-bold text-zinc-500 hover:text-amber-400 transition-colors block">
                 ← Return to Public Website
             </a>
-            <div class="text-[10px] text-zinc-600 font-semibold">
-                Default Credentials (if unseeded): <strong>superadmin</strong> / <strong>SuperAdmin@2026</strong>
-            </div>
         </div>
     </div>
 </body>

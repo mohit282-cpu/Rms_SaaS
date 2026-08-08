@@ -6,6 +6,8 @@ requireAdminLogin();
 $conn = getDBConnection();
 if (!$conn) die("Database connection failed");
 
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+
 $order_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($order_id <= 0) {
     header('Location: orders.php');
@@ -13,8 +15,8 @@ if ($order_id <= 0) {
 }
 
 // Fetch Order Header
-$stmt = $conn->prepare("SELECT * FROM orders WHERE id = ?");
-$stmt->bind_param("i", $order_id);
+$stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? AND restaurant_id = ?");
+$stmt->bind_param("ii", $order_id, $tenantId);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
 $stmt->close();

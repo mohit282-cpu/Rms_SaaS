@@ -57,7 +57,12 @@ if ($requested_token !== null && $requested_token !== '') {
 elseif ($requested_table !== null && $requested_table !== '') {
     if ($conn) {
         $tbl_safe = $conn->real_escape_string($requested_table);
-        $t_res = $conn->query("SELECT * FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
+        $existing_ctx = (int)($_SESSION['customer_restaurant_id'] ?? 0);
+        if ($existing_ctx > 0) {
+            $t_res = $conn->query("SELECT * FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $existing_ctx LIMIT 1");
+        } else {
+            $t_res = $conn->query("SELECT * FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
+        }
         
         if (!$t_res || $t_res->num_rows === 0) {
             $access_error_code = 404;
@@ -74,6 +79,8 @@ elseif ($requested_table !== null && $requested_table !== '') {
                     $is_access_valid = true;
                     $_SESSION['customer_table_id'] = $table_data['table_number'];
                     $_SESSION['customer_table_token'] = $table_data['qr_token'];
+                    $_SESSION['customer_restaurant_id'] = (int)($table_data['restaurant_id'] ?? 0);
+                    $_SESSION['restaurant_id'] = (int)($table_data['restaurant_id'] ?? 0);
                 } else {
                     // IDOR Protection: Rejection of direct table URL parameter without valid token/signature
                     $access_error_code = 403;
@@ -89,7 +96,8 @@ elseif (isset($_SESSION['customer_table_id']) && !empty($_SESSION['customer_tabl
     $sess_table = trim($_SESSION['customer_table_id']);
     if ($conn) {
         $tbl_safe = $conn->real_escape_string($sess_table);
-        $t_res = $conn->query("SELECT status FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
+        $sess_rest_id = (int)($_SESSION['customer_restaurant_id'] ?? 0);
+        $t_res = $conn->query("SELECT status FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $sess_rest_id LIMIT 1");
         if ($t_res && $t_row = $t_res->fetch_assoc()) {
             if ($t_row['status'] !== 'disabled') {
                 $is_access_valid = true;
@@ -138,6 +146,7 @@ if (!$is_access_valid) {
 $table_num = strval($_SESSION['customer_table_id']);
 $conn = getDBConnection();
 $db_error = ($conn === null);
+$tenant_id = (int)($_SESSION['customer_restaurant_id'] ?? 0);
 
 // Check if table has active dining session / placed orders
 $active_order_id = 0;
@@ -146,7 +155,7 @@ $session_running_total = 0.0;
 
 if ($conn) {
     $tbl_safe = $conn->real_escape_string($table_num);
-    $res = $conn->query("SELECT id, status, total_amount, batch_number FROM orders WHERE table_number = '$tbl_safe' AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $res = $conn->query("SELECT id, status, total_amount, batch_number FROM orders WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
     if ($res) {
         while ($so = $res->fetch_assoc()) {
             $session_orders[] = $so;
@@ -158,7 +167,7 @@ if ($conn) {
 // Fetch Active Addons for Modal Customizations
 $addons = [];
 if ($conn) {
-    $a_res = $conn->query("SELECT * FROM menu_addons WHERE status = 'active' ORDER BY id ASC");
+    $a_res = $conn->query("SELECT * FROM menu_addons WHERE status = 'active' AND restaurant_id = $tenant_id ORDER BY id ASC");
     if ($a_res) {
         while ($a = $a_res->fetch_assoc()) {
             $addons[] = $a;
@@ -252,7 +261,7 @@ if ($conn) {
                 <div class="flex gap-2 overflow-x-auto no-scrollbar">
                     <?php if (!$db_error): ?>
                         <?php
-                        $categories_result = $conn->query("SELECT * FROM categories ORDER BY name");
+                        $categories_result = $conn->query("SELECT * FROM categories WHERE restaurant_id = $tenant_id ORDER BY name");
                         $categories = [];
                         while ($cat = $categories_result->fetch_assoc()) {
                             $categories[] = $cat;
@@ -283,12 +292,12 @@ if ($conn) {
                         <?php
                         $category_filter = isset($_GET['category']) ? intval($_GET['category']) : 0;
                         if ($category_filter > 0) {
-                            $stmt = $conn->prepare("SELECT * FROM menu_items WHERE status != 'inactive' AND category_id = ? ORDER BY name");
-                            $stmt->bind_param("i", $category_filter);
+                            $stmt = $conn->prepare("SELECT * FROM menu_items WHERE status != 'inactive' AND category_id = ? AND restaurant_id = ? ORDER BY name");
+                            $stmt->bind_param("ii", $category_filter, $tenant_id);
                             $stmt->execute();
                             $result = $stmt->get_result();
                         } else {
-                            $result = $conn->query("SELECT * FROM menu_items WHERE status != 'inactive' ORDER BY category_id, name");
+                            $result = $conn->query("SELECT * FROM menu_items WHERE status != 'inactive' AND restaurant_id = $tenant_id ORDER BY category_id, name");
                         }
 
                         if ($result && $result->num_rows > 0) {

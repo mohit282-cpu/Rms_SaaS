@@ -8,6 +8,8 @@ if (!$conn) {
     die("Database connection error");
 }
 
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+
 // Handle POST Form Submissions (Add, Edit, Reserve, Status Update, Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     CSRF::requireValidToken();
@@ -22,9 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $qr_token = bin2hex(random_bytes(16));
 
         if (!empty($table_number)) {
-            $stmt = $conn->prepare("INSERT INTO tables (table_number, zone, capacity, assigned_waiter, status, qr_token) VALUES (?, ?, ?, ?, 'vacant', ?)");
+            $stmt = $conn->prepare("INSERT INTO tables (restaurant_id, table_number, zone, capacity, assigned_waiter, status, qr_token) VALUES (?, ?, ?, ?, ?, 'vacant', ?)");
             if ($stmt) {
-                $stmt->bind_param("ssiss", $table_number, $zone, $capacity, $assigned_waiter, $qr_token);
+                $stmt->bind_param("isiss" . "s", $tenantId, $table_number, $zone, $capacity, $assigned_waiter, $qr_token);
                 if ($stmt->execute()) {
                     $_SESSION['success'] = "Table '$table_number' added to $zone!";
                 } else {
@@ -37,8 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $id = intval($_POST['id'] ?? 0);
         $status = Security::sanitize($_POST['status'] ?? 'vacant');
         if ($id > 0 && in_array($status, ['vacant', 'occupied', 'reserved', 'cleaning', 'disabled'])) {
-            $stmt = $conn->prepare("UPDATE tables SET status = ? WHERE id = ?");
-            $stmt->bind_param("si", $status, $id);
+            $stmt = $conn->prepare("UPDATE tables SET status = ? WHERE id = ? AND restaurant_id = ?");
+            $stmt->bind_param("sii", $status, $id, $tenantId);
             $stmt->execute();
             $stmt->close();
             $_SESSION['success'] = "Table status updated to " . ucfirst($status);
@@ -48,8 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $reserved_by = Security::sanitize($_POST['reserved_by'] ?? 'Guest');
         $guest_count = intval($_POST['guest_count'] ?? 2);
         if ($id > 0) {
-            $stmt = $conn->prepare("UPDATE tables SET status = 'reserved', reserved_by = ?, guest_count = ? WHERE id = ?");
-            $stmt->bind_param("sii", $reserved_by, $guest_count, $id);
+            $stmt = $conn->prepare("UPDATE tables SET status = 'reserved', reserved_by = ?, guest_count = ? WHERE id = ? AND restaurant_id = ?");
+            $stmt->bind_param("siii", $reserved_by, $guest_count, $id, $tenantId);
             $stmt->execute();
             $stmt->close();
             $_SESSION['success'] = "Table reserved for $reserved_by ($guest_count guests)";
@@ -57,8 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($action === 'delete') {
         $id = intval($_POST['id'] ?? 0);
         if ($id > 0) {
-            $stmt = $conn->prepare("DELETE FROM tables WHERE id = ?");
-            $stmt->bind_param("i", $id);
+            $stmt = $conn->prepare("DELETE FROM tables WHERE id = ? AND restaurant_id = ?");
+            $stmt->bind_param("ii", $id, $tenantId);
             $stmt->execute();
             $stmt->close();
             $_SESSION['success'] = "Table deleted successfully";

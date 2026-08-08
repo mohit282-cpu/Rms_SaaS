@@ -8,6 +8,8 @@ if (!$conn) {
     die("Database connection error");
 }
 
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+
 // Handle Gateway Configuration Updates
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     CSRF::requireValidToken();
@@ -22,12 +24,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $environment = Security::sanitize($_POST['environment'] ?? 'sandbox');
         $status = Security::sanitize($_POST['status'] ?? 'enabled');
 
-        if (!empty($name)) {
-            $stmt = $conn->prepare("INSERT INTO payment_gateways (name, merchant_code, public_key, secret_key, environment, status) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE merchant_code=VALUES(merchant_code), public_key=VALUES(public_key), secret_key=IF(VALUES(secret_key) != '', VALUES(secret_key), secret_key), environment=VALUES(environment), status=VALUES(status)");
-            if ($stmt) {
-                $stmt->bind_param("ssssss", $name, $merchant_code, $public_key, $secret_key, $environment, $status);
-                $stmt->execute();
-                $stmt->close();
+        if (!empty($name) && $tenantId > 0) {
+            // Tenant-scoped upsert: never allow one tenant to overwrite another tenant's gateway keys.
+            $chkStmt = $conn->prepare("SELECT id FROM payment_gateways WHERE restaurant_id = ? AND name = ? LIMIT 1");
+            if ($chkStmt) {
+                $chkStmt->bind_param("is", $tenantId, $name);
+                $chkStmt->execute();
+                $existingGw = $chkStmt->get_result()->fetch_assoc();
+                $chkStmt->close();
+
+                if ($existingGw) {
+                    $updStmt = $conn->prepare("UPDATE payment_gateways SET merchant_code = ?, public_key = ?, secret_key = IF(? != '', ?, secret_key), environment = ?, status = ? WHERE id = ? AND restaurant_id = ?");
+                    if ($updStmt) {
+                        $updStmt->bind_param("ssssssii", $merchant_code, $public_key, $secret_key, $secret_key, $environment, $status, $existingGw['id'], $tenantId);
+                        $updStmt->execute();
+                        $updStmt->close();
+                    }
+                } else {
+                    $insStmt = $conn->prepare("INSERT INTO payment_gateways (restaurant_id, name, merchant_code, public_key, secret_key, environment, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    if ($insStmt) {
+                        $insStmt->bind_param("issssss", $tenantId, $name, $merchant_code, $public_key, $secret_key, $environment, $status);
+                        $insStmt->execute();
+                        $insStmt->close();
+                    }
+                }
                 $_SESSION['success'] = strtoupper($name) . " payment gateway configuration updated!";
             }
         }

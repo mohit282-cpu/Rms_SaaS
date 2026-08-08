@@ -8,8 +8,10 @@ if (!$conn) {
     die("Database connection error");
 }
 
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+
 // Fetch Parent Categories for Dropdown
-$parent_cats_res = $conn->query("SELECT id, name FROM categories WHERE parent_id IS NULL ORDER BY name ASC");
+$parent_cats_res = $conn->query("SELECT id, name FROM categories WHERE parent_id IS NULL AND restaurant_id = $tenantId ORDER BY name ASC");
 $parent_categories = [];
 if ($parent_cats_res) {
     while ($p = $parent_cats_res->fetch_assoc()) {
@@ -34,14 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         if (!empty($name)) {
             if ($action === 'create') {
-                $sql = "INSERT INTO categories (name, description, parent_id, icon, display_order, status) VALUES ('" . $conn->real_escape_string($name) . "', '" . $conn->real_escape_string($description) . "', $parent_id, '" . $conn->real_escape_string($icon) . "', $display_order, '$status')";
+                $sql = "INSERT INTO categories (restaurant_id, name, description, parent_id, icon, display_order, status) VALUES ($tenantId, '" . $conn->real_escape_string($name) . "', '" . $conn->real_escape_string($description) . "', $parent_id, '" . $conn->real_escape_string($icon) . "', $display_order, '$status')";
                 if ($conn->query($sql)) {
                     $_SESSION['success'] = "Category '$name' created successfully!";
                 } else {
                     $_SESSION['error'] = "Category '$name' already exists.";
                 }
             } elseif ($action === 'edit' && $id > 0) {
-                $sql = "UPDATE categories SET name = '" . $conn->real_escape_string($name) . "', description = '" . $conn->real_escape_string($description) . "', parent_id = $parent_id, icon = '" . $conn->real_escape_string($icon) . "', display_order = $display_order, status = '$status' WHERE id = $id";
+                $sql = "UPDATE categories SET name = '" . $conn->real_escape_string($name) . "', description = '" . $conn->real_escape_string($description) . "', parent_id = $parent_id, icon = '" . $conn->real_escape_string($icon) . "', display_order = $display_order, status = '$status' WHERE id = $id AND restaurant_id = $tenantId";
                 $conn->query($sql);
                 $_SESSION['success'] = "Category '$name' updated successfully!";
             }
@@ -50,20 +52,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $id = intval($_POST['id'] ?? 0);
         $new_status = Security::sanitize($_POST['status'] ?? 'active');
         if ($id > 0) {
-            $conn->query("UPDATE categories SET status = '$new_status' WHERE id = $id");
+            $conn->query("UPDATE categories SET status = '$new_status' WHERE id = $id AND restaurant_id = $tenantId");
             $_SESSION['success'] = "Category visibility updated to " . strtoupper($new_status);
         }
     } elseif ($action === 'delete') {
         $id = intval($_POST['id'] ?? 0);
         if ($id > 0) {
             // Check if items are assigned
-            $check_res = $conn->query("SELECT COUNT(*) as cnt FROM menu_items WHERE category_id = $id");
+            $check_res = $conn->query("SELECT COUNT(*) as cnt FROM menu_items WHERE category_id = $id AND restaurant_id = $tenantId");
             $item_count = $check_res ? intval($check_res->fetch_assoc()['cnt']) : 0;
 
             if ($item_count > 0) {
                 $_SESSION['error'] = "Cannot delete category. Move or reassign $item_count menu items first.";
             } else {
-                $conn->query("DELETE FROM categories WHERE id = $id");
+                $conn->query("DELETE FROM categories WHERE id = $id AND restaurant_id = $tenantId");
                 $_SESSION['success'] = "Category deleted successfully!";
             }
         }

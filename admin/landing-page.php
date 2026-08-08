@@ -8,6 +8,8 @@ if (!$conn) {
     die("Database connection error");
 }
 
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
+
 // Handle Form Submission (Save & Publish Website Changes)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     CSRF::requireValidToken();
@@ -54,17 +56,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Check if record exists
-    $check = $conn->query("SELECT id FROM landing_page_settings LIMIT 1");
+    $check = $conn->query("SELECT id FROM landing_page_settings WHERE restaurant_id = $tenantId LIMIT 1");
     if ($check && $check->num_rows > 0) {
         $row = $check->fetch_assoc();
         $id = $row['id'];
-        $stmt = $conn->prepare("UPDATE landing_page_settings SET brand_name=?, brand_logo=?, brand_logo_image=?, hero_badge=?, hero_title=?, hero_subtitle=?, hero_cta_primary=?, hero_cta_secondary=?, qr_notice_text=?, about_badge=?, about_title=?, about_text=?, about_feature1_title=?, about_feature1_desc=?, about_feature2_title=?, about_feature2_desc=?, dishes_badge=?, dishes_title=?, dishes_subtitle=?, location_title=?, location_address=?, contact_phone=?, contact_email=?, hours_title=?, opening_hours=?, hero_image=?, footer_copyright=? WHERE id=?");
-        $stmt->bind_param("sssssssssssssssssssssssssssi", $brand_name, $brand_logo, $brand_logo_image, $hero_badge, $hero_title, $hero_subtitle, $hero_cta_primary, $hero_cta_secondary, $qr_notice_text, $about_badge, $about_title, $about_text, $about_feature1_title, $about_feature1_desc, $about_feature2_title, $about_feature2_desc, $dishes_badge, $dishes_title, $dishes_subtitle, $location_title, $location_address, $contact_phone, $contact_email, $hours_title, $opening_hours, $hero_image, $footer_copyright, $id);
+        $stmt = $conn->prepare("UPDATE landing_page_settings SET brand_name=?, brand_logo=?, brand_logo_image=?, hero_badge=?, hero_title=?, hero_subtitle=?, hero_cta_primary=?, hero_cta_secondary=?, qr_notice_text=?, about_badge=?, about_title=?, about_text=?, about_feature1_title=?, about_feature1_desc=?, about_feature2_title=?, about_feature2_desc=?, dishes_badge=?, dishes_title=?, dishes_subtitle=?, location_title=?, location_address=?, contact_phone=?, contact_email=?, hours_title=?, opening_hours=?, hero_image=?, footer_copyright=? WHERE id=? AND restaurant_id=?");
+        $stmt->bind_param("sssssssssssssssssssssssssssii", $brand_name, $brand_logo, $brand_logo_image, $hero_badge, $hero_title, $hero_subtitle, $hero_cta_primary, $hero_cta_secondary, $qr_notice_text, $about_badge, $about_title, $about_text, $about_feature1_title, $about_feature1_desc, $about_feature2_title, $about_feature2_desc, $dishes_badge, $dishes_title, $dishes_subtitle, $location_title, $location_address, $contact_phone, $contact_email, $hours_title, $opening_hours, $hero_image, $footer_copyright, $id, $tenantId);
         $stmt->execute();
         $stmt->close();
     } else {
-        $stmt = $conn->prepare("INSERT INTO landing_page_settings (brand_name, brand_logo, brand_logo_image, hero_badge, hero_title, hero_subtitle, hero_cta_primary, hero_cta_secondary, qr_notice_text, about_badge, about_title, about_text, about_feature1_title, about_feature1_desc, about_feature2_title, about_feature2_desc, dishes_badge, dishes_title, dishes_subtitle, location_title, location_address, contact_phone, contact_email, hours_title, opening_hours, hero_image, footer_copyright) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssssssssssssssssssssssss", $brand_name, $brand_logo, $brand_logo_image, $hero_badge, $hero_title, $hero_subtitle, $hero_cta_primary, $hero_cta_secondary, $qr_notice_text, $about_badge, $about_title, $about_text, $about_feature1_title, $about_feature1_desc, $about_feature2_title, $about_feature2_desc, $dishes_badge, $dishes_title, $dishes_subtitle, $location_title, $location_address, $contact_phone, $contact_email, $hours_title, $opening_hours, $hero_image, $footer_copyright);
+        $stmt = $conn->prepare("INSERT INTO landing_page_settings (restaurant_id, brand_name, brand_logo, brand_logo_image, hero_badge, hero_title, hero_subtitle, hero_cta_primary, hero_cta_secondary, qr_notice_text, about_badge, about_title, about_text, about_feature1_title, about_feature1_desc, about_feature2_title, about_feature2_desc, dishes_badge, dishes_title, dishes_subtitle, location_title, location_address, contact_phone, contact_email, hours_title, opening_hours, hero_image, footer_copyright) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("isssssssssssssssssssssssssss", $tenantId, $brand_name, $brand_logo, $brand_logo_image, $hero_badge, $hero_title, $hero_subtitle, $hero_cta_primary, $hero_cta_secondary, $qr_notice_text, $about_badge, $about_title, $about_text, $about_feature1_title, $about_feature1_desc, $about_feature2_title, $about_feature2_desc, $dishes_badge, $dishes_title, $dishes_subtitle, $location_title, $location_address, $contact_phone, $contact_email, $hours_title, $opening_hours, $hero_image, $footer_copyright);
         $stmt->execute();
         $stmt->close();
     }
@@ -75,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Fetch current settings
-$res = $conn->query("SELECT * FROM landing_page_settings LIMIT 1");
+$res = $conn->query("SELECT * FROM landing_page_settings WHERE restaurant_id = $tenantId LIMIT 1");
 $settings = ($res && $res->num_rows > 0) ? $res->fetch_assoc() : [];
 
 $defaults = [
