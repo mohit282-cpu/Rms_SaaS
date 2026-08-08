@@ -2,9 +2,7 @@
 // api/payment-stream.php - Realtime Nepal FinTech Payment Gateway Stream API
 require_once __DIR__ . '/../config.php';
 
-if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn()) {
-    Response::error('Unauthorized access. Staff authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 // Release session lock so multiple browser tabs can poll concurrently.
 session_write_close();
 
@@ -15,9 +13,9 @@ if (!$conn) {
 
 $today = date('Y-m-d');
 
-// 1. Fetch Payment Metrics KPI
-$txn_res = $conn->query("
-    SELECT 
+// 1. Fetch Payment Metrics KPI (tenant-scoped)
+$kpi_stmt = $conn->prepare("
+    SELECT
         COUNT(*) as total_txns,
         SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_rev,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_cnt,
@@ -25,32 +23,41 @@ $txn_res = $conn->query("
         SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END) as refund_total,
         AVG(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as avg_amount
     FROM payment_transactions
-    WHERE DATE(created_at) = '$today'
+    WHERE restaurant_id = ? AND DATE(created_at) = ?
 ");
-$kpi = $txn_res ? $txn_res->fetch_assoc() : [];
+$kpi_stmt->bind_param("is", $tenantId, $today);
+$kpi_stmt->execute();
+$kpi = $kpi_stmt->get_result()->fetch_assoc() ?: [];
+$kpi_stmt->close();
 
 $total_txns = intval($kpi['total_txns'] ?? 0);
 $failed_txns = intval($kpi['failed_cnt'] ?? 0);
 $success_rate = ($total_txns > 0) ? round((($total_txns - $failed_txns) / $total_txns) * 100, 1) . '%' : '100%';
 
-// Most Used Gateway Today
-$most_used_res = $conn->query("
-    SELECT gateway_name, COUNT(*) as cnt 
-    FROM payment_transactions 
-    WHERE DATE(created_at) = '$today' AND status = 'paid' 
-    GROUP BY gateway_name 
+// Most Used Gateway Today (tenant-scoped)
+$most_stmt = $conn->prepare("
+    SELECT gateway_name, COUNT(*) as cnt
+    FROM payment_transactions
+    WHERE restaurant_id = ? AND DATE(created_at) = ? AND status = 'paid'
+    GROUP BY gateway_name
     ORDER BY cnt DESC LIMIT 1
 ");
-$most_used_row = $most_used_res ? $most_used_res->fetch_assoc() : null;
+$most_stmt->bind_param("is", $tenantId, $today);
+$most_stmt->execute();
+$most_used_row = $most_stmt->get_result()->fetch_assoc() ?: null;
+$most_stmt->close();
 $most_used_gw = $most_used_row ? strtoupper($most_used_row['gateway_name']) : 'eSewa';
 
-// Revenue Breakdown by Gateway
-$rev_by_gw_res = $conn->query("
-    SELECT gateway_name, SUM(amount) as rev 
-    FROM payment_transactions 
-    WHERE DATE(created_at) = '$today' AND status = 'paid' 
+// Revenue Breakdown by Gateway (tenant-scoped)
+$rev_stmt = $conn->prepare("
+    SELECT gateway_name, SUM(amount) as rev
+    FROM payment_transactions
+    WHERE restaurant_id = ? AND DATE(created_at) = ? AND status = 'paid'
     GROUP BY gateway_name
 ");
+$rev_stmt->bind_param("is", $tenantId, $today);
+$rev_stmt->execute();
+$rev_by_gw_res = $rev_stmt->get_result();
 $revenue_by_gateway = ['esewa' => 0.0, 'khalti' => 0.0, 'fonepay' => 0.0, 'connectips' => 0.0, 'imepay' => 0.0];
 if ($rev_by_gw_res) {
     while ($r = $rev_by_gw_res->fetch_assoc()) {
@@ -60,30 +67,41 @@ if ($rev_by_gw_res) {
         }
     }
 }
+$rev_stmt->close();
 
-// 2. Fetch All 5 Gateways Configuration
-$gateways_res = $conn->query("SELECT * FROM payment_gateways ORDER BY name ASC");
+// 2. Fetch Gateway Configuration (NEVER expose secret keys)
+$gw_stmt = $conn->prepare("SELECT id, name, merchant_code, public_key, environment, status, updated_at FROM payment_gateways WHERE restaurant_id = ? ORDER BY name ASC");
+$gw_stmt->bind_param("i", $tenantId);
+$gw_stmt->execute();
+$gateways_res = $gw_stmt->get_result();
 $gateways = [];
 if ($gateways_res) {
     while ($gw = $gateways_res->fetch_assoc()) {
-        $gw['secret_key_masked'] = !empty($gw['secret_key']) ? substr($gw['secret_key'], 0, 4) . '****************' : 'Not Set';
+        $gw['secret_key_masked'] = 'Not Set'; // secret_key is never loaded from the DB here
         $gateways[$gw['name']] = $gw;
     }
 }
+$gw_stmt->close();
 
-// 3. Fetch Recent Transactions Log
-$txns_log_res = $conn->query("
-    SELECT pt.*, o.table_number, o.customer_name 
+// 3. Fetch Recent Transactions Log (tenant-scoped)
+$txns_stmt = $conn->prepare("
+    SELECT pt.id, pt.transaction_id, pt.gateway_name, pt.amount, pt.status, pt.reference_id, pt.created_at,
+           o.table_number, o.customer_name
     FROM payment_transactions pt
-    LEFT JOIN orders o ON pt.order_id = o.id
+    LEFT JOIN orders o ON pt.order_id = o.id AND o.restaurant_id = ?
+    WHERE pt.restaurant_id = ?
     ORDER BY pt.id DESC LIMIT 20
 ");
+$txns_stmt->bind_param("ii", $tenantId, $tenantId);
+$txns_stmt->execute();
+$txns_log_res = $txns_stmt->get_result();
 $transactions = [];
 if ($txns_log_res) {
     while ($t = $txns_log_res->fetch_assoc()) {
         $transactions[] = $t;
     }
 }
+$txns_stmt->close();
 
 Response::json([
     'success' => true,

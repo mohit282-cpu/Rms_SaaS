@@ -10,7 +10,17 @@ if (!$conn) {
     exit;
 }
 
-$res = $conn->query("SELECT id, status FROM menu_items");
+// Tenant-scoped: returns nothing when no dining/staff session context exists.
+$tenantId = (int)TenantContext::getTenantId();
+if ($tenantId <= 0) {
+    echo json_encode(['success' => false, 'items' => []]);
+    exit;
+}
+
+$stmt = $conn->prepare("SELECT id, status FROM menu_items WHERE restaurant_id = ?");
+$stmt->bind_param("i", $tenantId);
+$stmt->execute();
+$res = $stmt->get_result();
 $items = [];
 if ($res) {
     while ($row = $res->fetch_assoc()) {
@@ -20,7 +30,7 @@ if ($res) {
         ];
     }
 }
+$stmt->close();
 
 $conn->close();
 echo json_encode(['success' => true, 'items' => $items]);
-?>

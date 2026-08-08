@@ -1,105 +1,137 @@
 <?php
-// helpers/RateLimiter.php - Rate Limiting & Brute Force Protection
+// helpers/RateLimiter.php - Server-Side Rate Limiting (DB-backed store)
 
 class RateLimiter {
+    private static $tableReady = null;
 
     /**
-     * Check if client IP / key exceeded rate limit
-     * @param string $key Unique identifier for key/action (e.g. "login_ip")
-     * @param int $maxAttempts Allowed attempts
-     * @param int $decaySeconds Lockout duration in seconds
+     * Ensure the rate_limits table exists. Runs at most once per request.
      */
-    public static function isExceeded($key, $maxAttempts = 5, $decaySeconds = 300) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
+    private static function ensureTable(mysqli $conn): void {
+        if (self::$tableReady === true) return;
+        if (self::$tableReady === false) return;
+
+        $found = $conn->query("SHOW TABLES LIKE 'rate_limits'");
+        $exists = $found && $found->num_rows > 0;
+        if (!$exists) {
+            $conn->query("CREATE TABLE IF NOT EXISTS rate_limits (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                rate_key VARCHAR(190) NOT NULL,
+                window_start BIGINT NOT NULL,
+                hits INT NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_rate_key_window (rate_key, window_start)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            $exists = ($conn->error === '');
         }
-
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $sessionKey = 'rate_limit_' . md5($key . '_' . $ip);
-
-        $now = time();
-        $data = $_SESSION[$sessionKey] ?? ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
-
-        // Check if currently locked
-        if (!empty($data['locked_until']) && $now < $data['locked_until']) {
-            return true;
-        }
-
-        // Reset if decay period passed since first attempt
-        if ($now - $data['first_attempt'] > $decaySeconds) {
-            $data = ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
-        }
-
-        return false;
+        self::$tableReady = $exists;
     }
 
     /**
-     * Check if rate limit is not exceeded (returns true if allowed)
+     * Record one hit for a rate-limited action.
      */
-    public static function check($key, $maxAttempts = 5, $decaySeconds = 300): bool {
-        return !self::isExceeded($key, $maxAttempts, $decaySeconds);
+    public static function hit(string $key, int $windowSeconds): void {
+        $conn = getDBConnection();
+        if ($conn) {
+            self::ensureTable($conn);
+            if (self::$tableReady === true) {
+                $now = time();
+                $window = (int)floor($now / max(1, $windowSeconds));
+                $stmt = $conn->prepare("INSERT INTO rate_limits (rate_key, window_start, hits) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE hits = hits + 1");
+                if ($stmt) {
+                    $stmt->bind_param("si", $key, $window);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+                // Opportunistic pruning (best-effort, not on the critical path).
+                $conn->query("DELETE FROM rate_limits WHERE window_start < " . (int)($now - 172800));
+                return;
+            }
+        }
+
+        // Best-effort fallback when the DB store is unavailable (never a total bypass).
+        Auth::startSession();
+        $sk = 'rl_' . md5($key);
+        $w = (int)floor(time() / max(1, $windowSeconds));
+        if (!isset($_SESSION[$sk]['w']) || $_SESSION[$sk]['w'] !== $w) {
+            $_SESSION[$sk] = ['w' => $w, 'h' => 0];
+        }
+        $_SESSION[$sk]['h']++;
     }
 
     /**
-     * Hit / Record an attempt for a key
+     * Check whether a rate-limited action is currently allowed.
+     * Returns true when the action may proceed, false when the limit is exceeded.
      */
-    public static function hit($key, $maxAttempts = 5, $decaySeconds = 300) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
+    public static function check(string $key, int $limit, int $windowSeconds): bool {
+        $conn = getDBConnection();
+        if ($conn) {
+            self::ensureTable($conn);
+            if (self::$tableReady === true) {
+                $window = (int)floor(time() / max(1, $windowSeconds));
+                $stmt = $conn->prepare("SELECT hits FROM rate_limits WHERE rate_key = ? AND window_start = ? LIMIT 1");
+                if ($stmt) {
+                    $stmt->bind_param("si", $key, $window);
+                    $stmt->execute();
+                    $res = $stmt->get_result();
+                    $row = $res->fetch_assoc();
+                    $stmt->close();
+                    $hits = $row ? (int)$row['hits'] : 0;
+                    return $hits < $limit;
+                }
+            }
         }
 
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $sessionKey = 'rate_limit_' . md5($key . '_' . $ip);
-
-        $now = time();
-        $data = $_SESSION[$sessionKey] ?? ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
-
-        if ($now - $data['first_attempt'] > $decaySeconds) {
-            $data = ['attempts' => 0, 'first_attempt' => $now, 'locked_until' => 0];
-        }
-
-        $data['attempts'] += 1;
-
-        if ($data['attempts'] >= $maxAttempts) {
-            $data['locked_until'] = $now + $decaySeconds;
-        }
-
-        $_SESSION[$sessionKey] = $data;
+        Auth::startSession();
+        $sk = 'rl_' . md5($key);
+        $w = (int)floor(time() / max(1, $windowSeconds));
+        $hits = (isset($_SESSION[$sk]['w']) && $_SESSION[$sk]['w'] === $w) ? (int)$_SESSION[$sk]['h'] : 0;
+        return $hits < $limit;
     }
 
     /**
-     * Clear / Reset attempts on successful action
+     * Convenience wrapper: enforce a limit or exit with 429.
      */
-    public static function clear($key) {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $sessionKey = 'rate_limit_' . md5($key . '_' . $ip);
-        unset($_SESSION[$sessionKey]);
-    }
-
-    /**
-     * Require rate limit check or respond with 429 Too Many Requests.
-     * Automatically increments counter (hit) when called (Fixes RMS-002 & RMS-003).
-     */
-    public static function enforce($key, $maxAttempts = 5, $decaySeconds = 300) {
-        // Automatically record hit on enforce call
-        self::hit($key, $maxAttempts, $decaySeconds);
-
-        if (self::isExceeded($key, $maxAttempts, $decaySeconds)) {
+    public static function limit(string $key, int $limit, int $windowSeconds): void {
+        if (!self::check($key, $limit, $windowSeconds)) {
             http_response_code(429);
-            $isJson = (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
-                      (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) ||
-                      (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest');
-
-            if ($isJson) {
+            if (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
                 header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Too many requests. Please try again later.']);
+                echo json_encode(['success' => false, 'message' => 'Rate limit exceeded. Please try again later.']);
                 exit;
             }
+            die('Too many requests. Please wait a few minutes before trying again.');
+        }
+    }
 
-            die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><title>429 Too Many Requests</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center"><div class="max-w-md bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4"><div class="text-5xl">⏳</div><h1 class="text-xl font-black text-white">429 Too Many Requests</h1><p class="text-xs text-zinc-400">Rate limit exceeded. Please wait a few minutes before trying again.</p></div></body></html>');
+    /**
+     * Backward-compatible alias for limit().
+     */
+    public static function enforce(string $key, int $limit, int $windowSeconds): void {
+        self::limit($key, $limit, $windowSeconds);
+    }
+
+    /**
+     * Clear rate limit hits for a specific key (e.g. after a successful login)
+     */
+    public static function clear(string $key): void {
+        $conn = getDBConnection();
+        if ($conn) {
+            self::ensureTable($conn);
+            if (self::$tableReady === true) {
+                $stmt = $conn->prepare("DELETE FROM rate_limits WHERE rate_key = ?");
+                if ($stmt) {
+                    $stmt->bind_param("s", $key);
+                    $stmt->execute();
+                    $stmt->close();
+                }
+            }
+        }
+
+        Auth::startSession();
+        $sk = 'rl_' . md5($key);
+        if (isset($_SESSION[$sk])) {
+            unset($_SESSION[$sk]);
         }
     }
 }

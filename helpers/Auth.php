@@ -9,7 +9,12 @@ class Auth {
     public static function startSession() {
         if (session_status() === PHP_SESSION_NONE) {
             $isHttps = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-            
+
+            // Session fixation hardening: PHP must reject externally-supplied session IDs.
+            @ini_set('session.use_strict_mode', '1');
+            @ini_set('session.use_only_cookies', '1');
+            @ini_set('session.cookie_samesite', 'Lax');
+
             session_set_cookie_params([
                 'lifetime' => 0,
                 'path' => '/',
@@ -26,6 +31,10 @@ class Auth {
         $maxIdleTime = 7200;
         if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > $maxIdleTime)) {
             self::logout();
+            // The session was destroyed; start a fresh one for this request only.
+            if (session_status() === PHP_SESSION_NONE) {
+                session_start();
+            }
         }
         $_SESSION['last_activity'] = time();
     }
@@ -53,7 +62,8 @@ class Auth {
      */
     public static function isKitchenLoggedIn() {
         self::startSession();
-        return (isset($_SESSION['kitchen_logged_in']) && $_SESSION['kitchen_logged_in'] === true) || self::isAdminLoggedIn();
+        // KDS is a separate authorization boundary. Staff logins do NOT implicitly grant kitchen access.
+        return (isset($_SESSION['kitchen_logged_in']) && $_SESSION['kitchen_logged_in'] === true);
     }
 
     /**
@@ -76,6 +86,9 @@ class Auth {
 
     /**
      * Require Kitchen Login or return lock screen
+     * KDS authentication is tenant-scoped: the KDS password is read from the
+     * active restaurant's landing_page_settings row and must be a bcrypt hash.
+     * There is NO hardcoded default password and NO implicit admin grant.
      */
     public static function requireKitchen() {
         self::startSession();
@@ -86,33 +99,71 @@ class Auth {
             exit;
         }
 
+        $tenantId = TenantContext::getTenantId();
+
         if (isset($_POST['kds_action']) && $_POST['kds_action'] === 'kds_login') {
+            if (!CSRF::verifyToken()) {
+                http_response_code(403);
+                die('Security check failed. Invalid or missing CSRF token.');
+            }
+
             $pass = trim($_POST['kds_password'] ?? '');
-            
-            // Fetch KDS password hash or plain text fallback from DB
-            $expected = 'kitchen123';
-            $conn = getDBConnection();
-            if ($conn) {
-                $res = $conn->query("SELECT kds_password FROM landing_page_settings LIMIT 1");
-                if ($res && $row = $res->fetch_assoc()) {
-                    if (!empty($row['kds_password'])) $expected = $row['kds_password'];
+
+            if (class_exists('RateLimiter')) {
+                $rlKey = 'kds_login_' . $tenantId . '_' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+                if (!RateLimiter::check($rlKey, 5, 300)) {
+                    http_response_code(429);
+                    die('Too many login attempts. Please wait a few minutes and try again.');
                 }
             }
 
-            if ($pass === $expected || password_verify($pass, $expected)) {
+            // Fetch the tenant-scoped KDS password hash.
+            $stored = '';
+            if ($tenantId > 0) {
+                $conn = getDBConnection();
+                if ($conn) {
+                    $stmt = $conn->prepare("SELECT kds_password FROM landing_page_settings WHERE restaurant_id = ? LIMIT 1");
+                    if ($stmt) {
+                        $stmt->bind_param("i", $tenantId);
+                        $stmt->execute();
+                        $res = $stmt->get_result();
+                        if ($row = $res->fetch_assoc()) {
+                            $stored = (string)($row['kds_password'] ?? '');
+                        }
+                        $stmt->close();
+                    }
+                }
+            }
+
+            // Fail closed: no stored password, or password mismatch => deny.
+            $valid = false;
+            if ($stored !== '') {
+                if (strpos($stored, '$2y$') === 0 || strpos($stored, '$2a$') === 0 || strpos($stored, '$2b$') === 0) {
+                    $valid = password_verify($pass, $stored);
+                } else {
+                    // Legacy plaintext storage is not allowed for new systems, but
+                    // keep migration compatibility for existing tenants via a constant-time compare.
+                    $valid = hash_equals($stored, $pass);
+                }
+            }
+
+            if ($valid) {
                 self::regenerateSession();
                 $_SESSION['kitchen_logged_in'] = true;
+                if ($tenantId > 0) {
+                    $_SESSION['kitchen_restaurant_id'] = $tenantId;
+                }
                 header('Location: ' . $_SERVER['PHP_SELF']);
                 exit;
             } else {
+                if (class_exists('RateLimiter')) {
+                    RateLimiter::hit($rlKey, 300);
+                }
                 $_SESSION['kds_error'] = 'Invalid Kitchen Password!';
             }
         }
 
-        if (self::isAdminLoggedIn()) {
-            $_SESSION['kitchen_logged_in'] = true;
-        }
-
+        // Admin logins do NOT automatically unlock the KDS.
         if (!isset($_SESSION['kitchen_logged_in']) || $_SESSION['kitchen_logged_in'] !== true) {
             $error = $_SESSION['kds_error'] ?? null;
             unset($_SESSION['kds_error']);
@@ -173,7 +224,7 @@ class Auth {
                 echo json_encode(['success' => false, 'message' => 'Super Admin access required.']);
                 exit;
             }
-            header('Location: /RMS_System/super-admin/login.php');
+            header('Location: login.php');
             exit;
         }
     }
@@ -195,8 +246,15 @@ class Auth {
         self::startSession();
         if (self::isSuperAdmin()) return true;
 
-        $role = strtoupper($_SESSION['role'] ?? 'OWNER');
-        
+        // Fail closed: an unset/unknown role is granted nothing.
+        $role = strtoupper((string)($_SESSION['role'] ?? ''));
+        if ($role === '') return false;
+
+        if (class_exists('PermissionService')) {
+            return PermissionService::hasPermission($role, $permission);
+        }
+
+        // Legacy fallback (only when PermissionService is not loaded).
         $rolePermissions = [
             'OWNER' => ['*'],
             'MANAGER' => ['orders.*', 'payments.*', 'inventory.*', 'tables.*', 'menu.*', 'reports.view'],
@@ -210,8 +268,7 @@ class Auth {
             $perms = $rolePermissions[$role];
             if (in_array('*', $perms)) return true;
             if (in_array($permission, $perms)) return true;
-            
-            // Check wildcards like 'orders.*'
+
             list($group) = explode('.', $permission);
             if (in_array($group . '.*', $perms)) return true;
         }

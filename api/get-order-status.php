@@ -17,17 +17,22 @@ if ($order_id === 0) {
     Response::error('Invalid order ID', 400);
 }
 
+$tenantId = (int)TenantContext::getTenantId();
+if ($tenantId <= 0) {
+    Response::error('Forbidden. No tenant context.', 403);
+}
+
 // Require staff auth or session table match (Fixes RMS-017 & RMS-018)
 if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn() && empty($session_table)) {
     Response::error('Unauthorized access. Active table session required.', 403);
 }
 
 if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn()) {
-    $stmt = $conn->prepare("SELECT id, table_number, status, notes, total_amount, created_at FROM orders WHERE id = ? AND table_number = ? LIMIT 1");
-    $stmt->bind_param("is", $order_id, $session_table);
+    $stmt = $conn->prepare("SELECT id, table_number, status, notes, total_amount, created_at FROM orders WHERE id = ? AND restaurant_id = ? AND table_number = ? LIMIT 1");
+    $stmt->bind_param("iis", $order_id, $tenantId, $session_table);
 } else {
-    $stmt = $conn->prepare("SELECT id, table_number, status, notes, total_amount, created_at FROM orders WHERE id = ? LIMIT 1");
-    $stmt->bind_param("i", $order_id);
+    $stmt = $conn->prepare("SELECT id, table_number, status, notes, total_amount, created_at FROM orders WHERE id = ? AND restaurant_id = ? LIMIT 1");
+    $stmt->bind_param("ii", $order_id, $tenantId);
 }
 
 $stmt->execute();

@@ -2,9 +2,7 @@
 // api/orders-stream.php - Realtime POS Order Management Stream API
 require_once __DIR__ . '/../config.php';
 
-if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn()) {
-    Response::error('Unauthorized access. Staff authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 // Release session lock so multiple browser tabs can poll concurrently.
 session_write_close();
 
@@ -15,39 +13,54 @@ if (!$conn) {
 
 $today = date('Y-m-d');
 
-// Handle POST Status Updates with SQL Transaction & State Lock
+// Handle POST Status Updates with SQL Transaction & State Lock (tenant-scoped)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
     $order_id = intval($_POST['order_id'] ?? 0);
     $new_status = Security::sanitize($_POST['status'] ?? '');
-    
+
     if ($order_id > 0 && in_array($new_status, ['new', 'preparing', 'ready', 'completed', 'cancelled'])) {
         $conn->begin_transaction();
         try {
-            $stmt = $conn->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?");
+            $stmt = $conn->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
             if ($stmt) {
-                $stmt->bind_param("si", $new_status, $order_id);
+                $stmt->bind_param("sii", $new_status, $order_id, $tenantId);
                 $stmt->execute();
                 $stmt->close();
             }
 
             // If order completed, update table status if no other active orders remain on table
             if ($new_status === 'completed') {
-                $t_res = $conn->query("SELECT table_number FROM orders WHERE id = $order_id LIMIT 1");
-                if ($t_res && $t_row = $t_res->fetch_assoc()) {
-                    $tbl_num = $conn->real_escape_string($t_row['table_number']);
-                    $active_check = $conn->query("SELECT id FROM orders WHERE table_number = '$tbl_num' AND status IN ('new', 'preparing', 'ready') AND id != $order_id LIMIT 1");
+                $t_stmt = $conn->prepare("SELECT table_number FROM orders WHERE id = ? AND restaurant_id = ? LIMIT 1");
+                $t_stmt->bind_param("ii", $order_id, $tenantId);
+                $t_stmt->execute();
+                $t_res = $t_stmt->get_result();
+                if ($t_row = $t_res->fetch_assoc()) {
+                    $t_stmt->close();
+                    $tbl_num = $t_row['table_number'];
+                    $active_stmt = $conn->prepare("SELECT id FROM orders WHERE table_number = ? AND restaurant_id = ? AND status IN ('new', 'preparing', 'ready') AND id != ? LIMIT 1");
+                    $active_stmt->bind_param("sii", $tbl_num, $tenantId, $order_id);
+                    $active_stmt->execute();
+                    $active_check = $active_stmt->get_result();
                     if (!$active_check || $active_check->num_rows == 0) {
-                        $conn->query("UPDATE tables SET status = 'vacant' WHERE table_number = '$tbl_num'");
+                        $active_stmt->close();
+                        $upd_stmt = $conn->prepare("UPDATE tables SET status = 'vacant' WHERE table_number = ? AND restaurant_id = ?");
+                        $upd_stmt->bind_param("si", $tbl_num, $tenantId);
+                        $upd_stmt->execute();
+                        $upd_stmt->close();
+                    } else {
+                        $active_stmt->close();
                     }
+                } else {
+                    $t_stmt->close();
                 }
             }
 
-            // Audit log event
-            $user_role = $_SESSION['admin_user'] ?? 'kitchen';
-            $audit = $conn->prepare("INSERT INTO audit_logs (username, event_type, description) VALUES (?, 'ORDER_STATUS_UPDATE', ?)");
+            // Audit log event (tenant-scoped)
+            $user_role = $_SESSION['admin_username'] ?? 'kitchen';
+            $audit = $conn->prepare("INSERT INTO audit_logs (restaurant_id, username, event_type, description) VALUES (?, ?, 'ORDER_STATUS_UPDATE', ?)");
             if ($audit) {
                 $desc = "Order #$order_id status changed to " . strtoupper($new_status);
-                $audit->bind_param("ss", $user_role, $desc);
+                $audit->bind_param("iss", $tenantId, $user_role, $desc);
                 $audit->execute();
                 $audit->close();
             }
@@ -73,22 +86,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $conn->begin_transaction();
         try {
             if ($table_id > 0) {
-                $stmt = $conn->prepare("UPDATE tables SET status = ? WHERE id = ?");
-                $stmt->bind_param("si", $status, $table_id);
+                $stmt = $conn->prepare("UPDATE tables SET status = ? WHERE id = ? AND restaurant_id = ?");
+                $stmt->bind_param("sii", $status, $table_id, $tenantId);
                 $stmt->execute();
                 $stmt->close();
             } elseif (!empty($table_number)) {
-                $stmt = $conn->prepare("UPDATE tables SET status = ? WHERE table_number = ?");
-                $stmt->bind_param("ss", $status, $table_number);
+                $stmt = $conn->prepare("UPDATE tables SET status = ? WHERE table_number = ? AND restaurant_id = ?");
+                $stmt->bind_param("ssi", $status, $table_number, $tenantId);
                 $stmt->execute();
                 $stmt->close();
             }
 
-            // If marked vacant or cleaning, close active dining session
+            // If marked vacant or cleaning, close active dining session (tenant-scoped)
             if ($status === 'vacant' || $status === 'cleaning') {
-                $tbl_safe = $conn->real_escape_string($table_number);
-                $conn->query("UPDATE orders SET payment_status = 'paid', status = 'completed' WHERE table_number = '$tbl_safe' AND payment_status = 'pending'");
-                $conn->query("UPDATE dining_sessions SET status = 'closed' WHERE table_number = '$tbl_safe' AND status = 'active'");
+                $upd1 = $conn->prepare("UPDATE orders SET payment_status = 'paid', status = 'completed' WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending'");
+                $upd1->bind_param("si", $table_number, $tenantId);
+                $upd1->execute();
+                $upd1->close();
+                $upd2 = $conn->prepare("UPDATE dining_sessions SET status = 'closed' WHERE table_number = ? AND restaurant_id = ? AND status = 'active'");
+                $upd2->bind_param("si", $table_number, $tenantId);
+                $upd2->execute();
+                $upd2->close();
             }
 
             $conn->commit();
@@ -102,19 +120,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Handle POST Settle & Bill Payment
+// Handle POST Settle & Bill Payment (tenant-scoped)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'settle_table_payment') {
     $table_number = Security::sanitize($_POST['table_number'] ?? '');
     if (!empty($table_number)) {
         $conn->begin_transaction();
         try {
-            $tbl_safe = $conn->real_escape_string($table_number);
-            // Settle all pending orders for this table
-            $conn->query("UPDATE orders SET payment_status = 'paid', status = 'completed', updated_at = NOW() WHERE table_number = '$tbl_safe' AND payment_status = 'pending'");
-            // Close active dining session
-            $conn->query("UPDATE dining_sessions SET status = 'closed', ended_at = NOW() WHERE table_number = '$tbl_safe' AND status = 'active'");
-            // Set table status to vacant
-            $conn->query("UPDATE tables SET status = 'vacant' WHERE table_number = '$tbl_safe'");
+            $upd1 = $conn->prepare("UPDATE orders SET payment_status = 'paid', status = 'completed', updated_at = NOW() WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending'");
+            $upd1->bind_param("si", $table_number, $tenantId);
+            $upd1->execute();
+            $upd1->close();
+
+            $upd2 = $conn->prepare("UPDATE dining_sessions SET status = 'closed', ended_at = NOW() WHERE table_number = ? AND restaurant_id = ? AND status = 'active'");
+            $upd2->bind_param("si", $table_number, $tenantId);
+            $upd2->execute();
+            $upd2->close();
+
+            $upd3 = $conn->prepare("UPDATE tables SET status = 'vacant' WHERE table_number = ? AND restaurant_id = ?");
+            $upd3->bind_param("si", $table_number, $tenantId);
+            $upd3->execute();
+            $upd3->close();
 
             $conn->commit();
             Response::success("Table $table_number bill settled & marked vacant successfully!");
@@ -129,9 +154,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 $status_filter = Security::sanitize($_GET['status'] ?? 'all');
 
-// 1. Fetch KPI Counters
-$today_orders_res = $conn->query("
-    SELECT 
+// 1. Fetch KPI Counters (tenant-scoped)
+$today_orders_stmt = $conn->prepare("
+    SELECT
         SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) as cnt_new,
         SUM(CASE WHEN status = 'preparing' THEN 1 ELSE 0 END) as cnt_preparing,
         SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END) as cnt_ready,
@@ -140,26 +165,33 @@ $today_orders_res = $conn->query("
         SUM(CASE WHEN payment_status = 'pending' AND status IN ('new', 'preparing', 'ready') THEN 1 ELSE 0 END) as cnt_pending_pay,
         SUM(CASE WHEN status IN ('new', 'preparing') AND TIMESTAMPDIFF(MINUTE, created_at, NOW()) > 20 THEN 1 ELSE 0 END) as cnt_delayed,
         SUM(CASE WHEN status = 'completed' THEN total_amount ELSE 0 END) as rev_today
-    FROM orders 
-    WHERE DATE(created_at) = '$today'
+    FROM orders
+    WHERE restaurant_id = ? AND DATE(created_at) = ?
 ");
-
+$today_orders_stmt->bind_param("is", $tenantId, $today);
+$today_orders_stmt->execute();
+$today_orders_res = $today_orders_stmt->get_result();
 $kpi = $today_orders_res ? $today_orders_res->fetch_assoc() : [];
+$today_orders_stmt->close();
 
-$active_tables_res = $conn->query("SELECT COUNT(DISTINCT table_number) as cnt FROM orders WHERE status IN ('new', 'preparing', 'ready')");
+$active_stmt = $conn->prepare("SELECT COUNT(DISTINCT table_number) as cnt FROM orders WHERE restaurant_id = ? AND status IN ('new', 'preparing', 'ready')");
+$active_stmt->bind_param("i", $tenantId);
+$active_stmt->execute();
+$active_tables_res = $active_stmt->get_result();
 $active_tables_cnt = $active_tables_res ? intval($active_tables_res->fetch_assoc()['cnt']) : 0;
+$active_stmt->close();
 
-// 2. Build SQL Query for Orders Stream
+// 2. Build SQL Query for Orders Stream (tenant-scoped)
 $sql = "
-    SELECT o.*, 
+    SELECT o.*,
            t.capacity, t.assigned_waiter, t.zone,
            TIMESTAMPDIFF(MINUTE, o.created_at, NOW()) as elapsed_mins,
            CASE WHEN o.status IN ('new', 'preparing') AND TIMESTAMPDIFF(MINUTE, o.created_at, NOW()) > 20 THEN 1 ELSE 0 END as is_delayed
     FROM orders o
-    LEFT JOIN tables t ON o.table_number = t.table_number
+    LEFT JOIN tables t ON o.table_number = t.table_number AND t.restaurant_id = o.restaurant_id
 ";
 
-$where_clauses = [];
+$where_clauses = ["o.restaurant_id = " . (int)$tenantId];
 if ($status_filter === 'new') $where_clauses[] = "o.status = 'new'";
 else if ($status_filter === 'preparing') $where_clauses[] = "o.status = 'preparing'";
 else if ($status_filter === 'ready') $where_clauses[] = "o.status = 'ready'";
@@ -172,13 +204,13 @@ if (!empty($where_clauses)) {
     $sql .= " WHERE " . implode(" AND ", $where_clauses);
 }
 
-$sql .= " ORDER BY 
-    CASE o.status 
-        WHEN 'new' THEN 1 
-        WHEN 'preparing' THEN 2 
-        WHEN 'ready' THEN 3 
-        WHEN 'completed' THEN 4 
-        ELSE 5 
+$sql .= " ORDER BY
+    CASE o.status
+        WHEN 'new' THEN 1
+        WHEN 'preparing' THEN 2
+        WHEN 'ready' THEN 3
+        WHEN 'completed' THEN 4
+        ELSE 5
     END, o.created_at DESC LIMIT 150";
 
 $orders_res = $conn->query($sql);
@@ -199,9 +231,9 @@ if ($orders_res) {
 if (!empty($order_ids)) {
     $ids_str = implode(',', $order_ids);
     $items_res = $conn->query("
-        SELECT oi.*, mi.name as item_name, mi.image as item_image 
-        FROM order_items oi 
-        JOIN menu_items mi ON oi.menu_item_id = mi.id 
+        SELECT oi.*, mi.name as item_name, mi.image as item_image
+        FROM order_items oi
+        JOIN menu_items mi ON oi.menu_item_id = mi.id
         WHERE oi.order_id IN ($ids_str)
     ");
     if ($items_res) {

@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$conn) {
                 $error = "Database connection error.";
             } else {
-                $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id FROM admin_users WHERE username = ? AND (is_super_admin = 1 OR role = 'super_admin') LIMIT 1");
+                $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id FROM admin_users WHERE username = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
                 if ($stmt) {
                     $stmt->bind_param("s", $username);
                     $stmt->execute();

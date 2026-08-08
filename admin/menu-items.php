@@ -53,13 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($action === 'create') {
             $stmt = $conn->prepare("INSERT INTO menu_items (name, sku, category_id, description, price, cost_price, stock_quantity, min_stock_level, preparation_time, dietary_type, status, is_popular, allergens, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             if ($stmt) {
-                $stmt->bind_param("ssisddiiissiic", $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path);
-                // Adjust types string strictly
+                $stmt->bind_param("ssisddiiissiis", $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path);
+                $stmt->execute();
                 $stmt->close();
             }
-            // Fallback robust query execution
-            $sql = "INSERT INTO menu_items (name, sku, category_id, description, price, cost_price, stock_quantity, min_stock_level, preparation_time, dietary_type, status, is_popular, allergens, image) VALUES ('" . $conn->real_escape_string($name) . "', '" . $conn->real_escape_string($sku) . "', $category_id, '" . $conn->real_escape_string($description) . "', $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, '$dietary_type', '$status', $is_popular, '" . $conn->real_escape_string($allergens) . "', '" . $conn->real_escape_string($image_path) . "')";
-            $conn->query($sql);
             $_SESSION['success'] = "Menu item '$name' created successfully!";
         } elseif ($action === 'edit' && $id > 0) {
             $sql = "UPDATE menu_items SET name = '" . $conn->real_escape_string($name) . "', sku = '" . $conn->real_escape_string($sku) . "', category_id = $category_id, description = '" . $conn->real_escape_string($description) . "', price = $price, cost_price = $cost_price, stock_quantity = $stock_quantity, min_stock_level = $min_stock_level, preparation_time = $preparation_time, dietary_type = '$dietary_type', status = '$status', is_popular = $is_popular, allergens = '" . $conn->real_escape_string($allergens) . "', image = '" . $conn->real_escape_string($image_path) . "' WHERE id = $id";

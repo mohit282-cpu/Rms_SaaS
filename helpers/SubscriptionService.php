@@ -31,14 +31,14 @@ class SubscriptionService {
         }
 
         if (!$isOpenEnded && strtotime($endDate) < strtotime('today')) {
-            // Update subscription status in DB to EXPIRED if date has passed
+            // Subscription date has passed => mark EXPIRED and block access.
             $conn->query("UPDATE restaurants SET subscription_status = 'EXPIRED' WHERE id = " . (int)$restaurantId);
             return false;
         }
 
-        // A stale EXPIRED flag on an open-ended (undated) subscription should not block access
-        if ($status === 'EXPIRED' && $isOpenEnded) {
-            $conn->query("UPDATE restaurants SET subscription_status = 'ACTIVE' WHERE id = " . (int)$restaurantId);
+        // An EXPIRED subscription NEVER auto-converts back to ACTIVE.
+        if ($status === 'EXPIRED') {
+            return false;
         }
 
         return true;
@@ -99,5 +99,91 @@ class SubscriptionService {
         $stmt->close();
 
         return $plan ? $plan : $default;
+    }
+
+    /**
+     * Check if a tenant is allowed to add another table under its current plan limits
+     */
+    public static function canAddTable(int $restaurantId): bool {
+        $limits = self::getTenantPlanLimits($restaurantId);
+        $maxTables = (int)($limits['max_tables'] ?? 10);
+        if ($maxTables >= 999) return true; // Unlimited / Enterprise
+
+        $conn = getDBConnection();
+        if (!$conn) return false;
+
+        $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM tables WHERE restaurant_id = ?");
+        if (!$stmt) return false;
+
+        $stmt->bind_param("i", $restaurantId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res->fetch_assoc();
+        $stmt->close();
+
+        $currentCount = (int)($row['cnt'] ?? 0);
+        return $currentCount < $maxTables;
+    }
+
+    /**
+     * Check if a tenant is allowed to add another staff user under its current plan limits
+     */
+    public static function canAddStaff(int $restaurantId): bool {
+        $limits = self::getTenantPlanLimits($restaurantId);
+        $maxStaff = (int)($limits['max_staff'] ?? 5);
+        if ($maxStaff >= 999) return true; // Unlimited / Enterprise
+
+        $conn = getDBConnection();
+        if (!$conn) return false;
+
+        $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM admin_users WHERE restaurant_id = ?");
+        if (!$stmt) return false;
+
+        $stmt->bind_param("i", $restaurantId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res->fetch_assoc();
+        $stmt->close();
+
+        $currentCount = (int)($row['cnt'] ?? 0);
+        return $currentCount < $maxStaff;
+    }
+
+    /**
+     * Enforce table creation limit or exit with 403 error
+     */
+    public static function assertCanAddTable(int $restaurantId): void {
+        if (!self::canAddTable($restaurantId)) {
+            $limits = self::getTenantPlanLimits($restaurantId);
+            $maxTables = (int)($limits['max_tables'] ?? 10);
+            $msg = "Subscription Plan Limit Reached: Your current plan (" . ($limits['plan_name'] ?? 'Plan') . ") allows a maximum of {$maxTables} tables. Please upgrade your subscription to add more tables.";
+            
+            http_response_code(403);
+            if (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $msg]);
+                exit;
+            }
+            die($msg);
+        }
+    }
+
+    /**
+     * Enforce staff creation limit or exit with 403 error
+     */
+    public static function assertCanAddStaff(int $restaurantId): void {
+        if (!self::canAddStaff($restaurantId)) {
+            $limits = self::getTenantPlanLimits($restaurantId);
+            $maxStaff = (int)($limits['max_staff'] ?? 5);
+            $msg = "Subscription Plan Limit Reached: Your current plan (" . ($limits['plan_name'] ?? 'Plan') . ") allows a maximum of {$maxStaff} staff accounts. Please upgrade your subscription to add more staff.";
+            
+            http_response_code(403);
+            if (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => $msg]);
+                exit;
+            }
+            die($msg);
+        }
     }
 }

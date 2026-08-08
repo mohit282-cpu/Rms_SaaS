@@ -3,9 +3,7 @@
 require_once __DIR__ . '/../config.php';
 
 // Strict Role Guard: Only Staff / Admin can change inventory stock status
-if (!Auth::isKitchenLoggedIn() && !Auth::isAdminLoggedIn()) {
-    Response::error('Unauthorized access. Kitchen staff or Admin authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 
 // CSRF Protection
 CSRF::requireValidToken();
@@ -23,9 +21,9 @@ $id = intval($input['id'] ?? $_POST['id'] ?? 0);
 $status = Security::sanitize($input['status'] ?? $_POST['status'] ?? '');
 
 if ($id > 0 && in_array($status, ['active', 'sold_out', 'inactive'])) {
-    $stmt = $conn->prepare("UPDATE menu_items SET status = ? WHERE id = ?");
+    $stmt = $conn->prepare("UPDATE menu_items SET status = ? WHERE id = ? AND restaurant_id = ?");
     if ($stmt) {
-        $stmt->bind_param("si", $status, $id);
+        $stmt->bind_param("sii", $status, $id, $tenantId);
         if ($stmt->execute()) {
             $stmt->close();
             Response::success($status === 'active' ? 'Item marked In Stock' : 'Item marked Out of Stock', [

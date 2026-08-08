@@ -2,9 +2,7 @@
 // api/security-stream.php - Realtime Security & IAM Access Stream API
 require_once __DIR__ . '/../config.php';
 
-if (!Auth::isAdminLoggedIn()) {
-    Response::error('Unauthorized access. Admin authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 // Release session lock so multiple browser tabs can poll concurrently.
 session_write_close();
 
@@ -15,21 +13,20 @@ if (!$conn) {
 
 $today = date('Y-m-d');
 
-// 1. Fetch Audit Logs
-$logs_res = $conn->query("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 20");
-$audit_logs = [];
-if ($logs_res) {
-    while ($l = $logs_res->fetch_assoc()) {
-        $audit_logs[] = $l;
-    }
-}
+// 1. Fetch Audit Logs (tenant-scoped)
+$logs_stmt = $conn->prepare("SELECT * FROM audit_logs WHERE restaurant_id = ? ORDER BY id DESC LIMIT 20");
+$logs_stmt->bind_param("i", $tenantId);
+$logs_stmt->execute();
+$audit_logs = $logs_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$logs_stmt->close();
 
-// 2. Fetch Active Sessions
-$sessions_res = $conn->query("SELECT * FROM user_sessions ORDER BY last_activity DESC LIMIT 10");
+// 2. Fetch Active Sessions.
+// user_sessions has no tenant column; expose session details only to the platform super admin.
 $active_sessions = [];
-if ($sessions_res) {
-    while ($s = $sessions_res->fetch_assoc()) {
-        $active_sessions[] = $s;
+if (Auth::isSuperAdmin()) {
+    $sessions_res = $conn->query("SELECT * FROM user_sessions ORDER BY last_activity DESC LIMIT 10");
+    if ($sessions_res) {
+        $active_sessions = $sessions_res->fetch_all(MYSQLI_ASSOC);
     }
 }
 

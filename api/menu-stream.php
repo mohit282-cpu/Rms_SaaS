@@ -2,9 +2,7 @@
 // api/menu-stream.php - Realtime POS Menu Management Stream API
 require_once __DIR__ . '/../config.php';
 
-if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn()) {
-    Response::error('Unauthorized access. Staff authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 // Release session lock so multiple browser tabs can poll concurrently.
 session_write_close();
 
@@ -17,9 +15,9 @@ $today = date('Y-m-d');
 $cat_filter = intval($_GET['category_id'] ?? 0);
 $status_filter = Security::sanitize($_GET['status'] ?? 'all');
 
-// 1. Fetch KPI Metrics
-$kpi_res = $conn->query("
-    SELECT 
+// 1. Fetch KPI Metrics (tenant-scoped)
+$kpi_stmt = $conn->prepare("
+    SELECT
         COUNT(*) as total_items,
         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as available_items,
         SUM(CASE WHEN status = 'sold_out' THEN 1 ELSE 0 END) as sold_out_items,
@@ -28,40 +26,52 @@ $kpi_res = $conn->query("
         AVG(price) as avg_price,
         SUM(CASE WHEN image IS NULL OR image = '' THEN 1 ELSE 0 END) as missing_images
     FROM menu_items
+    WHERE restaurant_id = ?
 ");
+$kpi_stmt->bind_param("i", $tenantId);
+$kpi_stmt->execute();
+$kpi = $kpi_stmt->get_result()->fetch_assoc() ?: [];
+$kpi_stmt->close();
 
-$kpi = $kpi_res ? $kpi_res->fetch_assoc() : [];
+$cat_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM categories WHERE restaurant_id = ?");
+$cat_stmt->bind_param("i", $tenantId);
+$cat_stmt->execute();
+$total_categories = intval($cat_stmt->get_result()->fetch_assoc()['cnt'] ?? 0);
+$cat_stmt->close();
 
-$cat_cnt_res = $conn->query("SELECT COUNT(*) as cnt FROM categories");
-$total_categories = $cat_cnt_res ? intval($cat_cnt_res->fetch_assoc()['cnt']) : 0;
-
-// Best Selling Item Today
-$top_item_res = $conn->query("
-    SELECT mi.name, SUM(oi.quantity) as total_qty 
-    FROM order_items oi 
-    JOIN orders o ON oi.order_id = o.id 
-    JOIN menu_items mi ON oi.menu_item_id = mi.id 
-    WHERE DATE(o.created_at) = '$today' 
-    GROUP BY mi.id 
+// Best Selling Item Today (tenant-scoped)
+$top_stmt = $conn->prepare("
+    SELECT mi.name, SUM(oi.quantity) as total_qty
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    JOIN menu_items mi ON oi.menu_item_id = mi.id
+    WHERE o.restaurant_id = ? AND DATE(o.created_at) = ?
+    GROUP BY mi.id
     ORDER BY total_qty DESC LIMIT 1
 ");
-$top_item_row = $top_item_res ? $top_item_res->fetch_assoc() : null;
+$top_stmt->bind_param("is", $tenantId, $today);
+$top_stmt->execute();
+$top_item_row = $top_stmt->get_result()->fetch_assoc() ?: null;
+$top_stmt->close();
 $best_selling_item = $top_item_row ? $top_item_row['name'] . " (" . $top_item_row['total_qty'] . " sold)" : 'N/A';
 
-// Today's Items Sold Total
-$sold_qty_res = $conn->query("SELECT SUM(oi.quantity) as total_qty FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE DATE(o.created_at) = '$today'");
-$today_sold_qty = $sold_qty_res ? intval($sold_qty_res->fetch_assoc()['total_qty'] ?? 0) : 0;
+// Today's Items Sold Total (tenant-scoped)
+$sold_stmt = $conn->prepare("SELECT SUM(oi.quantity) as total_qty FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE o.restaurant_id = ? AND DATE(o.created_at) = ?");
+$sold_stmt->bind_param("is", $tenantId, $today);
+$sold_stmt->execute();
+$today_sold_qty = intval($sold_stmt->get_result()->fetch_assoc()['total_qty'] ?? 0);
+$sold_stmt->close();
 
-// 2. Fetch Menu Items Catalog Grid
+// 2. Fetch Menu Items Catalog Grid (tenant-scoped)
 $sql = "
     SELECT m.*, c.name as category_name,
-           (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.menu_item_id = m.id AND DATE(o.created_at) = '$today') as orders_today
+           (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE oi.menu_item_id = m.id AND o.restaurant_id = " . (int)$tenantId . " AND DATE(o.created_at) = '" . $conn->real_escape_string($today) . "') as orders_today
     FROM menu_items m
-    JOIN categories c ON m.category_id = c.id
+    JOIN categories c ON m.category_id = c.id AND c.restaurant_id = m.restaurant_id
 ";
 
-$where_clauses = [];
-if ($cat_filter > 0) $where_clauses[] = "m.category_id = $cat_filter";
+$where_clauses = ["m.restaurant_id = " . (int)$tenantId];
+if ($cat_filter > 0) $where_clauses[] = "m.category_id = " . (int)$cat_filter;
 
 if ($status_filter === 'available') $where_clauses[] = "m.status = 'active'";
 else if ($status_filter === 'sold_out') $where_clauses[] = "m.status = 'sold_out'";

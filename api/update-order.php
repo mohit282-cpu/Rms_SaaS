@@ -2,10 +2,8 @@
 // api/update-order.php - Order Status & Payment Method Update (Authenticated & Hardened)
 require_once __DIR__ . '/../config.php';
 
-// Require Kitchen Staff or Admin Authentication Guard
-if (!Auth::isKitchenLoggedIn() && !Auth::isAdminLoggedIn()) {
-    Response::error('Unauthorized access. Staff authentication required.', 401);
-}
+// Require staff (admin OR kitchen) authentication with tenant context
+$tenantId = (int)AuthorizationService::requireStaffApi();
 
 // CSRF Verification for POST requests
 CSRF::requireValidToken();
@@ -32,36 +30,39 @@ require_once __DIR__ . '/../helpers/OrderService.php';
 
 // Determine user role for authorization checks
 $userRole = 'admin';
-if (Auth::isKitchenLoggedIn()) {
+if (Auth::isKitchenLoggedIn() && !Auth::isAdminLoggedIn()) {
     $userRole = 'kitchen';
 }
+
+// Assert order ownership (IDOR protection) before any write
+TenantContext::assertOwnership($conn, 'orders', $order_id);
 
 // Handle payment method update (Fixes RMS-012 & RMS-030)
 if (!empty($payment_method)) {
     if ($userRole === 'kitchen') {
         Response::error('Kitchen staff is not authorized to modify payment settings.', 403);
     }
-    
+
     $allowed_payment_methods = ['cash', 'card', 'esewa', 'khalti', 'fonepay', 'connectips', 'imepay'];
     if (!in_array(strtolower($payment_method), $allowed_payment_methods, true)) {
         Response::error('Invalid payment method specified.', 400);
     }
 
-    $stmt = $conn->prepare("UPDATE orders SET payment_method = ? WHERE id = ?");
-    $stmt->bind_param("si", $payment_method, $order_id);
+    $stmt = $conn->prepare("UPDATE orders SET payment_method = ? WHERE id = ? AND restaurant_id = ?");
+    $stmt->bind_param("sii", $payment_method, $order_id, $tenantId);
     $stmt->execute();
     $stmt->close();
 
     if ($payment_method === 'cash') {
-        $tbl_stmt = $conn->prepare("SELECT table_number FROM orders WHERE id = ? LIMIT 1");
-        $tbl_stmt->bind_param("i", $order_id);
+        $tbl_stmt = $conn->prepare("SELECT table_number FROM orders WHERE id = ? AND restaurant_id = ? LIMIT 1");
+        $tbl_stmt->bind_param("ii", $order_id, $tenantId);
         $tbl_stmt->execute();
         $tbl_res = $tbl_stmt->get_result();
-        
+
         if ($tbl_row = $tbl_res->fetch_assoc()) {
             $t_num = $tbl_row['table_number'];
-            $w_stmt = $conn->prepare("INSERT INTO waiter_calls (table_number) VALUES (?)");
-            $w_stmt->bind_param("s", $t_num);
+            $w_stmt = $conn->prepare("INSERT INTO waiter_calls (restaurant_id, table_number) VALUES (?, ?)");
+            $w_stmt->bind_param("is", $tenantId, $t_num);
             $w_stmt->execute();
             $w_stmt->close();
         }

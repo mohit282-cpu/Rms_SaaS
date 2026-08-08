@@ -2,9 +2,7 @@
 // api/tables-stream.php - Real-Time Enterprise POS Dashboard Stream Endpoint
 require_once __DIR__ . '/../config.php';
 
-if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn()) {
-    Response::error('Unauthorized access. Staff authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 // Release session lock so multiple browser tabs can poll concurrently.
 session_write_close();
 
@@ -15,13 +13,13 @@ if (!$conn) {
 
 // 1. Fetch KPI Metrics
 $today = date('Y-m-d');
-$rev_res = $conn->query("SELECT SUM(total_amount) as total_rev, COUNT(*) as completed_count FROM orders WHERE DATE(created_at) = '$today' AND status = 'completed'");
+$rev_res = $conn->query("SELECT SUM(total_amount) as total_rev, COUNT(*) as completed_count FROM orders WHERE restaurant_id = $tenantId AND DATE(created_at) = '$today' AND status = 'completed'");
 $rev_row = $rev_res ? $rev_res->fetch_assoc() : ['total_rev' => 0, 'completed_count' => 0];
 $today_revenue = floatval($rev_row['total_rev'] ?? 0);
 $today_completed_orders = intval($rev_row['completed_count'] ?? 0);
 
 // Fetch All Tables with Active Orders & Items in single bulk query
-$tables_res = $conn->query("SELECT * FROM tables ORDER BY zone ASC, CAST(table_number AS UNSIGNED) ASC, table_number ASC");
+$tables_res = $conn->query("SELECT * FROM tables WHERE restaurant_id = $tenantId ORDER BY zone ASC, CAST(table_number AS UNSIGNED) ASC, table_number ASC");
 $tables = [];
 $occupied_count = 0;
 $vacant_count = 0;
@@ -49,7 +47,7 @@ if (!empty($table_numbers)) {
     $orders_res = $conn->query("
         SELECT id, table_number, customer_name, notes, status, total_amount, payment_status, batch_number, created_at 
         FROM orders 
-        WHERE table_number IN ($t_list) AND payment_status = 'pending' AND status != 'cancelled'
+        WHERE restaurant_id = $tenantId AND table_number IN ($t_list) AND payment_status = 'pending' AND status != 'cancelled'
         ORDER BY id ASC
     ");
     
@@ -99,7 +97,7 @@ if (!empty($table_numbers)) {
     }
 
     // Fetch Active Waiter Calls
-    $waiter_res = $conn->query("SELECT table_number FROM waiter_calls WHERE status = 'pending'");
+    $waiter_res = $conn->query("SELECT table_number FROM waiter_calls WHERE restaurant_id = $tenantId AND status = 'pending'");
     if ($waiter_res) {
         while ($w = $waiter_res->fetch_assoc()) {
             if (isset($tables[$w['table_number']])) {
@@ -115,7 +113,7 @@ foreach ($tables_list as &$t) {
     if (empty($t['qr_token'])) {
         $t['qr_token'] = bin2hex(random_bytes(16));
         $tbl_id = intval($t['id']);
-        $conn->query("UPDATE tables SET qr_token = '{$t['qr_token']}' WHERE id = $tbl_id");
+        $conn->query("UPDATE tables SET qr_token = '{$t['qr_token']}' WHERE restaurant_id = $tenantId AND id = $tbl_id");
     }
     $t['sig'] = generateTableSignatureToken($t['table_number']);
     
@@ -158,9 +156,9 @@ foreach ($tables_list as &$t) {
 $notifications = [];
 try {
     $notif_res = $conn->query("
-        (SELECT 'waiter' as type, CONCAT('🔔 Table ', table_number, ' requested waiter assistance') as msg, created_at FROM waiter_calls WHERE status = 'pending')
+        (SELECT 'waiter' as type, CONCAT('🔔 Table ', table_number, ' requested waiter assistance') as msg, created_at FROM waiter_calls WHERE restaurant_id = $tenantId AND status = 'pending')
         UNION ALL
-        (SELECT 'order' as type, CONCAT('🍽 Table ', table_number, ' placed Order #', id, ' (Rs. ', total_amount, ')') as msg, created_at FROM orders WHERE status = 'new')
+        (SELECT 'order' as type, CONCAT('🍽 Table ', table_number, ' placed Order #', id, ' (Rs. ', total_amount, ')') as msg, created_at FROM orders WHERE restaurant_id = $tenantId AND status = 'new')
         ORDER BY created_at DESC LIMIT 8
     ");
     if ($notif_res) {

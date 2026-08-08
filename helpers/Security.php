@@ -15,12 +15,17 @@ class Security {
         header("Permissions-Policy: geolocation=(), microphone=(), camera=()");
         
         // Content Security Policy
+        // NOTE: 'unsafe-inline' is required by the legacy non-bundled UI scripts.
+        // 'unsafe-eval' has been removed (no eval() usage exists in the codebase).
         $csp = "default-src 'self'; " .
-               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; " .
+               "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; " .
                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " .
                "font-src 'self' https://fonts.gstatic.com data:; " .
                "img-src 'self' data: blob: https:; " .
                "connect-src 'self'; " .
+               "object-src 'none'; " .
+               "base-uri 'self'; " .
+               "form-action 'self'; " .
                "frame-ancestors 'self';";
         header("Content-Security-Policy: " . $csp);
 
@@ -119,11 +124,12 @@ class Security {
         $conn = getDBConnection();
         if (!$conn) return;
 
-        $userId = (int)($_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? 1);
+        $userId = (int)($_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? 0);
         $username = Security::sanitize($_SESSION['username'] ?? $_SESSION['admin_username'] ?? $_SESSION['full_name'] ?? 'System');
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
-        $tenantId = (isset($_SESSION['restaurant_id']) && $_SESSION['restaurant_id'] > 0) ? (int)$_SESSION['restaurant_id'] : 1;
+        // No tenant fallback: unknown/unscoped contexts are attributed to the platform (restaurant_id = 0).
+        $tenantId = (isset($_SESSION['restaurant_id']) && is_numeric($_SESSION['restaurant_id']) && $_SESSION['restaurant_id'] > 0) ? (int)$_SESSION['restaurant_id'] : 0;
 
         $stmt = $conn->prepare("INSERT INTO audit_logs (restaurant_id, user_id, username, event_type, description, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
         if ($stmt) {

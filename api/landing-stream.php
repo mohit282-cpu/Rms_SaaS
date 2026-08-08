@@ -13,9 +13,18 @@ if (!$conn) {
     Response::error('Database connection failed', 500);
 }
 
-// Fetch current landing page settings
-$res = $conn->query("SELECT * FROM landing_page_settings LIMIT 1");
+// Fetch current landing page settings (tenant-scoped, never expose kds_password)
+$tenantId = (int)TenantContext::getTenantId();
+if ($tenantId <= 0) {
+    Response::error('Forbidden. No tenant context.', 403);
+}
+
+$stmt = $conn->prepare("SELECT id, brand_name, brand_logo, brand_logo_image, hero_badge, hero_title, hero_subtitle, hero_cta_primary, hero_cta_secondary, qr_notice_text, about_badge, about_title, about_text, about_feature1_title, about_feature1_desc, about_feature2_title, about_feature2_desc, dishes_badge, dishes_title, dishes_subtitle, location_title, location_address, contact_phone, contact_email, hours_title, opening_hours, hero_image, footer_copyright FROM landing_page_settings WHERE restaurant_id = ? LIMIT 1");
+$stmt->bind_param("i", $tenantId);
+$stmt->execute();
+$res = $stmt->get_result();
 $settings = ($res && $res->num_rows > 0) ? $res->fetch_assoc() : [];
+$stmt->close();
 
 $defaults = [
     'brand_name' => 'QR Cafe & Dining',

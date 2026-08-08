@@ -2,11 +2,6 @@
 // api/health.php - System Health Check & Status Endpoint
 require_once __DIR__ . '/../config.php';
 
-use App\Services\DatabaseService;
-
-// api/health.php - Public System Health Endpoint (Hardened - Fixes Phase 28)
-require_once __DIR__ . '/../config.php';
-
 $isHealthy = true;
 $conn = getDBConnection();
 

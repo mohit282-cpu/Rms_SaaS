@@ -1,7 +1,7 @@
 <?php
 // api/inventory.php - Inventory CRUD API Endpoint
 require_once '../config.php';
-requireAdminLogin();
+$tenantId = (int)AuthorizationService::requireStaffApi();
 
 header('Content-Type: application/json; charset=UTF-8');
 $conn = getDBConnection();
@@ -17,14 +17,14 @@ switch ($action) {
         $category = intval($_GET['category_id'] ?? 0);
         $search = $conn->real_escape_string($_GET['search'] ?? '');
         $status = $conn->real_escape_string($_GET['status'] ?? 'active');
-        $where = "i.status='" . $status . "'";
+        $where = "i.restaurant_id = $tenantId AND i.status='" . $status . "'";
         if ($category > 0) $where .= " AND i.category_id=$category";
         if ($search) $where .= " AND (i.name LIKE '%$search%' OR i.barcode LIKE '%$search%')";
         $sql = "SELECT i.*, c.name as category_name, c.icon as category_icon, s.company_name as supplier_name, u.abbreviation as unit_abbr
             FROM inventory_items i
-            LEFT JOIN inventory_categories c ON i.category_id=c.id
-            LEFT JOIN suppliers s ON i.supplier_id=s.id
-            LEFT JOIN inventory_units u ON i.unit_id=u.id
+            LEFT JOIN inventory_categories c ON i.category_id=c.id AND c.restaurant_id = i.restaurant_id
+            LEFT JOIN suppliers s ON i.supplier_id=s.id AND s.restaurant_id = i.restaurant_id
+            LEFT JOIN inventory_units u ON i.unit_id=u.id AND u.restaurant_id = i.restaurant_id
             WHERE $where ORDER BY i.name";
         $r = $conn->query($sql);
         $items = [];
@@ -35,9 +35,9 @@ switch ($action) {
     case 'get_item':
         $id = intval($_GET['id'] ?? 0);
         $r = $conn->query("SELECT i.*, c.name as category_name, s.company_name as supplier_name, u.abbreviation as unit_abbr
-            FROM inventory_items i LEFT JOIN inventory_categories c ON i.category_id=c.id
-            LEFT JOIN suppliers s ON i.supplier_id=s.id LEFT JOIN inventory_units u ON i.unit_id=u.id
-            WHERE i.id=$id");
+            FROM inventory_items i LEFT JOIN inventory_categories c ON i.category_id=c.id AND c.restaurant_id = i.restaurant_id
+            LEFT JOIN suppliers s ON i.supplier_id=s.id AND s.restaurant_id = i.restaurant_id LEFT JOIN inventory_units u ON i.unit_id=u.id AND u.restaurant_id = i.restaurant_id
+            WHERE i.restaurant_id = $tenantId AND i.id=$id");
         $item = $r ? $r->fetch_assoc() : null;
         echo json_encode(['success'=>(bool)$item,'item'=>$item]);
         break;
@@ -67,10 +67,10 @@ switch ($action) {
             $sql = "UPDATE inventory_items SET name='$name', barcode='$barcode', category_id=$category_id, brand='$brand',
                 supplier_id=$supplier_id, unit_id=$unit_id, minimum_stock=$minimum_stock, maximum_stock=$maximum_stock,
                 purchase_cost=$purchase_cost, storage_location='$storage_location', expiry_date=$exp, notes='$notes', status='$status'
-                WHERE id=$id";
+                WHERE restaurant_id = $tenantId AND id=$id";
         } else {
-            $sql = "INSERT INTO inventory_items (name,barcode,category_id,brand,supplier_id,unit_id,current_stock,minimum_stock,maximum_stock,purchase_cost,average_cost,storage_location,expiry_date,notes,status)
-                VALUES ('$name','$barcode',$category_id,'$brand',$supplier_id,$unit_id,0,$minimum_stock,$maximum_stock,$purchase_cost,$purchase_cost,'$storage_location',$exp,'$notes','$status')";
+            $sql = "INSERT INTO inventory_items (restaurant_id,name,barcode,category_id,brand,supplier_id,unit_id,current_stock,minimum_stock,maximum_stock,purchase_cost,average_cost,storage_location,expiry_date,notes,status)
+                VALUES ($tenantId,'$name','$barcode',$category_id,'$brand',$supplier_id,$unit_id,0,$minimum_stock,$maximum_stock,$purchase_cost,$purchase_cost,'$storage_location',$exp,'$notes','$status')";
         }
         $ok = $conn->query($sql);
         $newId = $id > 0 ? $id : $conn->insert_id;
@@ -83,7 +83,7 @@ switch ($action) {
         CSRF::requireValidToken();
         Inventory::requireWrite('inventory');
         $id = intval($_POST['id'] ?? 0);
-        $ok = $conn->query("UPDATE inventory_items SET status='inactive' WHERE id=$id");
+        $ok = $conn->query("UPDATE inventory_items SET status='inactive' WHERE restaurant_id = $tenantId AND id=$id");
         Inventory::audit('inventory.item_delete', "Deactivated item #$id");
         echo json_encode(['success'=>(bool)$ok,'message'=>$ok ? 'Item deactivated' : 'Failed']);
         break;
@@ -96,7 +96,7 @@ switch ($action) {
         $direction = $conn->real_escape_string($_POST['direction'] ?? 'in');
         $notes = $conn->real_escape_string(trim($_POST['notes'] ?? ''));
 
-        $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE id=$id");
+        $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE restaurant_id = $tenantId AND id=$id");
         if (!$r || !$row = $r->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Item not found']); break; }
 
         $before = (float)$row['current_stock'];
@@ -104,9 +104,9 @@ switch ($action) {
         if ($after < 0) $after = 0;
 
         $conn->begin_transaction();
-        $conn->query("UPDATE inventory_items SET current_stock=$after WHERE id=$id");
-        $conn->query("INSERT INTO inventory_transactions (inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,notes,created_by)
-            VALUES ($id,'$type',$qty,'$direction',$before,$after," . (float)$row['average_cost'] . ",'$notes','admin')");
+        $conn->query("UPDATE inventory_items SET current_stock=$after WHERE restaurant_id = $tenantId AND id=$id");
+        $conn->query("INSERT INTO inventory_transactions (restaurant_id,inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,notes,created_by)
+            VALUES ($tenantId,$id,'$type',$qty,'$direction',$before,$after," . (float)$row['average_cost'] . ",'$notes','admin')");
         $conn->commit();
         Inventory::generateAlerts();
         Inventory::audit('inventory.adjust', "Stock adjusted for item #$id: $direction $qty");
@@ -116,7 +116,7 @@ switch ($action) {
     // =================== SUPPLIERS ===================
     case 'list_suppliers':
         $status = $conn->real_escape_string($_GET['status'] ?? 'active');
-        $r = $conn->query("SELECT * FROM suppliers WHERE status='$status' ORDER BY company_name");
+        $r = $conn->query("SELECT * FROM suppliers WHERE restaurant_id = $tenantId AND status='$status' ORDER BY company_name");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'suppliers'=>$items]);
@@ -138,9 +138,9 @@ switch ($action) {
         if (!$company) { echo json_encode(['success'=>false,'message'=>'Company name required']); break; }
 
         if ($id > 0) {
-            $sql = "UPDATE suppliers SET company_name='$company',contact_person='$contact',phone='$phone',email='$email',address='$address',vat_pan='$vat',notes='$notes',status='$status' WHERE id=$id";
+            $sql = "UPDATE suppliers SET company_name='$company',contact_person='$contact',phone='$phone',email='$email',address='$address',vat_pan='$vat',notes='$notes',status='$status' WHERE restaurant_id = $tenantId AND id=$id";
         } else {
-            $sql = "INSERT INTO suppliers (company_name,contact_person,phone,email,address,vat_pan,notes,status) VALUES ('$company','$contact','$phone','$email','$address','$vat','$notes','$status')";
+            $sql = "INSERT INTO suppliers (restaurant_id,company_name,contact_person,phone,email,address,vat_pan,notes,status) VALUES ($tenantId,'$company','$contact','$phone','$email','$address','$vat','$notes','$status')";
         }
         $ok = $conn->query($sql);
         Inventory::audit('supplier.save', ($id > 0 ? "Updated supplier #$id: $company" : "Created supplier: $company"));
@@ -151,7 +151,7 @@ switch ($action) {
         CSRF::requireValidToken();
         Inventory::requireWrite('suppliers');
         $id = intval($_POST['id'] ?? 0);
-        $ok = $conn->query("UPDATE suppliers SET status='inactive' WHERE id=$id");
+        $ok = $conn->query("UPDATE suppliers SET status='inactive' WHERE restaurant_id = $tenantId AND id=$id");
         Inventory::audit('supplier.delete', "Deactivated supplier #$id");
         echo json_encode(['success'=>(bool)$ok]);
         break;
@@ -159,9 +159,10 @@ switch ($action) {
     // =================== PURCHASE ORDERS ===================
     case 'list_pos':
         $status = $conn->real_escape_string($_GET['status'] ?? '');
-        $where = $status ? "WHERE po.status='$status'" : '';
-        $r = $conn->query("SELECT po.*, s.company_name as supplier_name, (SELECT COUNT(*) FROM purchase_order_items WHERE po_id=po.id) as item_count
-            FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id=s.id $where ORDER BY po.created_at DESC");
+        $where = "po.restaurant_id = $tenantId";
+        if ($status) $where .= " AND po.status='$status'";
+        $r = $conn->query("SELECT po.*, s.company_name as supplier_name, (SELECT COUNT(*) FROM purchase_order_items WHERE restaurant_id = po.restaurant_id AND po_id=po.id) as item_count
+            FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id=s.id AND s.restaurant_id = po.restaurant_id WHERE $where ORDER BY po.created_at DESC");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'orders'=>$items]);
@@ -169,13 +170,13 @@ switch ($action) {
 
     case 'get_po':
         $id = intval($_GET['id'] ?? 0);
-        $r = $conn->query("SELECT po.*, s.company_name as supplier_name FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id=s.id WHERE po.id=$id");
+        $r = $conn->query("SELECT po.*, s.company_name as supplier_name FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id=s.id AND s.restaurant_id = po.restaurant_id WHERE po.restaurant_id = $tenantId AND po.id=$id");
         $po = $r ? $r->fetch_assoc() : null;
         $items = [];
         if ($po) {
             $ri = $conn->query("SELECT poi.*, i.name as item_name, u.abbreviation as unit_abbr
-                FROM purchase_order_items poi JOIN inventory_items i ON poi.inventory_item_id=i.id
-                LEFT JOIN inventory_units u ON i.unit_id=u.id WHERE poi.po_id=$id");
+                FROM purchase_order_items poi JOIN inventory_items i ON poi.inventory_item_id=i.id AND i.restaurant_id = poi.restaurant_id
+                LEFT JOIN inventory_units u ON i.unit_id=u.id AND u.restaurant_id = i.restaurant_id WHERE poi.restaurant_id = $tenantId AND poi.po_id=$id");
             if ($ri) { while ($row = $ri->fetch_assoc()) $items[] = $row; }
         }
         echo json_encode(['success'=>(bool)$po,'order'=>$po,'items'=>$items]);
@@ -193,13 +194,17 @@ switch ($action) {
 
         if (!$supplier_id) { echo json_encode(['success'=>false,'message'=>'Select a supplier']); break; }
 
+        // Verify the supplier belongs to the active tenant before acting on it.
+        $chk = $conn->query("SELECT id FROM suppliers WHERE restaurant_id = $tenantId AND id=$supplier_id LIMIT 1");
+        if (!$chk || !$chk->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Supplier not found']); break; }
+
         $conn->begin_transaction();
         if ($id > 0) {
-            $conn->query("UPDATE purchase_orders SET supplier_id=$supplier_id,notes='$notes',expected_date=$exp WHERE id=$id");
-            $conn->query("DELETE FROM purchase_order_items WHERE po_id=$id");
+            $conn->query("UPDATE purchase_orders SET supplier_id=$supplier_id,notes='$notes',expected_date=$exp WHERE restaurant_id = $tenantId AND id=$id");
+            $conn->query("DELETE FROM purchase_order_items WHERE restaurant_id = $tenantId AND po_id=$id");
         } else {
             $po_number = 'PO-' . date('Ymd') . '-' . str_pad(mt_rand(1,9999),4,'0',STR_PAD_LEFT);
-            $conn->query("INSERT INTO purchase_orders (po_number,supplier_id,notes,expected_date,order_date) VALUES ('$po_number',$supplier_id,'$notes',$exp,CURDATE())");
+            $conn->query("INSERT INTO purchase_orders (restaurant_id,po_number,supplier_id,notes,expected_date,order_date) VALUES ($tenantId,'$po_number',$supplier_id,'$notes',$exp,CURDATE())");
             $id = $conn->insert_id;
         }
 
@@ -211,13 +216,13 @@ switch ($action) {
             $total = $qty * $cost;
             $subtotal += $total;
             if ($item_id > 0 && $qty > 0) {
-                $conn->query("INSERT INTO purchase_order_items (po_id,inventory_item_id,quantity,unit_cost,total_cost) VALUES ($id,$item_id,$qty,$cost,$total)");
+                $conn->query("INSERT INTO purchase_order_items (restaurant_id,po_id,inventory_item_id,quantity,unit_cost,total_cost) VALUES ($tenantId,$id,$item_id,$qty,$cost,$total)");
             }
         }
         $tax = floatval($_POST['tax_amount'] ?? 0);
         $discount = floatval($_POST['discount_amount'] ?? 0);
         $grand = $subtotal + $tax - $discount;
-        $conn->query("UPDATE purchase_orders SET subtotal=$subtotal,tax_amount=$tax,discount_amount=$discount,total_amount=$grand WHERE id=$id");
+        $conn->query("UPDATE purchase_orders SET subtotal=$subtotal,tax_amount=$tax,discount_amount=$discount,total_amount=$grand WHERE restaurant_id = $tenantId AND id=$id");
         $conn->commit();
         Inventory::audit('purchase_order.save', ($id > 0 ? "Updated PO #$id" : "Created PO #$id") . " for supplier #$supplier_id (total Rs.$grand)");
         echo json_encode(['success'=>true,'message'=>'Purchase Order saved','id'=>$id]);
@@ -230,7 +235,7 @@ switch ($action) {
         $status = $conn->real_escape_string($_POST['status'] ?? '');
         $allowed = ['draft','approved','ordered','partial','received','cancelled','completed'];
         if (!in_array($status, $allowed)) { echo json_encode(['success'=>false,'message'=>'Invalid status']); break; }
-        $ok = $conn->query("UPDATE purchase_orders SET status='$status' WHERE id=$id");
+        $ok = $conn->query("UPDATE purchase_orders SET status='$status' WHERE restaurant_id = $tenantId AND id=$id");
         Inventory::audit('purchase_order.status', "PO #$id status -> $status");
         echo json_encode(['success'=>(bool)$ok]);
         break;
@@ -257,42 +262,46 @@ switch ($action) {
 
             if ($inv_id <= 0 || $received <= 0) continue;
 
-            // Get supplier from PO
+            // Verify the inventory item belongs to the active tenant.
+            $itemChk = $conn->query("SELECT id FROM inventory_items WHERE restaurant_id = $tenantId AND id=$inv_id LIMIT 1");
+            if (!$itemChk || !$itemChk->fetch_assoc()) continue;
+
+            // Get supplier from PO (must belong to active tenant)
             $sup = 0;
             if ($po_id > 0) {
-                $sr = $conn->query("SELECT supplier_id FROM purchase_orders WHERE id=$po_id");
+                $sr = $conn->query("SELECT supplier_id FROM purchase_orders WHERE restaurant_id = $tenantId AND id=$po_id");
                 if ($sr && $srow = $sr->fetch_assoc()) $sup = (int)$srow['supplier_id'];
             }
 
             // Insert goods receipt
-            $conn->query("INSERT INTO goods_receipts (po_id,supplier_id,inventory_item_id,received_qty,rejected_qty,damaged_qty,unit_cost,batch_number,expiry_date,invoice_number)
-                VALUES (" . ($po_id ?: 'NULL') . "," . ($sup ?: 'NULL') . ",$inv_id,$received,$rejected,$damaged,$cost,'$batch',$exp,'$invoice')");
+            $conn->query("INSERT INTO goods_receipts (restaurant_id,po_id,supplier_id,inventory_item_id,received_qty,rejected_qty,damaged_qty,unit_cost,batch_number,expiry_date,invoice_number)
+                VALUES ($tenantId," . ($po_id ?: 'NULL') . "," . ($sup ?: 'NULL') . ",$inv_id,$received,$rejected,$damaged,$cost,'$batch',$exp,'$invoice')");
 
             // Update stock
-            $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE id=$inv_id");
+            $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE restaurant_id = $tenantId AND id=$inv_id");
             if ($r && $row = $r->fetch_assoc()) {
                 $before = (float)$row['current_stock'];
                 $after = $before + $received;
                 // Weighted average cost
                 $oldCost = (float)$row['average_cost'];
                 $avgCost = ($before * $oldCost + $received * $cost) / max($after, 0.001);
-                $conn->query("UPDATE inventory_items SET current_stock=$after, average_cost=$avgCost, purchase_cost=$cost, batch_number='$batch', expiry_date=$exp WHERE id=$inv_id");
-                $conn->query("INSERT INTO inventory_transactions (inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,reference_type,reference_id,notes,created_by)
-                    VALUES ($inv_id,'purchase',$received,'in',$before,$after,$cost,'purchase_order',$po_id,'Goods received','admin')");
+                $conn->query("UPDATE inventory_items SET current_stock=$after, average_cost=$avgCost, purchase_cost=$cost, batch_number='$batch', expiry_date=$exp WHERE restaurant_id = $tenantId AND id=$inv_id");
+                $conn->query("INSERT INTO inventory_transactions (restaurant_id,inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,reference_type,reference_id,notes,created_by)
+                    VALUES ($tenantId,$inv_id,'purchase',$received,'in',$before,$after,$cost,'purchase_order',$po_id,'Goods received','admin')");
             }
 
             // Update PO line item received qty
             if ($po_id > 0) {
-                $conn->query("UPDATE purchase_order_items SET received_qty=received_qty+$received, rejected_qty=rejected_qty+$rejected WHERE po_id=$po_id AND inventory_item_id=$inv_id");
+                $conn->query("UPDATE purchase_order_items SET received_qty=received_qty+$received, rejected_qty=rejected_qty+$rejected WHERE restaurant_id = $tenantId AND po_id=$po_id AND inventory_item_id=$inv_id");
             }
         }
 
         // Check if PO is fully received
         if ($po_id > 0) {
-            $chk = $conn->query("SELECT SUM(quantity) as total_qty, SUM(received_qty) as total_recv FROM purchase_order_items WHERE po_id=$po_id");
+            $chk = $conn->query("SELECT SUM(quantity) as total_qty, SUM(received_qty) as total_recv FROM purchase_order_items WHERE restaurant_id = $tenantId AND po_id=$po_id");
             if ($chk && $crow = $chk->fetch_assoc()) {
                 $newSt = ((float)$crow['total_recv'] >= (float)$crow['total_qty']) ? 'received' : 'partial';
-                $conn->query("UPDATE purchase_orders SET status='$newSt' WHERE id=$po_id");
+                $conn->query("UPDATE purchase_orders SET status='$newSt' WHERE restaurant_id = $tenantId AND id=$po_id");
             }
         }
         $conn->commit();
@@ -312,7 +321,7 @@ switch ($action) {
 
         if ($inv_id <= 0 || $qty <= 0) { echo json_encode(['success'=>false,'message'=>'Invalid item or quantity']); break; }
 
-        $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE id=$inv_id");
+        $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE restaurant_id = $tenantId AND id=$inv_id");
         if (!$r || !$row = $r->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Item not found']); break; }
 
         $before = (float)$row['current_stock'];
@@ -321,11 +330,11 @@ switch ($action) {
         $totalCost = $qty * $cost;
 
         $conn->begin_transaction();
-        $conn->query("INSERT INTO inventory_waste (inventory_item_id,quantity,reason,unit_cost,total_cost,notes) VALUES ($inv_id,$qty,'$reason',$cost,$totalCost,'$notes')");
+        $conn->query("INSERT INTO inventory_waste (restaurant_id,inventory_item_id,quantity,reason,unit_cost,total_cost,notes) VALUES ($tenantId,$inv_id,$qty,'$reason',$cost,$totalCost,'$notes')");
         $wasteId = $conn->insert_id;
-        $conn->query("UPDATE inventory_items SET current_stock=$after WHERE id=$inv_id");
-        $conn->query("INSERT INTO inventory_transactions (inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,reference_type,reference_id,notes,created_by)
-            VALUES ($inv_id,'waste',$qty,'out',$before,$after,$cost,'waste',$wasteId,'$notes','admin')");
+        $conn->query("UPDATE inventory_items SET current_stock=$after WHERE restaurant_id = $tenantId AND id=$inv_id");
+        $conn->query("INSERT INTO inventory_transactions (restaurant_id,inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,reference_type,reference_id,notes,created_by)
+            VALUES ($tenantId,$inv_id,'waste',$qty,'out',$before,$after,$cost,'waste',$wasteId,'$notes','admin')");
         $conn->commit();
         Inventory::generateAlerts();
         Inventory::audit('waste.save', "Waste #$wasteId recorded: item #$inv_id qty $qty (Rs.$totalCost)");
@@ -333,9 +342,11 @@ switch ($action) {
         break;
 
     case 'list_waste':
+        Inventory::requireRead('waste');
         $r = $conn->query("SELECT w.*, i.name as item_name, COALESCE(u.abbreviation,'pcs') as unit_abbr
-            FROM inventory_waste w JOIN inventory_items i ON w.inventory_item_id=i.id
-            LEFT JOIN inventory_units u ON i.unit_id=u.id ORDER BY w.created_at DESC LIMIT 100");
+            FROM inventory_waste w JOIN inventory_items i ON w.inventory_item_id=i.id AND i.restaurant_id = w.restaurant_id
+            LEFT JOIN inventory_units u ON i.unit_id=u.id AND u.restaurant_id = i.restaurant_id
+            WHERE w.restaurant_id = $tenantId ORDER BY w.created_at DESC LIMIT 100");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'waste'=>$items]);
@@ -344,9 +355,10 @@ switch ($action) {
     // =================== RECIPES ===================
     case 'list_recipes':
         $r = $conn->query("SELECT r.*, m.name as menu_item_name, m.price as menu_price,
-            (SELECT COUNT(*) FROM recipe_items WHERE recipe_id=r.id) as ingredient_count,
-            (SELECT COALESCE(SUM(ri2.quantity * ii.average_cost),0) FROM recipe_items ri2 JOIN inventory_items ii ON ri2.inventory_item_id=ii.id WHERE ri2.recipe_id=r.id) as recipe_cost
-            FROM recipes r JOIN menu_items m ON r.menu_item_id=m.id ORDER BY m.name");
+            (SELECT COUNT(*) FROM recipe_items WHERE restaurant_id = r.restaurant_id AND recipe_id=r.id) as ingredient_count,
+            (SELECT COALESCE(SUM(ri2.quantity * ii.average_cost),0) FROM recipe_items ri2 JOIN inventory_items ii ON ri2.inventory_item_id=ii.id AND ii.restaurant_id = ri2.restaurant_id WHERE ri2.restaurant_id = r.restaurant_id AND ri2.recipe_id=r.id) as recipe_cost
+            FROM recipes r JOIN menu_items m ON r.menu_item_id=m.id AND m.restaurant_id = r.restaurant_id
+            WHERE r.restaurant_id = $tenantId ORDER BY m.name");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'recipes'=>$items]);
@@ -354,13 +366,13 @@ switch ($action) {
 
     case 'get_recipe':
         $id = intval($_GET['id'] ?? 0);
-        $r = $conn->query("SELECT r.*, m.name as menu_item_name FROM recipes r JOIN menu_items m ON r.menu_item_id=m.id WHERE r.id=$id");
+        $r = $conn->query("SELECT r.*, m.name as menu_item_name FROM recipes r JOIN menu_items m ON r.menu_item_id=m.id AND m.restaurant_id = r.restaurant_id WHERE r.restaurant_id = $tenantId AND r.id=$id");
         $recipe = $r ? $r->fetch_assoc() : null;
         $ingredients = [];
         if ($recipe) {
             $ri = $conn->query("SELECT ri.*, i.name as item_name, COALESCE(u.abbreviation,'pcs') as unit_abbr, i.average_cost
-                FROM recipe_items ri JOIN inventory_items i ON ri.inventory_item_id=i.id
-                LEFT JOIN inventory_units u ON COALESCE(ri.unit_id, i.unit_id)=u.id WHERE ri.recipe_id=$id");
+                FROM recipe_items ri JOIN inventory_items i ON ri.inventory_item_id=i.id AND i.restaurant_id = ri.restaurant_id
+                LEFT JOIN inventory_units u ON COALESCE(ri.unit_id, i.unit_id)=u.id AND u.restaurant_id = ri.restaurant_id WHERE ri.restaurant_id = $tenantId AND ri.recipe_id=$id");
             if ($ri) { while ($row = $ri->fetch_assoc()) $ingredients[] = $row; }
         }
         echo json_encode(['success'=>(bool)$recipe,'recipe'=>$recipe,'ingredients'=>$ingredients]);
@@ -378,12 +390,16 @@ switch ($action) {
 
         if (!$menu_item_id) { echo json_encode(['success'=>false,'message'=>'Select a menu item']); break; }
 
+        // Verify the menu item belongs to the active tenant before acting on it.
+        $chk = $conn->query("SELECT id FROM menu_items WHERE restaurant_id = $tenantId AND id=$menu_item_id LIMIT 1");
+        if (!$chk || !$chk->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Menu item not found']); break; }
+
         $conn->begin_transaction();
         if ($id > 0) {
-            $conn->query("UPDATE recipes SET menu_item_id=$menu_item_id, name='$name', yield_qty=$yield, notes='$notes' WHERE id=$id");
-            $conn->query("DELETE FROM recipe_items WHERE recipe_id=$id");
+            $conn->query("UPDATE recipes SET menu_item_id=$menu_item_id, name='$name', yield_qty=$yield, notes='$notes' WHERE restaurant_id = $tenantId AND id=$id");
+            $conn->query("DELETE FROM recipe_items WHERE restaurant_id = $tenantId AND recipe_id=$id");
         } else {
-            $conn->query("INSERT INTO recipes (menu_item_id,name,yield_qty,notes) VALUES ($menu_item_id,'$name',$yield,'$notes')");
+            $conn->query("INSERT INTO recipes (restaurant_id,menu_item_id,name,yield_qty,notes) VALUES ($tenantId,$menu_item_id,'$name',$yield,'$notes')");
             $id = $conn->insert_id;
         }
 
@@ -393,7 +409,7 @@ switch ($action) {
             $uid = intval($ing['unit_id'] ?? 0) ?: 'NULL';
             $inotes = $conn->real_escape_string($ing['notes'] ?? '');
             if ($iid > 0 && $qty > 0) {
-                $conn->query("INSERT INTO recipe_items (recipe_id,inventory_item_id,quantity,unit_id,notes) VALUES ($id,$iid,$qty,$uid,'$inotes')");
+                $conn->query("INSERT INTO recipe_items (restaurant_id,recipe_id,inventory_item_id,quantity,unit_id,notes) VALUES ($tenantId,$id,$iid,$qty,$uid,'$inotes')");
             }
         }
         $conn->commit();
@@ -402,23 +418,13 @@ switch ($action) {
         break;
 
     // =================== WASTE APPROVAL ===================
-    case 'list_waste':
-        Inventory::requireRead('waste');
-        $r = $conn->query("SELECT w.*, i.name as item_name, COALESCE(u.abbreviation,'pcs') as unit_abbr
-            FROM inventory_waste w JOIN inventory_items i ON w.inventory_item_id=i.id
-            LEFT JOIN inventory_units u ON i.unit_id=u.id ORDER BY w.created_at DESC LIMIT 100");
-        $items = [];
-        if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
-        echo json_encode(['success'=>true,'waste'=>$items]);
-        break;
-
     case 'approve_waste':
         CSRF::requireValidToken();
         Inventory::requireWrite('waste');
         $id = intval($_POST['id'] ?? 0);
         $action = ($_POST['approve'] ?? '1') === '1' ? 'approved' : 'rejected';
         $by = $conn->real_escape_string($_SESSION['admin_username'] ?? 'admin');
-        $ok = $conn->query("UPDATE inventory_waste SET approval_status='$action', approved_by='$by' WHERE id=$id");
+        $ok = $conn->query("UPDATE inventory_waste SET approval_status='$action', approved_by='$by' WHERE restaurant_id = $tenantId AND id=$id");
         Inventory::audit('waste.approve', "Waste #$id marked as $action by $by");
         echo json_encode(['success'=>(bool)$ok]);
         break;
@@ -435,9 +441,9 @@ switch ($action) {
         $status = $conn->real_escape_string($_POST['cat_status'] ?? 'active');
         if (!$name) { echo json_encode(['success'=>false,'message'=>'Category name required']); break; }
         if ($id > 0) {
-            $sql = "UPDATE inventory_categories SET name='$name',description='$desc',icon='$icon',display_order=$order,status='$status' WHERE id=$id";
+            $sql = "UPDATE inventory_categories SET name='$name',description='$desc',icon='$icon',display_order=$order,status='$status' WHERE restaurant_id = $tenantId AND id=$id";
         } else {
-            $sql = "INSERT INTO inventory_categories (name,description,icon,display_order,status) VALUES ('$name','$desc','$icon',$order,'$status')";
+            $sql = "INSERT INTO inventory_categories (restaurant_id,name,description,icon,display_order,status) VALUES ($tenantId,'$name','$desc','$icon',$order,'$status')";
         }
         $ok = $conn->query($sql);
         Inventory::audit('inventory.category', ($id > 0 ? "Updated category #$id: $name" : "Created category: $name"));
@@ -448,7 +454,7 @@ switch ($action) {
         CSRF::requireValidToken();
         Inventory::requireWrite('categories');
         $id = intval($_POST['id'] ?? 0);
-        $ok = $conn->query("UPDATE inventory_categories SET status='inactive' WHERE id=$id");
+        $ok = $conn->query("UPDATE inventory_categories SET status='inactive' WHERE restaurant_id = $tenantId AND id=$id");
         Inventory::audit('inventory.category', "Deactivated category #$id");
         echo json_encode(['success'=>(bool)$ok]);
         break;
@@ -459,14 +465,14 @@ switch ($action) {
         $type = $conn->real_escape_string($_GET['type'] ?? '');
         $from = $conn->real_escape_string($_GET['from'] ?? '');
         $to = $conn->real_escape_string($_GET['to'] ?? '');
-        $where = '1=1';
+        $where = "i.restaurant_id = $tenantId";
         if ($item_id > 0) $where .= " AND t.inventory_item_id=$item_id";
         if ($type) $where .= " AND t.type='$type'";
         if ($from) $where .= " AND t.created_at >= '$from 00:00:00'";
         if ($to) $where .= " AND t.created_at <= '$to 23:59:59'";
         $r = $conn->query("SELECT t.*, i.name as item_name, COALESCE(u.abbreviation,'pcs') as unit_abbr
-            FROM inventory_transactions t JOIN inventory_items i ON t.inventory_item_id=i.id
-            LEFT JOIN inventory_units u ON i.unit_id=u.id WHERE $where ORDER BY t.created_at DESC LIMIT 200");
+            FROM inventory_transactions t JOIN inventory_items i ON t.inventory_item_id=i.id AND i.restaurant_id = t.restaurant_id
+            LEFT JOIN inventory_units u ON i.unit_id=u.id AND u.restaurant_id = i.restaurant_id WHERE $where ORDER BY t.created_at DESC LIMIT 200");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'movements'=>$items]);
@@ -481,22 +487,22 @@ switch ($action) {
         $notes = $conn->real_escape_string(trim($_POST['notes'] ?? ''));
         $autoAdjust = ($_POST['auto_adjust'] ?? '0') === '1';
 
-        $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE id=$inv_id");
+        $r = $conn->query("SELECT current_stock, average_cost FROM inventory_items WHERE restaurant_id = $tenantId AND id=$inv_id");
         if (!$r || !$row = $r->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Item not found']); break; }
 
         $system = (float)$row['current_stock'];
         $variance = $physical - $system;
 
         $conn->begin_transaction();
-        $conn->query("INSERT INTO stock_audits (inventory_item_id,system_qty,physical_qty,variance,adjustment_made,notes) VALUES ($inv_id,$system,$physical,$variance," . ($autoAdjust?1:0) . ",'$notes')");
+        $conn->query("INSERT INTO stock_audits (restaurant_id,inventory_item_id,system_qty,physical_qty,variance,adjustment_made,notes) VALUES ($tenantId,$inv_id,$system,$physical,$variance," . ($autoAdjust?1:0) . ",'$notes')");
         $auditId = $conn->insert_id;
 
         if ($autoAdjust && abs($variance) > 0.001) {
             $direction = $variance > 0 ? 'in' : 'out';
             $absQty = abs($variance);
-            $conn->query("UPDATE inventory_items SET current_stock=$physical WHERE id=$inv_id");
-            $conn->query("INSERT INTO inventory_transactions (inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,reference_type,reference_id,notes,created_by)
-                VALUES ($inv_id,'adjustment',$absQty,'$direction',$system,$physical," . (float)$row['average_cost'] . ",'audit',$auditId,'Stock audit adjustment','admin')");
+            $conn->query("UPDATE inventory_items SET current_stock=$physical WHERE restaurant_id = $tenantId AND id=$inv_id");
+            $conn->query("INSERT INTO inventory_transactions (restaurant_id,inventory_item_id,type,quantity,direction,stock_before,stock_after,unit_cost,reference_type,reference_id,notes,created_by)
+                VALUES ($tenantId,$inv_id,'adjustment',$absQty,'$direction',$system,$physical," . (float)$row['average_cost'] . ",'audit',$auditId,'Stock audit adjustment','admin')");
         }
         $conn->commit();
         Inventory::generateAlerts();
@@ -510,13 +516,13 @@ switch ($action) {
         $cat = intval($_GET['category_id'] ?? 0);
         $status = $conn->real_escape_string($_GET['status'] ?? '');
         $search = $conn->real_escape_string($_GET['search'] ?? '');
-        $where = '1=1';
+        $where = "a.restaurant_id = $tenantId";
         if ($cat > 0) $where .= " AND a.category_id=$cat";
         if ($status) $where .= " AND a.status='$status'";
         if ($search) $where .= " AND (a.name LIKE '%$search%' OR a.asset_code LIKE '%$search%' OR a.serial_number LIKE '%$search%')";
         $r = $conn->query("SELECT a.*, ac.name as category_name, ac.icon as category_icon, s.company_name as supplier_name
-            FROM assets a LEFT JOIN asset_categories ac ON a.category_id=ac.id
-            LEFT JOIN suppliers s ON a.supplier_id=s.id WHERE $where ORDER BY a.name");
+            FROM assets a LEFT JOIN asset_categories ac ON a.category_id=ac.id AND ac.restaurant_id = a.restaurant_id
+            LEFT JOIN suppliers s ON a.supplier_id=s.id AND s.restaurant_id = a.restaurant_id WHERE $where ORDER BY a.name");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'assets'=>$items]);
@@ -551,23 +557,23 @@ switch ($action) {
         if ($id > 0) {
             $sql = "UPDATE assets SET name='$name',asset_code='$asset_code',category_id=$category_id,brand='$brand',model='$model',serial_number='$serial',
                 purchase_date=$pdate,purchase_cost=$cost,supplier_id=$supplier_id,warranty_expiry=$warr,assigned_location='$location',
-                assigned_employee='$employee',`condition`='$condition',status='$status',useful_life_months=$useful_life,residual_value=$residual,notes='$notes' WHERE id=$id";
+                assigned_employee='$employee',`condition`='$condition',status='$status',useful_life_months=$useful_life,residual_value=$residual,notes='$notes' WHERE restaurant_id = $tenantId AND id=$id";
         } else {
             if (!$asset_code) $asset_code = 'AST-' . date('Ymd') . '-' . str_pad(mt_rand(1,9999),4,'0',STR_PAD_LEFT);
             $qr = bin2hex(random_bytes(16));
-            $sql = "INSERT INTO assets (asset_code,qr_token,name,category_id,brand,model,serial_number,purchase_date,purchase_cost,supplier_id,warranty_expiry,
+            $sql = "INSERT INTO assets (restaurant_id,asset_code,qr_token,name,category_id,brand,model,serial_number,purchase_date,purchase_cost,supplier_id,warranty_expiry,
                 assigned_location,assigned_employee,`condition`,status,useful_life_months,residual_value,current_value,notes)
-                VALUES ('$asset_code','$qr','$name',$category_id,'$brand','$model','$serial',$pdate,$cost,$supplier_id,$warr,'$location','$employee','$condition','$status',$useful_life,$residual,$cost,'$notes')";
+                VALUES ($tenantId,'$asset_code','$qr','$name',$category_id,'$brand','$model','$serial',$pdate,$cost,$supplier_id,$warr,'$location','$employee','$condition','$status',$useful_life,$residual,$cost,'$notes')";
         }
         $ok = $conn->query($sql);
         $assetId = $id > 0 ? $id : $conn->insert_id;
         Inventory::ensureAssetQR($conn, $assetId);
         // Immutable asset lifecycle log
-        $logStmt = $conn->prepare("INSERT INTO asset_logs (asset_id, event_type, description, changed_by) VALUES (?,?,?,?)");
+        $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
         $actor = $_SESSION['admin_username'] ?? 'admin';
         $event = $id > 0 ? 'updated' : 'created';
         $desc = ($id > 0 ? "Asset #$assetId updated" : "Asset #$assetId created") . " — $name";
-        $logStmt->bind_param("isss", $assetId, $event, $desc, $actor);
+        $logStmt->bind_param("iisss", $tenantId, $assetId, $event, $desc, $actor);
         $logStmt->execute();
         $logStmt->close();
         Inventory::audit('asset.save', $desc);
@@ -578,13 +584,13 @@ switch ($action) {
         CSRF::requireValidToken();
         Inventory::requireWrite('assets');
         $id = intval($_POST['id'] ?? 0);
-        $r = $conn->query("SELECT name FROM assets WHERE id=$id");
-        $name = ($r && $r->fetch_assoc()) ? $r->fetch_assoc()['name'] : "#$id";
-        $ok = $conn->query("UPDATE assets SET status='disposed' WHERE id=$id");
-        $logStmt = $conn->prepare("INSERT INTO asset_logs (asset_id, event_type, description, changed_by) VALUES (?,?,?,?)");
+        $r = $conn->query("SELECT name FROM assets WHERE restaurant_id = $tenantId AND id=$id");
+        $name = ($r && $row = $r->fetch_assoc()) ? $row['name'] : "#$id";
+        $ok = $conn->query("UPDATE assets SET status='disposed' WHERE restaurant_id = $tenantId AND id=$id");
+        $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
         $actor = $_SESSION['admin_username'] ?? 'admin';
         $desc = "Asset #$id disposed — $name";
-        $logStmt->bind_param("isss", $id, 'disposed', $desc, $actor);
+        $logStmt->bind_param("iisss", $tenantId, $id, 'disposed', $desc, $actor);
         $logStmt->execute();
         $logStmt->close();
         Inventory::audit('asset.delete', $desc);
@@ -595,8 +601,8 @@ switch ($action) {
     case 'list_asset_logs':
         Inventory::requireRead('assets');
         $asset_id = intval($_GET['asset_id'] ?? 0);
-        $where = $asset_id ? "WHERE asset_id=$asset_id" : '';
-        $r = $conn->query("SELECT * FROM asset_logs $where ORDER BY created_at DESC LIMIT 200");
+        $where = $asset_id ? "AND asset_id=$asset_id" : '';
+        $r = $conn->query("SELECT * FROM asset_logs WHERE restaurant_id = $tenantId $where ORDER BY created_at DESC LIMIT 200");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'logs'=>$items]);
@@ -606,8 +612,8 @@ switch ($action) {
     case 'list_transfers':
         Inventory::requireRead('transfers');
         $asset_id = intval($_GET['asset_id'] ?? 0);
-        $where = $asset_id ? "WHERE t.asset_id=$asset_id" : '';
-        $r = $conn->query("SELECT t.*, a.name as asset_name, a.asset_code FROM asset_transfers t JOIN assets a ON t.asset_id=a.id $where ORDER BY t.transfer_date DESC LIMIT 200");
+        $where = $asset_id ? "AND t.asset_id=$asset_id" : '';
+        $r = $conn->query("SELECT t.*, a.name as asset_name, a.asset_code FROM asset_transfers t JOIN assets a ON t.asset_id=a.id AND a.restaurant_id = t.restaurant_id WHERE t.restaurant_id = $tenantId $where ORDER BY t.transfer_date DESC LIMIT 200");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'transfers'=>$items]);
@@ -625,19 +631,23 @@ switch ($action) {
         $reason = $conn->real_escape_string(trim($_POST['reason'] ?? ''));
         if (!$asset_id) { echo json_encode(['success'=>false,'message'=>'Select an asset']); break; }
 
+        // Verify the asset belongs to the active tenant before acting on it.
+        $chk = $conn->query("SELECT id FROM assets WHERE restaurant_id = $tenantId AND id=$asset_id LIMIT 1");
+        if (!$chk || !$chk->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Asset not found']); break; }
+
         $conn->begin_transaction();
-        $stmt = $conn->prepare("INSERT INTO asset_transfers (asset_id,from_location,to_location,from_employee,to_employee,transfer_date,reason,transferred_by) VALUES (?,?,?,?,?,?,?,?)");
+        $stmt = $conn->prepare("INSERT INTO asset_transfers (restaurant_id,asset_id,from_location,to_location,from_employee,to_employee,transfer_date,reason,transferred_by) VALUES (?,?,?,?,?,?,?,?,?)");
         $actor = $_SESSION['admin_username'] ?? 'admin';
-        $stmt->bind_param("isssssss", $asset_id, $from_loc, $to_loc, $from_emp, $to_emp, $tdate, $reason, $actor);
+        $stmt->bind_param("iisssssss", $tenantId, $asset_id, $from_loc, $to_loc, $from_emp, $to_emp, $tdate, $reason, $actor);
         $ok = $stmt->execute();
         $stmt->close();
 
-        if ($to_loc) $conn->query("UPDATE assets SET assigned_location='$to_loc' WHERE id=$asset_id");
-        if ($to_emp) $conn->query("UPDATE assets SET assigned_employee='$to_emp' WHERE id=$asset_id");
+        if ($to_loc) $conn->query("UPDATE assets SET assigned_location='$to_loc' WHERE restaurant_id = $tenantId AND id=$asset_id");
+        if ($to_emp) $conn->query("UPDATE assets SET assigned_employee='$to_emp' WHERE restaurant_id = $tenantId AND id=$asset_id");
 
-        $logStmt = $conn->prepare("INSERT INTO asset_logs (asset_id, event_type, description, changed_by) VALUES (?,?,?,?)");
+        $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
         $desc = "Asset #$asset_id transferred: " . ($from_loc ?: '?') . " -> " . ($to_loc ?: '?');
-        $logStmt->bind_param("isss", $asset_id, 'transfer', $desc, $actor);
+        $logStmt->bind_param("iisss", $tenantId, $asset_id, 'transfer', $desc, $actor);
         $logStmt->execute();
         $logStmt->close();
 
@@ -648,9 +658,10 @@ switch ($action) {
 
     // =================== MAINTENANCE ===================
     case 'list_maintenance':
+        Inventory::requireRead('maintenance');
         $asset_id = intval($_GET['asset_id'] ?? 0);
-        $where = $asset_id ? "WHERE m.asset_id=$asset_id" : '';
-        $r = $conn->query("SELECT m.*, a.name as asset_name, a.asset_code FROM asset_maintenance m JOIN assets a ON m.asset_id=a.id $where ORDER BY m.service_date DESC LIMIT 100");
+        $where = $asset_id ? "AND m.asset_id=$asset_id" : '';
+        $r = $conn->query("SELECT m.*, a.name as asset_name, a.asset_code FROM asset_maintenance m JOIN assets a ON m.asset_id=a.id AND a.restaurant_id = m.restaurant_id WHERE m.restaurant_id = $tenantId $where ORDER BY m.service_date DESC LIMIT 100");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'maintenance'=>$items]);
@@ -674,24 +685,28 @@ switch ($action) {
 
         if (!$asset_id) { echo json_encode(['success'=>false,'message'=>'Select an asset']); break; }
 
+        // Verify the asset belongs to the active tenant before acting on it.
+        $chk = $conn->query("SELECT id FROM assets WHERE restaurant_id = $tenantId AND id=$asset_id LIMIT 1");
+        if (!$chk || !$chk->fetch_assoc()) { echo json_encode(['success'=>false,'message'=>'Asset not found']); break; }
+
         if ($id > 0) {
             $sql = "UPDATE asset_maintenance SET asset_id=$asset_id,type='$type',description='$desc',technician='$tech',cost=$cost,parts_used='$parts',
-                service_date='$sdate',next_service_date=$ndt,status='$mstatus',notes='$notes' WHERE id=$id";
+                service_date='$sdate',next_service_date=$ndt,status='$mstatus',notes='$notes' WHERE restaurant_id = $tenantId AND id=$id";
         } else {
-            $sql = "INSERT INTO asset_maintenance (asset_id,type,description,technician,cost,parts_used,service_date,next_service_date,status,notes)
-                VALUES ($asset_id,'$type','$desc','$tech',$cost,'$parts','$sdate',$ndt,'$mstatus','$notes')";
+            $sql = "INSERT INTO asset_maintenance (restaurant_id,asset_id,type,description,technician,cost,parts_used,service_date,next_service_date,status,notes)
+                VALUES ($tenantId,$asset_id,'$type','$desc','$tech',$cost,'$parts','$sdate',$ndt,'$mstatus','$notes')";
         }
         $ok = $conn->query($sql);
         // Maintenance affects asset status + lifecycle log
         if ($mstatus === 'completed') {
-            $conn->query("UPDATE assets SET status='in_use' WHERE id=$asset_id");
+            $conn->query("UPDATE assets SET status='in_use' WHERE restaurant_id = $tenantId AND id=$asset_id");
         } elseif (in_array($mstatus, ['scheduled','in_progress'])) {
-            $conn->query("UPDATE assets SET status='maintenance' WHERE id=$asset_id AND status='in_use'");
+            $conn->query("UPDATE assets SET status='maintenance' WHERE restaurant_id = $tenantId AND id=$asset_id AND status='in_use'");
         }
-        $logStmt = $conn->prepare("INSERT INTO asset_logs (asset_id, event_type, description, changed_by) VALUES (?,?,?,?)");
+        $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
         $actor = $_SESSION['admin_username'] ?? 'admin';
         $desc = ($id > 0 ? "Updated maintenance #$id" : "Scheduled maintenance") . " for asset #$asset_id ($type, Rs.$cost)";
-        $logStmt->bind_param("isss", $asset_id, 'maintenance', $desc, $actor);
+        $logStmt->bind_param("iisss", $tenantId, $asset_id, 'maintenance', $desc, $actor);
         $logStmt->execute();
         $logStmt->close();
         Inventory::audit('asset.maintenance', $desc);
@@ -703,16 +718,16 @@ switch ($action) {
         CSRF::requireValidToken();
         Inventory::requireWrite('depreciation');
         $asset_id = intval($_POST['asset_id'] ?? 0);
-        $where = $asset_id ? "AND id=$asset_id" : '';
+        $where = $asset_id ? "AND a.id=$asset_id" : '';
         $r = $conn->query("SELECT a.id, a.purchase_cost, a.residual_value, a.useful_life_months, a.current_value,
                 COALESCE(ac.depreciation_method,'straight_line') as method, ac.depreciation_rate
-            FROM assets a LEFT JOIN asset_categories ac ON a.category_id=ac.id
-            WHERE a.status NOT IN ('disposed','lost') $where");
+            FROM assets a LEFT JOIN asset_categories ac ON a.category_id=ac.id AND ac.restaurant_id = a.restaurant_id
+            WHERE a.restaurant_id = $tenantId AND a.status NOT IN ('disposed','lost') $where");
         if (!$r) { echo json_encode(['success'=>false,'message'=>'Query failed']); break; }
 
         $period = date('Y-m-01');
         // Skip if depreciation already posted for this period (prevents double-charging)
-        $dup = $conn->query("SELECT id FROM asset_depreciation WHERE period_date='$period' LIMIT 1");
+        $dup = $conn->query("SELECT id FROM asset_depreciation WHERE restaurant_id = $tenantId AND period_date='$period' LIMIT 1");
         if ($dup && $dup->fetch_assoc()) {
             echo json_encode(['success'=>false,'message'=>"Depreciation already posted for period $period. Delete the posting to re-run."]);
             break;
@@ -737,11 +752,11 @@ switch ($action) {
             $newVal = max($residual, $currentVal - $depAmt);
             $depAmt = $currentVal - $newVal;
 
-            $ar = $conn->query("SELECT COALESCE(SUM(depreciation_amount),0) as acc FROM asset_depreciation WHERE asset_id=" . $a['id']);
+            $ar = $conn->query("SELECT COALESCE(SUM(depreciation_amount),0) as acc FROM asset_depreciation WHERE restaurant_id = $tenantId AND asset_id=" . $a['id']);
             $accum = $ar ? (float)$ar->fetch_assoc()['acc'] : 0;
 
-            $conn->query("INSERT INTO asset_depreciation (asset_id,period_date,method,depreciation_amount,accumulated_depreciation,book_value) VALUES (" . $a['id'] . ",'$period','$method',$depAmt," . ($accum+$depAmt) . ",$newVal)");
-            $conn->query("UPDATE assets SET current_value=$newVal WHERE id=" . $a['id']);
+            $conn->query("INSERT INTO asset_depreciation (restaurant_id,asset_id,period_date,method,depreciation_amount,accumulated_depreciation,book_value) VALUES ($tenantId," . $a['id'] . ",'$period','$method',$depAmt," . ($accum+$depAmt) . ",$newVal)");
+            $conn->query("UPDATE assets SET current_value=$newVal WHERE restaurant_id = $tenantId AND id=" . $a['id']);
             $count++;
         }
         $conn->commit();
@@ -752,9 +767,10 @@ switch ($action) {
     case 'list_depreciation':
         Inventory::requireRead('depreciation');
         $asset_id = intval($_GET['asset_id'] ?? 0);
-        $where = $asset_id ? "WHERE d.asset_id=$asset_id" : '';
+        $where = $asset_id ? "AND d.asset_id=$asset_id" : '';
         $r = $conn->query("SELECT d.*, a.name as asset_name, a.asset_code
-            FROM asset_depreciation d JOIN assets a ON d.asset_id=a.id $where
+            FROM asset_depreciation d JOIN assets a ON d.asset_id=a.id AND a.restaurant_id = d.restaurant_id
+            WHERE d.restaurant_id = $tenantId $where
             ORDER BY d.period_date DESC LIMIT 300");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
@@ -763,28 +779,28 @@ switch ($action) {
 
     // =================== HELPERS ===================
     case 'list_categories':
-        $r = $conn->query("SELECT * FROM inventory_categories WHERE status='active' ORDER BY display_order");
+        $r = $conn->query("SELECT * FROM inventory_categories WHERE restaurant_id = $tenantId AND status='active' ORDER BY display_order");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'categories'=>$items]);
         break;
 
     case 'list_units':
-        $r = $conn->query("SELECT * FROM inventory_units ORDER BY name");
+        $r = $conn->query("SELECT * FROM inventory_units WHERE restaurant_id = $tenantId ORDER BY name");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'units'=>$items]);
         break;
 
     case 'list_menu_items':
-        $r = $conn->query("SELECT id, name, price FROM menu_items WHERE status='available' ORDER BY name");
+        $r = $conn->query("SELECT id, name, price FROM menu_items WHERE restaurant_id = $tenantId AND status='available' ORDER BY name");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'menu_items'=>$items]);
         break;
 
     case 'list_asset_categories':
-        $r = $conn->query("SELECT * FROM asset_categories ORDER BY name");
+        $r = $conn->query("SELECT * FROM asset_categories WHERE restaurant_id = $tenantId ORDER BY name");
         $items = [];
         if ($r) { while ($row = $r->fetch_assoc()) $items[] = $row; }
         echo json_encode(['success'=>true,'categories'=>$items]);

@@ -16,7 +16,24 @@ define('DB_PASS', getenv('DB_PASSWORD') ?: '');
 define('DB_NAME', getenv('DB_DATABASE') ?: 'qr_restaurant');
 
 // HMAC SHA-256 Secret Key for Signed Table URLs & Session Pinning
-define('QR_SECRET_KEY', getenv('JWT_SECRET') ?: 'RMS_SECURE_HMAC_SECRET_KEY_2026_CHANGE_IF_NEEDED');
+// SECURITY: Never falls back to a hardcoded constant. Uses the JWT_SECRET env var,
+// or a per-install random secret persisted outside the web root.
+$__secretFromEnv = (string)getenv('JWT_SECRET');
+$__weakSecret = 'RMS_SECURE_HMAC_SECRET_KEY_2026_CHANGE_IF_NEEDED';
+if ($__secretFromEnv === '' || $__secretFromEnv === $__weakSecret) {
+    $__secretFile = __DIR__ . '/storage/.app_secret';
+    $__secretKey = is_readable($__secretFile) ? trim((string)@file_get_contents($__secretFile)) : '';
+    if ($__secretKey === '') {
+        $__secretKey = bin2hex(random_bytes(32));
+        @file_put_contents($__secretFile, $__secretKey, LOCK_EX);
+        @chmod($__secretFile, 0600);
+        $__secretKey = is_readable($__secretFile) ? trim((string)@file_get_contents($__secretFile)) : '';
+    }
+} else {
+    $__secretKey = $__secretFromEnv;
+}
+define('QR_SECRET_KEY', $__secretKey);
+unset($__secretFromEnv, $__weakSecret, $__secretFile, $__secretKey);
 
 // Load Helper Classes
 require_once __DIR__ . '/helpers/Security.php';
@@ -27,6 +44,8 @@ require_once __DIR__ . '/helpers/SubscriptionService.php';
 require_once __DIR__ . '/helpers/RateLimiter.php';
 require_once __DIR__ . '/helpers/Response.php';
 require_once __DIR__ . '/helpers/Inventory.php';
+require_once __DIR__ . '/helpers/PermissionService.php';
+require_once __DIR__ . '/helpers/AuthorizationService.php';
 
 // Set Global Production Security Headers
 Security::setSecurityHeaders();
@@ -39,16 +58,32 @@ function getOrCreateTableToken($table_number) {
     $conn = getDBConnection();
     if (!$conn) return '';
 
+    // Fail closed: tokens are tenant-scoped and require a valid tenant context.
+    $restaurantId = (int)TenantContext::getTenantId();
+    if ($restaurantId <= 0) return '';
+
     $tbl_safe = $conn->real_escape_string(trim($table_number));
-    $res = $conn->query("SELECT qr_token FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
-    if ($res && $row = $res->fetch_assoc()) {
+    $stmt = $conn->prepare("SELECT qr_token FROM tables WHERE table_number = ? AND restaurant_id = ? LIMIT 1");
+    if (!$stmt) return '';
+    $stmt->bind_param("si", $tbl_safe, $restaurantId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($row = $res->fetch_assoc()) {
         if (!empty($row['qr_token'])) {
+            $stmt->close();
             return $row['qr_token'];
         }
     }
+    $stmt->close();
+
     // Generate new 32-char cryptographic hex token
     $newToken = bin2hex(random_bytes(16));
-    $conn->query("UPDATE tables SET qr_token = '$newToken' WHERE table_number = '$tbl_safe'");
+    $uStmt = $conn->prepare("UPDATE tables SET qr_token = ? WHERE table_number = ? AND restaurant_id = ?");
+    if ($uStmt) {
+        $uStmt->bind_param("ssi", $newToken, $tbl_safe, $restaurantId);
+        $uStmt->execute();
+        $uStmt->close();
+    }
     return $newToken;
 }
 
@@ -65,11 +100,16 @@ function verifyTableSignature($table_id, $sig) {
     if (empty($table_id) || empty($sig)) {
         return false;
     }
+    if (QR_SECRET_KEY === '') {
+        // Fail closed when no secret is configured.
+        return false;
+    }
     $expected_sig = hash_hmac('sha256', 'table_' . trim($table_id), QR_SECRET_KEY);
     return hash_equals($expected_sig, trim($sig));
 }
 
-// Create database connection with error handling & auto schema migration
+// Create database connection with error handling
+// Schema provisioning is a one-time setup step (database/migrate.php), NOT run per-request.
 function getDBConnection() {
     static $conn = null;
     if ($conn !== null && @$conn->ping()) {
@@ -77,26 +117,18 @@ function getDBConnection() {
     }
 
     $conn = @new mysqli(DB_HOST, DB_USER, DB_PASS);
-    
+
     if ($conn->connect_error) {
         return null;
     }
-    
-    // Check if database exists, create if not
-    $result = $conn->query("SHOW DATABASES LIKE '" . DB_NAME . "'");
-    if ($result && $result->num_rows == 0) {
-        $conn->query("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "`");
-    }
-    
+
     if (!$conn->select_db(DB_NAME)) {
+        // Database must exist. Run `php database/migrate.php` once to provision it.
         return null;
     }
-    
+
     $conn->set_charset("utf8mb4");
-    
-    // Ensure database schema and indexes exist
-    ensureDatabaseSchema($conn);
-    
+
     return $conn;
 }
 
@@ -911,8 +943,12 @@ function applySaaSMultiTenancyMigration($conn) {
     $tenantTables = [
         'admin_users', 'categories', 'menu_items', 'tables', 'dining_sessions',
         'orders', 'order_items', 'inventory_categories', 'inventory_units',
-        'suppliers', 'inventory_items', 'recipes', 'inventory_transactions',
-        'assets', 'payment_gateways', 'payment_transactions', 'audit_logs',
+        'suppliers', 'inventory_items', 'recipes', 'recipe_items',
+        'inventory_transactions', 'purchase_orders', 'purchase_order_items',
+        'goods_receipts', 'inventory_waste', 'stock_audits', 'inventory_alerts',
+        'assets', 'asset_categories', 'asset_maintenance', 'asset_warranties',
+        'asset_transfers', 'asset_depreciation', 'asset_logs',
+        'payment_gateways', 'payment_transactions', 'audit_logs',
         'waiter_calls', 'landing_page_settings'
     ];
 
@@ -946,12 +982,9 @@ function applySaaSMultiTenancyMigration($conn) {
         try { $conn->query("ALTER TABLE admin_users ADD COLUMN is_super_admin TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
     }
 
-    // 4. Ensure Super Admin account exists
-    $saCheck = $conn->query("SELECT id FROM admin_users WHERE is_super_admin = 1 OR role = 'super_admin' LIMIT 1");
-    if (!$saCheck || $saCheck->num_rows == 0) {
-        $saPass = password_hash('SuperAdmin@2026', PASSWORD_DEFAULT);
-        $conn->query("INSERT IGNORE INTO admin_users (username, password, full_name, role, is_super_admin, restaurant_id) VALUES ('superadmin', '$saPass', 'Platform Super Admin', 'super_admin', 1, 1)");
-    }
+    // NOTE: The Super Admin account is NOT auto-seeded here anymore. It is created
+    // deliberately by `php database/migrate.php --create-superadmin` with a password
+    // supplied via the APP_SUPER_ADMIN_PASSWORD environment variable (fail-closed).
 }
 
 
@@ -983,6 +1016,10 @@ function isKitchenLoggedIn() {
 
 function requireAdminLogin() {
     Auth::requireAdmin();
+    // Enforce tenant context + account status + subscription on every admin page.
+    if (class_exists('TenantContext')) {
+        TenantContext::requireTenant();
+    }
 }
 
 function requireKitchenLogin() {

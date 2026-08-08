@@ -29,6 +29,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn->query("UPDATE restaurants SET status = 'INACTIVE' WHERE id = {$restId}");
                 Security::logAudit("SUPER_ADMIN_DISABLE_TENANT", "Super Admin disabled restaurant tenant ID: {$restId}");
                 $message = "Restaurant tenant account disabled successfully.";
+            } elseif ($action === 'delete_restaurant') {
+                // Prevent deleting a tenant that hosts the Platform Super Admin account
+                $saCheck = $conn->query("SELECT COUNT(*) AS cnt FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 1");
+                $saCnt = ($saCheck && $saRow = $saCheck->fetch_assoc()) ? (int)$saRow['cnt'] : 0;
+                if ($saCnt > 0) {
+                    $error = "This restaurant hosts the Platform Super Admin account and cannot be deleted.";
+                } else {
+                    $delStmt = $conn->prepare("SELECT restaurant_name FROM restaurants WHERE id = ? LIMIT 1");
+                    $delStmt->bind_param("i", $restId);
+                    $delStmt->execute();
+                    $delRow = $delStmt->get_result()->fetch_assoc();
+                    $delStmt->close();
+
+                    if (!$delRow) {
+                        $error = "Restaurant tenant not found.";
+                    } else {
+                        $purgeTables = [
+                            'payment_transactions', 'order_items', 'orders', 'menu_addons',
+                            'recipe_items', 'recipes', 'menu_items', 'categories',
+                            'inventory_transactions', 'stock_audits', 'inventory_alerts',
+                            'inventory_waste', 'goods_receipts', 'purchase_order_items',
+                            'purchase_orders', 'suppliers', 'inventory_items',
+                            'inventory_units', 'inventory_categories',
+                            'asset_logs', 'asset_depreciation', 'asset_maintenance',
+                            'asset_transfers', 'asset_warranties', 'assets', 'asset_categories',
+                            'waiter_calls', 'dining_sessions', 'tables', 'notifications',
+                            'admin_users', 'audit_logs', 'landing_page_settings',
+                            'payment_gateways', 'payment_settings', 'subscriptions'
+                        ];
+
+                        $conn->begin_transaction();
+                        try {
+                            foreach ($purgeTables as $t) {
+                                $stmt = $conn->prepare("DELETE FROM `{$t}` WHERE restaurant_id = ?");
+                                $stmt->bind_param("i", $restId);
+                                $stmt->execute();
+                                $stmt->close();
+                            }
+                            $stmt = $conn->prepare("DELETE FROM restaurants WHERE id = ?");
+                            $stmt->bind_param("i", $restId);
+                            $stmt->execute();
+                            $stmt->close();
+                            $conn->commit();
+
+                            Security::logAudit("SUPER_ADMIN_DELETE_TENANT", "Super Admin permanently deleted restaurant tenant ID: {$restId} ({$delRow['restaurant_name']}) and all associated tenant data.");
+                            $message = "Restaurant tenant '{$delRow['restaurant_name']}' and all associated data have been permanently deleted.";
+                        } catch (Throwable $e) {
+                            $conn->rollback();
+                            $error = "Failed to delete restaurant tenant: " . $e->getMessage();
+                        }
+                    }
+                }
             } elseif ($action === 'reset_password') {
                 $newPass = $_POST['new_password'] ?? '';
                 $confirmPass = $_POST['confirm_password'] ?? '';
@@ -392,6 +444,11 @@ $csrfField = CSRF::getField();
                                                 Activate
                                             </button>
                                         <?php endif; ?>
+
+                                        <!-- Permanently Delete Tenant Trigger Button -->
+                                        <button type="button" onclick="openDeleteModal(<?= $r['id'] ?>, '<?= htmlspecialchars($r['restaurant_name'], ENT_QUOTES) ?>')" title="Permanently Delete Tenant & All Data" class="px-2.5 py-1.5 rounded-xl bg-rose-500 text-white font-black text-[11px] hover:bg-rose-600 transition-all shadow-sm">
+                                            🗑️ Delete
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -686,6 +743,37 @@ $csrfField = CSRF::getField();
     </div>
 </div>
 
+<!-- MODAL 7: PERMANENT DELETE CONFIRMATION -->
+<div id="delete-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-rose-500/30 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+            <h3 class="text-base font-black text-rose-400">Permanently Delete Restaurant?</h3>
+            <button onclick="closeDeleteModal()" class="text-zinc-500 hover:text-white font-mono text-lg">&times;</button>
+        </div>
+        <form method="POST" class="space-y-4">
+            <?= $csrfField ?>
+            <input type="hidden" name="action" value="delete_restaurant">
+            <input type="hidden" name="restaurant_id" id="delete-rest-id">
+
+            <div>
+                <span class="text-xs text-zinc-400 block font-semibold">Target Restaurant:</span>
+                <div id="delete-rest-name" class="text-base font-black text-white mt-0.5"></div>
+            </div>
+
+            <div class="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 leading-relaxed font-medium">
+                🗑️ <strong>This action is irreversible.</strong> The restaurant tenant, all staff accounts, orders, tables, menu items, inventory records, subscriptions, and audit history will be permanently deleted. Type <strong class="font-mono text-white" id="delete-confirm-label"></strong> to confirm.
+            </div>
+
+            <input type="text" id="delete-confirm-input" autocomplete="off" placeholder="Type restaurant name to confirm..." oninput="toggleDeleteConfirm()" class="w-full h-10 bg-zinc-950 border border-zinc-800 rounded-xl px-3 text-xs text-white placeholder-zinc-500 outline-none focus:border-rose-500">
+
+            <div class="flex items-center justify-end space-x-2 pt-2 border-t border-zinc-800">
+                <button type="button" onclick="closeDeleteModal()" class="px-4 py-2 rounded-xl bg-zinc-800 text-xs font-bold text-zinc-300">Cancel</button>
+                <button type="submit" id="delete-submit-btn" disabled class="px-5 py-2 rounded-xl bg-rose-500 text-white font-black text-xs hover:bg-rose-600 opacity-40 cursor-not-allowed">🗑️ Delete Permanently</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     // Modal 1: Account Details & Username
     function openUsernameModal(restId, restName, restCode, username, email, phone, status, createdAt, lastLogin) {
@@ -775,6 +863,33 @@ $csrfField = CSRF::getField();
     }
     function closeSupportModal() {
         document.getElementById('support-modal').classList.add('hidden');
+    }
+
+    // Modal 7: Permanently Delete Confirmation
+    let deleteConfirmTarget = '';
+    function openDeleteModal(restId, restName) {
+        document.getElementById('delete-rest-id').value = restId;
+        document.getElementById('delete-rest-name').innerText = restName;
+        document.getElementById('delete-confirm-label').innerText = '"' + restName + '"';
+        document.getElementById('delete-confirm-input').value = '';
+        deleteConfirmTarget = restName;
+        document.getElementById('delete-submit-btn').disabled = true;
+        document.getElementById('delete-submit-btn').classList.add('opacity-40', 'cursor-not-allowed');
+        document.getElementById('delete-modal').classList.remove('hidden');
+    }
+    function closeDeleteModal() {
+        document.getElementById('delete-modal').classList.add('hidden');
+    }
+    function toggleDeleteConfirm() {
+        const inputVal = document.getElementById('delete-confirm-input').value.trim();
+        const btn = document.getElementById('delete-submit-btn');
+        const matches = (inputVal === deleteConfirmTarget);
+        btn.disabled = !matches;
+        if (matches) {
+            btn.classList.remove('opacity-40', 'cursor-not-allowed');
+        } else {
+            btn.classList.add('opacity-40', 'cursor-not-allowed');
+        }
     }
 </script>
 

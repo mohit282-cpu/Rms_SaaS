@@ -2,9 +2,7 @@
 // api/kitchen-stream.php - Realtime Kitchen Display System (KDS) Stream API
 require_once __DIR__ . '/../config.php';
 
-if (!Auth::isAdminLoggedIn() && !Auth::isKitchenLoggedIn()) {
-    Response::error('Unauthorized access. Kitchen authentication required.', 401);
-}
+$tenantId = (int)AuthorizationService::requireStaffApi();
 // Release session lock so multiple browser tabs can poll concurrently.
 session_write_close();
 
@@ -24,6 +22,7 @@ $stats_res = $conn->query("
         SUM(CASE WHEN status = 'completed' AND DATE(created_at) = '$today' THEN 1 ELSE 0 END) as completed_today,
         AVG(CASE WHEN status IN ('preparing', 'ready', 'completed') AND DATE(created_at) = '$today' THEN TIMESTAMPDIFF(MINUTE, created_at, updated_at) ELSE NULL END) as avg_prep_time
     FROM orders
+    WHERE restaurant_id = $tenantId
 ");
 $stats = $stats_res ? $stats_res->fetch_assoc() : [];
 
@@ -37,7 +36,8 @@ $avg_prep_time = round(floatval($stats['avg_prep_time'] ?? 12), 1) . 'm';
 $delayed_res = $conn->query("
     SELECT COUNT(*) as delayed_cnt 
     FROM orders 
-    WHERE status IN ('new', 'preparing') 
+    WHERE restaurant_id = $tenantId
+    AND status IN ('new', 'preparing') 
     AND TIMESTAMPDIFF(MINUTE, created_at, NOW()) > 15
 ");
 $delayed_cnt = $delayed_res ? intval($delayed_res->fetch_assoc()['delayed_cnt'] ?? 0) : 0;
@@ -51,7 +51,8 @@ $orders_res = $conn->query("
     SELECT o.*, 
         TIMESTAMPDIFF(MINUTE, o.created_at, NOW()) as elapsed_mins
     FROM orders o
-    WHERE o.status IN ('new', 'preparing', 'ready')
+    WHERE o.restaurant_id = $tenantId
+    AND o.status IN ('new', 'preparing', 'ready')
     ORDER BY 
         CASE WHEN o.status = 'new' THEN 1 WHEN o.status = 'preparing' THEN 2 ELSE 3 END ASC,
         o.id ASC
@@ -84,7 +85,8 @@ if ($orders_res) {
 // 3. Pending Waiter Call Alerts
 $waiter_res = $conn->query("
     SELECT * FROM waiter_calls 
-    WHERE status = 'pending' 
+    WHERE restaurant_id = $tenantId
+    AND status = 'pending' 
     ORDER BY created_at DESC LIMIT 10
 ");
 $waiter_calls = [];

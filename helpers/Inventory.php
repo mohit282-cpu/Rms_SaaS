@@ -42,7 +42,8 @@ class Inventory {
     ];
 
     public static function role() {
-        return $_SESSION['admin_role'] ?? 'admin';
+        // Fail closed: an unset role is granted nothing.
+        return $_SESSION['role'] ?? $_SESSION['admin_role'] ?? '';
     }
 
     public static function roleLabel() {
@@ -89,6 +90,8 @@ class Inventory {
             echo json_encode(['success' => false, 'message' => 'Unauthorized admin access required.']);
             exit;
         }
+        // Enforce tenant context, account status and subscription.
+        TenantContext::requireTenant();
     }
 
     private static function deny($msg) {
@@ -104,13 +107,14 @@ class Inventory {
     public static function audit($event, $description) {
         $conn = getDBConnection();
         if (!$conn) return;
-        $uid = intval($_SESSION['admin_id'] ?? 1);
-        $user = $_SESSION['admin_username'] ?? 'Admin';
+        $tenantId = (int)TenantContext::getTenantId();
+        $uid = intval($_SESSION['admin_id'] ?? 0);
+        $user = $_SESSION['admin_username'] ?? 'System';
         $ip = $_SERVER['REMOTE_ADDR'] ?? '';
         $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
-        $stmt = $conn->prepare("INSERT INTO audit_logs (user_id, username, event_type, description, ip_address, user_agent) VALUES (?,?,?,?,?,?)");
+        $stmt = $conn->prepare("INSERT INTO audit_logs (restaurant_id, user_id, username, event_type, description, ip_address, user_agent) VALUES (?,?,?,?,?,?,?)");
         if ($stmt) {
-            $stmt->bind_param("isssss", $uid, $user, $event, $description, $ip, $ua);
+            $stmt->bind_param("iisssss", $tenantId, $uid, $user, $event, $description, $ip, $ua);
             $stmt->execute();
             $stmt->close();
         }
@@ -119,20 +123,25 @@ class Inventory {
     // =============================================================
     // IMMUTABLE INVENTORY TRANSACTIONS
     // =============================================================
-    public static function recordTransaction($itemId, $type, $qty, $direction, $before, $after, $unitCost = 0, $refType = '', $refId = null, $notes = '') {
+    public static function recordTransaction($itemId, $type, $qty, $direction, $before, $after, $unitCost = 0, $refType = '', $refId = null, $notes = '', $restaurantId = null) {
         $conn = getDBConnection();
         if (!$conn) return false;
+
+        // Fail closed: transactions must be attributed to a real tenant.
+        $restaurantId = $restaurantId ?: (int)TenantContext::getTenantId();
+        if ($restaurantId <= 0) return false;
+
         $refIdSql = ($refId !== null) ? intval($refId) : null;
         $creator = $conn->real_escape_string($_SESSION['admin_username'] ?? 'system');
         $refTypeSql = $conn->real_escape_string($refType);
         $notesSql = $conn->real_escape_string(mb_substr($notes, 0, 255));
         $stmt = $conn->prepare(
             "INSERT INTO inventory_transactions
-             (inventory_item_id, type, quantity, direction, reference_type, reference_id, stock_before, stock_after, unit_cost, notes, created_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+             (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, stock_before, stock_after, unit_cost, notes, created_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
         );
         if (!$stmt) return false;
-        $stmt->bind_param("issssiddsss", $itemId, $type, $qty, $direction, $refTypeSql, $refIdSql, $before, $after, $unitCost, $notesSql, $creator);
+        $stmt->bind_param("iissssiddsss", $restaurantId, $itemId, $type, $qty, $direction, $refTypeSql, $refIdSql, $before, $after, $unitCost, $notesSql, $creator);
         $ok = $stmt->execute();
         $stmt->close();
         return $ok;
@@ -146,11 +155,16 @@ class Inventory {
         if (!$conn) return 0;
         $created = 0;
 
+        // Alerts are tenant-scoped. Fail closed when no tenant context exists.
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return 0;
+
         // Low stock / out of stock
         $stmt = $conn->prepare(
             "SELECT id, name, current_stock, minimum_stock FROM inventory_items
-             WHERE status='active' AND current_stock <= minimum_stock"
+             WHERE restaurant_id = ? AND status='active' AND current_stock <= minimum_stock"
         );
+        $stmt->bind_param("i", $tenantId);
         $stmt->execute();
         $res = $stmt->get_result();
         $type = 'low_stock';
@@ -159,15 +173,16 @@ class Inventory {
             $msg = ($t === 'out_of_stock')
                 ? "{$row['name']} is out of stock"
                 : "{$row['name']} is low on stock ({$row['current_stock']} / min {$row['minimum_stock']})";
-            $created += self::insertAlert($conn, $row['id'], $t, $msg);
+            $created += self::insertAlert($conn, $row['id'], $t, $msg, $tenantId);
         }
         $stmt->close();
 
         // Expired / near expiry
         $stmt = $conn->prepare(
             "SELECT id, name, expiry_date FROM inventory_items
-             WHERE status='active' AND expiry_date IS NOT NULL AND expiry_date < DATE_ADD(CURDATE(), INTERVAL 8 DAY)"
+             WHERE restaurant_id = ? AND status='active' AND expiry_date IS NOT NULL AND expiry_date < DATE_ADD(CURDATE(), INTERVAL 8 DAY)"
         );
+        $stmt->bind_param("i", $tenantId);
         $stmt->execute();
         $res = $stmt->get_result();
         while ($row = $res->fetch_assoc()) {
@@ -175,40 +190,41 @@ class Inventory {
             $msg = ($t === 'expired')
                 ? "{$row['name']} expired on {$row['expiry_date']}"
                 : "{$row['name']} expires on {$row['expiry_date']}";
-            $created += self::insertAlert($conn, $row['id'], $t, $msg);
+            $created += self::insertAlert($conn, $row['id'], $t, $msg, $tenantId);
         }
         $stmt->close();
 
         // Overstock
         $stmt = $conn->prepare(
             "SELECT id, name, current_stock, maximum_stock FROM inventory_items
-             WHERE status='active' AND maximum_stock > 0 AND current_stock > maximum_stock"
+             WHERE restaurant_id = ? AND status='active' AND maximum_stock > 0 AND current_stock > maximum_stock"
         );
+        $stmt->bind_param("i", $tenantId);
         $stmt->execute();
         $res = $stmt->get_result();
         while ($row = $res->fetch_assoc()) {
             $msg = "{$row['name']} is overstocked ({$row['current_stock']} / max {$row['maximum_stock']})";
-            $created += self::insertAlert($conn, $row['id'], 'overstock', $msg);
+            $created += self::insertAlert($conn, $row['id'], 'overstock', $msg, $tenantId);
         }
         $stmt->close();
 
         return $created;
     }
 
-    private static function insertAlert($conn, $itemId, $type, $msg) {
+    private static function insertAlert($conn, $itemId, $type, $msg, $tenantId) {
         // Avoid duplicates for the same item + type + message within the last 24h
         $check = $conn->prepare(
             "SELECT id FROM inventory_alerts
-             WHERE inventory_item_id=? AND alert_type=? AND message=? AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY) LIMIT 1"
+             WHERE restaurant_id=? AND inventory_item_id=? AND alert_type=? AND message=? AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY) LIMIT 1"
         );
-        $check->bind_param("iss", $itemId, $type, $msg);
+        $check->bind_param("iiss", $tenantId, $itemId, $type, $msg);
         $check->execute();
         $exists = $check->get_result()->fetch_assoc();
         $check->close();
         if ($exists) return 0;
 
-        $stmt = $conn->prepare("INSERT INTO inventory_alerts (inventory_item_id, alert_type, message) VALUES (?,?,?)");
-        $stmt->bind_param("iss", $itemId, $type, $msg);
+        $stmt = $conn->prepare("INSERT INTO inventory_alerts (restaurant_id, inventory_item_id, alert_type, message) VALUES (?,?,?,?)");
+        $stmt->bind_param("iiss", $tenantId, $itemId, $type, $msg);
         $stmt->execute();
         $stmt->close();
         return 1;
@@ -321,6 +337,20 @@ class Inventory {
     }
 
     private static function orderMenuItems($conn, $orderId) {
+        // Scope by the order's owning tenant (join to orders).
+        $stmt = $conn->prepare(
+            "SELECT oi.menu_item_id, oi.quantity, o.restaurant_id
+             FROM order_items oi
+             JOIN orders o ON oi.order_id = o.id
+             WHERE oi.order_id=? LIMIT 1"
+        );
+        $stmt->bind_param("i", $orderId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $owner = $res->fetch_assoc();
+        $stmt->close();
+        if (!$owner) return [];
+
         $stmt = $conn->prepare("SELECT menu_item_id, quantity FROM order_items WHERE order_id=?");
         $stmt->bind_param("i", $orderId);
         $stmt->execute();
@@ -332,8 +362,10 @@ class Inventory {
     }
 
     private static function findRecipe($conn, $menuItemId) {
-        $stmt = $conn->prepare("SELECT id FROM recipes WHERE menu_item_id=? AND status='active' ORDER BY id DESC LIMIT 1");
-        $stmt->bind_param("i", $menuItemId);
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return null;
+        $stmt = $conn->prepare("SELECT id FROM recipes WHERE menu_item_id=? AND restaurant_id=? AND status='active' ORDER BY id DESC LIMIT 1");
+        $stmt->bind_param("ii", $menuItemId, $tenantId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -341,12 +373,14 @@ class Inventory {
     }
 
     private static function recipeIngredients($conn, $recipeId) {
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return [];
         $stmt = $conn->prepare(
             "SELECT ri.inventory_item_id, ri.quantity, COALESCE(i.average_cost,0) as average_cost, i.name as item_name
              FROM recipe_items ri JOIN inventory_items i ON ri.inventory_item_id=i.id
-             WHERE ri.recipe_id=? AND i.status='active'"
+             WHERE ri.recipe_id=? AND i.restaurant_id=? AND i.status='active'"
         );
-        $stmt->bind_param("i", $recipeId);
+        $stmt->bind_param("ii", $recipeId, $tenantId);
         $stmt->execute();
         $res = $stmt->get_result();
         $rows = [];
@@ -356,10 +390,12 @@ class Inventory {
     }
 
     private static function currentStock($conn, $itemId, $lock = false) {
-        $sql = "SELECT current_stock FROM inventory_items WHERE id=? LIMIT 1";
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return null;
+        $sql = "SELECT current_stock FROM inventory_items WHERE id=? AND restaurant_id=? LIMIT 1";
         if ($lock) $sql .= " FOR UPDATE";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $itemId);
+        $stmt->bind_param("ii", $itemId, $tenantId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
@@ -367,8 +403,10 @@ class Inventory {
     }
 
     private static function updateStock($conn, $itemId, $newQty) {
-        $stmt = $conn->prepare("UPDATE inventory_items SET current_stock=? WHERE id=?");
-        $stmt->bind_param("di", $newQty, $itemId);
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return;
+        $stmt = $conn->prepare("UPDATE inventory_items SET current_stock=? WHERE id=? AND restaurant_id=?");
+        $stmt->bind_param("dii", $newQty, $itemId, $tenantId);
         $stmt->execute();
         $stmt->close();
     }
@@ -377,30 +415,34 @@ class Inventory {
     // HELPERS USED BY PAGES / APIS
     // =============================================================
     public static function ensureItemQR($conn, $itemId) {
-        $stmt = $conn->prepare("SELECT qr_token FROM inventory_items WHERE id=? LIMIT 1");
-        $stmt->bind_param("i", $itemId);
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return '';
+        $stmt = $conn->prepare("SELECT qr_token FROM inventory_items WHERE id=? AND restaurant_id=? LIMIT 1");
+        $stmt->bind_param("ii", $itemId, $tenantId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($row && !empty($row['qr_token'])) return $row['qr_token'];
         $token = bin2hex(random_bytes(16));
-        $stmt = $conn->prepare("UPDATE inventory_items SET qr_token=? WHERE id=?");
-        $stmt->bind_param("si", $token, $itemId);
+        $stmt = $conn->prepare("UPDATE inventory_items SET qr_token=? WHERE id=? AND restaurant_id=?");
+        $stmt->bind_param("sii", $token, $itemId, $tenantId);
         $stmt->execute();
         $stmt->close();
         return $token;
     }
 
     public static function ensureAssetQR($conn, $assetId) {
-        $stmt = $conn->prepare("SELECT qr_token FROM assets WHERE id=? LIMIT 1");
-        $stmt->bind_param("i", $assetId);
+        $tenantId = (int)TenantContext::getTenantId();
+        if ($tenantId <= 0) return '';
+        $stmt = $conn->prepare("SELECT qr_token FROM assets WHERE id=? AND restaurant_id=? LIMIT 1");
+        $stmt->bind_param("ii", $assetId, $tenantId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if ($row && !empty($row['qr_token'])) return $row['qr_token'];
         $token = bin2hex(random_bytes(16));
-        $stmt = $conn->prepare("UPDATE assets SET qr_token=? WHERE id=?");
-        $stmt->bind_param("si", $token, $assetId);
+        $stmt = $conn->prepare("UPDATE assets SET qr_token=? WHERE id=? AND restaurant_id=?");
+        $stmt->bind_param("sii", $token, $assetId, $tenantId);
         $stmt->execute();
         $stmt->close();
         return $token;
