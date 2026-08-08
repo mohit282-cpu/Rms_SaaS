@@ -48,6 +48,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         // Log audit trail
                         Security::logAudit("PASSWORD_CHANGED", "User ID {$admin_id} changed password successfully");
                         $_SESSION['success'] = 'Password changed successfully! Your temporary password restriction has been removed.';
+
+                        if (Auth::isSuperAdmin()) {
+                            header('Location: ../super-admin/index.php');
+                            exit;
+                        }
                     }
                 } else {
                     $_SESSION['error'] = 'Current password verification failed.';
@@ -77,6 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $_SESSION['success'] = 'Kitchen Display (KDS) PIN code updated successfully!';
         }
+    }
+
+    if (Auth::isSuperAdmin()) {
+        header('Location: ../super-admin/index.php');
+        exit;
     }
 
     header('Location: change-password.php');
@@ -132,6 +142,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                 <!-- Action Controls -->
                 <div class="flex items-center gap-2 shrink-0">
+                    <?php if (Auth::isSuperAdmin()): ?>
+                        <a href="../super-admin/index.php" class="h-10 px-4 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs inline-flex items-center gap-1.5 shadow-md hover:bg-amber-400">
+                            ⚡ Return to Super Admin Portal
+                        </a>
+                    <?php endif; ?>
                     <button onclick="refreshSecurityStream()" class="h-10 px-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 font-bold text-xs hover:border-amber-500/40">
                         🔄 Refresh Audit Stream
                     </button>
