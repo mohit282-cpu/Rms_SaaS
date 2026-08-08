@@ -33,7 +33,13 @@ $isAssetSection = in_array($currentPage, $assetPages);
 
 <!-- DESKTOP SIDEBAR NAVIGATION -->
 <aside class="hidden md:flex flex-col fixed top-0 left-0 bottom-0 w-64 bg-zinc-950/95 backdrop-blur-2xl border-r border-zinc-800/80 z-50 select-none">
-    <?php if (isset($_SESSION['impersonating_superadmin'])): ?>
+    <?php if (isset($_SESSION['restaurant_id']) && $_SESSION['restaurant_id'] == 1 && (Auth::isSuperAdmin() || isset($_SESSION['impersonating_superadmin']))): ?>
+        <!-- Super Admin Internal Test Tenant Banner -->
+        <div class="bg-amber-500/20 border-b border-amber-500/40 p-2.5 text-center text-[10px] font-bold text-amber-300">
+            🧪 SUPER ADMIN TEST MODE - INTERNAL TEST TENANT (#1)
+            <a href="../super-admin/index.php" class="block font-black text-amber-400 hover:underline mt-0.5">Return to Super Admin →</a>
+        </div>
+    <?php elseif (isset($_SESSION['impersonating_superadmin'])): ?>
         <!-- Impersonation Notice Banner -->
         <div class="bg-purple-500/20 border-b border-purple-500/40 p-2.5 text-center text-[10px] font-bold text-purple-300">
             👤 Support Impersonation Mode

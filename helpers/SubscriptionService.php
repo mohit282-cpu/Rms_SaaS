@@ -7,6 +7,11 @@ class SubscriptionService {
      * Check if tenant's subscription is currently active
      */
     public static function isActive(int $restaurantId): bool {
+        // Internal Test Tenant (#1) and Super Admin testing always active
+        if ($restaurantId === 1 || (class_exists('Auth') && Auth::isSuperAdmin())) {
+            return true;
+        }
+
         $conn = getDBConnection();
         if (!$conn) return false;
 
@@ -55,6 +60,10 @@ class SubscriptionService {
      * Calculate remaining days in tenant subscription
      */
     public static function getRemainingDays(int $restaurantId): int {
+        if ($restaurantId === 1 || (class_exists('Auth') && Auth::isSuperAdmin())) {
+            return 36500;
+        }
+
         $conn = getDBConnection();
         if (!$conn) return 0;
 
@@ -80,6 +89,15 @@ class SubscriptionService {
      * Get plan limits for a restaurant tenant
      */
     public static function getTenantPlanLimits(int $restaurantId): array {
+        if ($restaurantId === 1) {
+            return [
+                'max_tables' => 99999,
+                'max_staff' => 99999,
+                'plan_name' => 'Internal Test Tenant (Unlimited)',
+                'features' => 'all'
+            ];
+        }
+
         $conn = getDBConnection();
         $default = ['max_tables' => 10, 'max_staff' => 5, 'plan_name' => 'Starter Plan'];
         if (!$conn) return $default;
@@ -105,6 +123,10 @@ class SubscriptionService {
      * Check if a tenant is allowed to add another table under its current plan limits
      */
     public static function canAddTable(int $restaurantId): bool {
+        if ($restaurantId === 1 || (class_exists('Auth') && Auth::isSuperAdmin())) {
+            return true;
+        }
+
         $limits = self::getTenantPlanLimits($restaurantId);
         $maxTables = (int)($limits['max_tables'] ?? 10);
         if ($maxTables >= 999) return true; // Unlimited / Enterprise
@@ -129,6 +151,10 @@ class SubscriptionService {
      * Check if a tenant is allowed to add another staff user under its current plan limits
      */
     public static function canAddStaff(int $restaurantId): bool {
+        if ($restaurantId === 1 || (class_exists('Auth') && Auth::isSuperAdmin())) {
+            return true;
+        }
+
         $limits = self::getTenantPlanLimits($restaurantId);
         $maxStaff = (int)($limits['max_staff'] ?? 5);
         if ($maxStaff >= 999) return true; // Unlimited / Enterprise

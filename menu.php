@@ -30,8 +30,8 @@ if ($requested_token !== null && $requested_token !== '') {
                     $is_access_valid = true;
                     $_SESSION['customer_table_id'] = $row['table_number'];
                     $_SESSION['customer_table_token'] = $row['qr_token'];
-                    $_SESSION['customer_restaurant_id'] = (int)($row['restaurant_id'] ?? 1);
-                    $_SESSION['restaurant_id'] = (int)($row['restaurant_id'] ?? 1);
+                    $_SESSION['customer_restaurant_id'] = (int)($row['restaurant_id'] ?? 0);
+                    $_SESSION['restaurant_id'] = (int)($row['restaurant_id'] ?? 0);
                 }
             } else {
                 // Invalid or fake token attempt -> Log Audit Event
@@ -61,7 +61,7 @@ elseif ($requested_table !== null && $requested_table !== '') {
         if ($existing_ctx > 0) {
             $t_res = $conn->query("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $existing_ctx LIMIT 1");
         } else {
-            $t_res = $conn->query("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE table_number = '$tbl_safe' LIMIT 1");
+            $t_res = null; // Unscoped table lookups are rejected to enforce tenant isolation
         }
         
         if (!$t_res || $t_res->num_rows === 0) {

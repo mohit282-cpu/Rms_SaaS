@@ -30,55 +30,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 Security::logAudit("SUPER_ADMIN_DISABLE_TENANT", "Super Admin disabled restaurant tenant ID: {$restId}");
                 $message = "Restaurant tenant account disabled successfully.";
             } elseif ($action === 'delete_restaurant') {
-                // Prevent deleting a tenant that hosts the Platform Super Admin account
-                $saCheck = $conn->query("SELECT COUNT(*) AS cnt FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 1");
-                $saCnt = ($saCheck && $saRow = $saCheck->fetch_assoc()) ? (int)$saRow['cnt'] : 0;
-                if ($saCnt > 0) {
-                    $error = "This restaurant hosts the Platform Super Admin account and cannot be deleted.";
+                $delStmt = $conn->prepare("SELECT restaurant_name FROM restaurants WHERE id = ? LIMIT 1");
+                $delStmt->bind_param("i", $restId);
+                $delStmt->execute();
+                $delRow = $delStmt->get_result()->fetch_assoc();
+                $delStmt->close();
+
+                if (!$delRow) {
+                    $error = "Restaurant tenant not found.";
                 } else {
-                    $delStmt = $conn->prepare("SELECT restaurant_name FROM restaurants WHERE id = ? LIMIT 1");
-                    $delStmt->bind_param("i", $restId);
-                    $delStmt->execute();
-                    $delRow = $delStmt->get_result()->fetch_assoc();
-                    $delStmt->close();
+                    // Check if this tenant hosts any Super Admin user accounts
+                    $saCheck = $conn->query("SELECT id FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 1");
+                    $hasSaUsers = ($saCheck && $saCheck->num_rows > 0);
 
-                    if (!$delRow) {
-                        $error = "Restaurant tenant not found.";
-                    } else {
-                        $purgeTables = [
-                            'payment_transactions', 'order_items', 'orders', 'menu_addons',
-                            'recipe_items', 'recipes', 'menu_items', 'categories',
-                            'inventory_transactions', 'stock_audits', 'inventory_alerts',
-                            'inventory_waste', 'goods_receipts', 'purchase_order_items',
-                            'purchase_orders', 'suppliers', 'inventory_items',
-                            'inventory_units', 'inventory_categories',
-                            'asset_logs', 'asset_depreciation', 'asset_maintenance',
-                            'asset_transfers', 'asset_warranties', 'assets', 'asset_categories',
-                            'waiter_calls', 'dining_sessions', 'tables', 'notifications',
-                            'admin_users', 'audit_logs', 'landing_page_settings',
-                            'payment_gateways', 'payment_settings', 'subscriptions'
-                        ];
+                    // Find alternative tenant for Super Admin preservation if needed
+                    $targetRestId = 1;
+                    if ($hasSaUsers) {
+                        $altRes = $conn->query("SELECT id FROM restaurants WHERE id != {$restId} ORDER BY id ASC LIMIT 1");
+                        if ($altRes && $altRow = $altRes->fetch_assoc()) {
+                            $targetRestId = (int)$altRow['id'];
+                        }
+                    }
 
-                        $conn->begin_transaction();
-                        try {
-                            foreach ($purgeTables as $t) {
-                                $stmt = $conn->prepare("DELETE FROM `{$t}` WHERE restaurant_id = ?");
-                                $stmt->bind_param("i", $restId);
-                                $stmt->execute();
-                                $stmt->close();
-                            }
-                            $stmt = $conn->prepare("DELETE FROM restaurants WHERE id = ?");
+                    $purgeTables = [
+                        'payment_transactions', 'order_items', 'orders', 'menu_addons',
+                        'recipe_items', 'recipes', 'menu_items', 'categories',
+                        'inventory_transactions', 'stock_audits', 'inventory_alerts',
+                        'inventory_waste', 'goods_receipts', 'purchase_order_items',
+                        'purchase_orders', 'suppliers', 'inventory_items',
+                        'inventory_units', 'inventory_categories',
+                        'asset_logs', 'asset_depreciation', 'asset_maintenance',
+                        'asset_transfers', 'asset_warranties', 'assets', 'asset_categories',
+                        'waiter_calls', 'dining_sessions', 'tables', 'notifications',
+                        'audit_logs', 'landing_page_settings',
+                        'payment_gateways', 'payment_settings', 'subscriptions'
+                    ];
+
+                    $conn->begin_transaction();
+                    try {
+                        foreach ($purgeTables as $t) {
+                            $stmt = $conn->prepare("DELETE FROM `{$t}` WHERE restaurant_id = ?");
                             $stmt->bind_param("i", $restId);
                             $stmt->execute();
                             $stmt->close();
-                            $conn->commit();
-
-                            Security::logAudit("SUPER_ADMIN_DELETE_TENANT", "Super Admin permanently deleted restaurant tenant ID: {$restId} ({$delRow['restaurant_name']}) and all associated tenant data.");
-                            $message = "Restaurant tenant '{$delRow['restaurant_name']}' and all associated data have been permanently deleted.";
-                        } catch (Throwable $e) {
-                            $conn->rollback();
-                            $error = "Failed to delete restaurant tenant: " . $e->getMessage();
                         }
+
+                        // Delete only non-super-admin users for this restaurant
+                        $conn->query("DELETE FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 0");
+
+                        // Reassign Super Admin users to target alternative tenant so superadmin account is NEVER lost
+                        if ($hasSaUsers) {
+                            $conn->query("UPDATE admin_users SET restaurant_id = {$targetRestId} WHERE restaurant_id = {$restId} AND is_super_admin = 1");
+                        }
+
+                        $stmt = $conn->prepare("DELETE FROM restaurants WHERE id = ?");
+                        $stmt->bind_param("i", $restId);
+                        $stmt->execute();
+                        $stmt->close();
+                        $conn->commit();
+
+                        Security::logAudit("SUPER_ADMIN_DELETE_TENANT", "Super Admin permanently deleted restaurant tenant ID: {$restId} ({$delRow['restaurant_name']}) and associated tenant data.");
+                        $message = "Restaurant tenant '{$delRow['restaurant_name']}' and associated tenant data have been permanently deleted.";
+                    } catch (Throwable $e) {
+                        $conn->rollback();
+                        $error = "Failed to delete restaurant tenant: " . $e->getMessage();
                     }
                 }
             } elseif ($action === 'reset_password') {
@@ -362,7 +377,14 @@ $csrfField = CSRF::getField();
                             ?>
                             <tr class="hover:bg-zinc-800/30 transition-colors">
                                 <td class="py-4 px-4">
-                                    <div class="font-bold text-white text-sm"><?= htmlspecialchars($r['restaurant_name'] ?: 'N/A') ?></div>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="font-bold text-white text-sm"><?= htmlspecialchars($r['restaurant_name'] ?: 'N/A') ?></div>
+                                        <?php if ($r['id'] == 1): ?>
+                                            <span class="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-wider">
+                                                🧪 INTERNAL TEST TENANT
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
                                     <div class="text-[10px] text-zinc-400 font-mono mt-0.5">
                                         Tenant ID: #<?= $r['id'] ?> &bull; Code: <strong class="text-amber-400"><?= htmlspecialchars($r['restaurant_code'] ?: 'N/A') ?></strong>
                                     </div>
@@ -382,11 +404,11 @@ $csrfField = CSRF::getField();
                                 <td class="py-4 px-4">
                                     <div class="flex items-center space-x-2">
                                         <span class="inline-block px-2.5 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-black uppercase">
-                                            <?= htmlspecialchars($r['plan_name'] ?? 'Starter') ?>
+                                            <?= $r['id'] == 1 ? 'Unlimited Test Plan' : htmlspecialchars($r['plan_name'] ?? 'Starter') ?>
                                         </span>
-                                        <?php if ($isExpired): ?>
+                                        <?php if ($isExpired && $r['id'] != 1): ?>
                                             <span class="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-black uppercase">EXPIRED</span>
-                                        <?php elseif ($isExpiringSoon): ?>
+                                        <?php elseif ($isExpiringSoon && $r['id'] != 1): ?>
                                             <span class="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-black uppercase">EXPIRING SOON</span>
                                         <?php endif; ?>
                                     </div>
@@ -394,7 +416,7 @@ $csrfField = CSRF::getField();
                                         Status: <strong class="text-zinc-200"><?= htmlspecialchars($r['subscription_status'] ?: 'ACTIVE') ?></strong>
                                     </div>
                                     <div class="text-[10px] text-zinc-500">
-                                        Expires: <?= !empty($r['subscription_end']) ? date('M d, Y', strtotime($r['subscription_end'])) : 'Infinite' ?>
+                                        Expires: <?= $r['id'] == 1 ? 'Unlimited Test Access' : (!empty($r['subscription_end']) ? date('M d, Y', strtotime($r['subscription_end'])) : 'Infinite') ?>
                                     </div>
                                 </td>
 
@@ -419,6 +441,18 @@ $csrfField = CSRF::getField();
 
                                 <td class="py-4 px-4 text-right">
                                     <div class="flex items-center justify-end space-x-1.5">
+                                        <?php if ($r['id'] == 1): ?>
+                                            <!-- Open Internal Test Environment for Super Admin -->
+                                            <form method="POST" class="inline">
+                                                <?= $csrfField ?>
+                                                <input type="hidden" name="action" value="impersonate">
+                                                <input type="hidden" name="restaurant_id" value="1">
+                                                <button type="submit" title="Open Internal Test Environment for Super Admin Testing" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-zinc-950 font-black text-[11px] hover:from-amber-400 hover:to-amber-300 transition-all shadow-md inline-flex items-center space-x-1">
+                                                    <span>🧪 Open Test Environment</span>
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+
                                         <!-- Manage Modal Trigger Button -->
                                         <button type="button" onclick="openManageModal(<?= $r['id'] ?>, '<?= htmlspecialchars($r['restaurant_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['restaurant_code'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['owner_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['phone'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['pan_number'] ?: 'N/A', ENT_QUOTES) ?>', '<?= htmlspecialchars($r['address'] ?: 'N/A', ENT_QUOTES) ?>', '<?= htmlspecialchars($r['restaurant_type'], ENT_QUOTES) ?>', <?= (int)$r['subscription_plan_id'] ?>, '<?= htmlspecialchars($r['plan_name'] ?? 'Starter', ENT_QUOTES) ?>', '<?= htmlspecialchars($r['subscription_status'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['subscription_start'] ?? '', ENT_QUOTES) ?>', '<?= htmlspecialchars($r['subscription_end'] ?? '', ENT_QUOTES) ?>', <?= (int)$r['table_count'] ?>, <?= (int)$r['order_count'] ?>, <?= (int)$r['user_count'] ?>, '<?= date('M d, Y', strtotime($r['created_at'])) ?>', '<?= !empty($r['last_login']) ? date('M d, Y H:i', strtotime($r['last_login'])) : 'Never' ?>')" title="Manage Tenant Details & Subscription" class="px-2.5 py-1.5 rounded-xl bg-amber-500 text-zinc-950 font-black text-[11px] hover:bg-amber-400 transition-all shadow-sm">
                                             ⚙️ Manage
