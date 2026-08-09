@@ -375,7 +375,7 @@ if (isset($_GET['kds_logout'])) {
                     } else {
                         btn.disabled = false;
                         btn.innerHTML = originalHtml;
-                        showToast(data.error || 'Failed to update status', 'error');
+                        showToast(data.message || data.error || 'Failed to update status', 'error');
                     }
                 })
                 .catch(err => {

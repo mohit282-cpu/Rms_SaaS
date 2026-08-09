@@ -133,7 +133,7 @@ class OrderService {
             $uStmt->close();
 
             // Deduct raw ingredients if recipe exists (tenant-scoped)
-            $recipeRes = $conn->prepare("SELECT inventory_item_id, quantity FROM recipes WHERE menu_item_id = ? AND restaurant_id = ?");
+            $recipeRes = $conn->prepare("SELECT ri.inventory_item_id, ri.quantity FROM recipe_items ri JOIN recipes r ON ri.recipe_id = r.id WHERE r.menu_item_id = ? AND r.restaurant_id = ?");
             $recipeRes->bind_param("ii", $menuItemId, $tenantId);
             $recipeRes->execute();
             $recipes = $recipeRes->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -186,7 +186,7 @@ class OrderService {
             $uStmt->execute();
             $uStmt->close();
 
-            $recipeRes = $conn->prepare("SELECT inventory_item_id, quantity FROM recipes WHERE menu_item_id = ? AND restaurant_id = ?");
+            $recipeRes = $conn->prepare("SELECT ri.inventory_item_id, ri.quantity FROM recipe_items ri JOIN recipes r ON ri.recipe_id = r.id WHERE r.menu_item_id = ? AND r.restaurant_id = ?");
             $recipeRes->bind_param("ii", $menuItemId, $tenantId);
             $recipeRes->execute();
             $recipes = $recipeRes->get_result()->fetch_all(MYSQLI_ASSOC);
