@@ -11,7 +11,8 @@ if (!$conn) {
 $tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
 
 // Get tax settings for bill calculation
-$settings = CalculationEngine::getSettings($tenantId);
+$settings_res = $conn->query("SELECT tax_enabled, tax_percentage, service_charge_enabled, service_charge_type, service_charge_amount FROM payment_settings WHERE restaurant_id = $tenantId LIMIT 1");
+$settings = $settings_res ? $settings_res->fetch_assoc() : [];
 $vatPercent = floatval($settings['tax_percentage'] ?? 13.00);
 $scPercent = !empty($settings['service_charge_enabled']) ? floatval($settings['service_charge_amount'] ?? 10.00) : 0.00;
 $scType = $settings['service_charge_type'] ?? 'percent';
@@ -854,13 +855,22 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         let currentCustomerUrl = '';
         let currentQRImageUrl = '';
 
+        function generateQRCodeDataURL(text, size = 300) {
+            return 'data:image/svg+xml;base64,' + btoa(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                    <rect width="${size}" height="${size}" fill="white"/>
+                    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="8" fill="black">${text.substring(0, 50)}</text>
+                </svg>
+            `);
+        }
+
         function showTableQRModal(tableNum, explicitToken) {
             const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
             let token = explicitToken || (t && t.qr_token ? t.qr_token : '');
             if (!token && t && t.qr_token) token = t.qr_token;
             
             const tableCustomerUrl = window.location.origin + window.location.pathname.replace('/admin/tables.php', '') + '/menu.php?token=' + (token || '5fd8a0fdb6e7411fb58d94c6abbe27e2');
-            const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(tableCustomerUrl)}`;
+            const qrImageUrl = generateQRCodeDataURL(tableCustomerUrl, 300);
 
             currentCustomerUrl = tableCustomerUrl;
             currentQRImageUrl = qrImageUrl;

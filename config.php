@@ -129,6 +129,9 @@ function getDBConnection() {
 
     $conn->set_charset("utf8mb4");
 
+    // Run schema migration once per process (idempotent)
+    ensureDatabaseSchema($conn);
+
     return $conn;
 }
 
@@ -172,10 +175,8 @@ function ensureDatabaseSchema($conn) {
             $stmt->bind_param("s", $hashed_pass);
             $stmt->execute();
             $stmt->close();
-            // Log initial bootstrap password securely for setup if generated
-            if (!getenv('APP_ADMIN_PASSWORD')) {
-                error_log("BOOTSTRAP ADMIN ACCOUNT CREATED. Username: admin | Initial Password: " . $initial_pass);
-            }
+            // Bootstrap admin account created with secure random password.
+            // Password is NOT logged. Set APP_ADMIN_PASSWORD env var to define a known password.
         }
     }
 
@@ -451,9 +452,38 @@ function ensureDatabaseSchema($conn) {
         payment_note VARCHAR(500),
         qr_code_image VARCHAR(255),
         is_active TINYINT(1) DEFAULT 1,
+        tax_enabled TINYINT(1) DEFAULT 1,
+        tax_percentage DECIMAL(5,2) DEFAULT 13.00,
+        service_charge_enabled TINYINT(1) DEFAULT 1,
+        service_charge_type ENUM('percent', 'fixed') DEFAULT 'percent',
+        service_charge_amount DECIMAL(5,2) DEFAULT 10.00,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Safely add missing columns to existing payment_settings table
+    $pay_cols = [];
+    $p_res = $conn->query("SHOW COLUMNS FROM payment_settings");
+    if ($p_res) {
+        while ($p_row = $p_res->fetch_assoc()) {
+            $pay_cols[] = strtolower($p_row['Field']);
+        }
+    }
+    if (!in_array('tax_enabled', $pay_cols)) {
+        try { $conn->query("ALTER TABLE payment_settings ADD COLUMN tax_enabled TINYINT(1) DEFAULT 1"); } catch (Throwable $e) {}
+    }
+    if (!in_array('tax_percentage', $pay_cols)) {
+        try { $conn->query("ALTER TABLE payment_settings ADD COLUMN tax_percentage DECIMAL(5,2) DEFAULT 13.00"); } catch (Throwable $e) {}
+    }
+    if (!in_array('service_charge_enabled', $pay_cols)) {
+        try { $conn->query("ALTER TABLE payment_settings ADD COLUMN service_charge_enabled TINYINT(1) DEFAULT 1"); } catch (Throwable $e) {}
+    }
+    if (!in_array('service_charge_type', $pay_cols)) {
+        try { $conn->query("ALTER TABLE payment_settings ADD COLUMN service_charge_type ENUM('percent', 'fixed') DEFAULT 'percent'"); } catch (Throwable $e) {}
+    }
+    if (!in_array('service_charge_amount', $pay_cols)) {
+        try { $conn->query("ALTER TABLE payment_settings ADD COLUMN service_charge_amount DECIMAL(5,2) DEFAULT 10.00"); } catch (Throwable $e) {}
+    }
 
     $pay_check = $conn->query("SELECT id FROM payment_settings LIMIT 1");
     if (!$pay_check || $pay_check->num_rows == 0) {

@@ -61,8 +61,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $_SESSION['success'] = "Menu item '$name' created successfully!";
         } elseif ($action === 'edit' && $id > 0) {
-            $sql = "UPDATE menu_items SET name = '" . $conn->real_escape_string($name) . "', sku = '" . $conn->real_escape_string($sku) . "', category_id = $category_id, description = '" . $conn->real_escape_string($description) . "', price = $price, cost_price = $cost_price, stock_quantity = $stock_quantity, min_stock_level = $min_stock_level, preparation_time = $preparation_time, dietary_type = '$dietary_type', status = '$status', is_popular = $is_popular, allergens = '" . $conn->real_escape_string($allergens) . "', image = '" . $conn->real_escape_string($image_path) . "' WHERE id = $id AND restaurant_id = $tenantId";
-            $conn->query($sql);
+            $stmt = $conn->prepare("UPDATE menu_items SET name = ?, sku = ?, category_id = ?, description = ?, price = ?, cost_price = ?, stock_quantity = ?, min_stock_level = ?, preparation_time = ?, dietary_type = ?, status = ?, is_popular = ?, allergens = ?, image = ? WHERE id = ? AND restaurant_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("ssisddiiisssisii", $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path, $id, $tenantId);
+                $stmt->execute();
+                $stmt->close();
+            }
             $_SESSION['success'] = "Menu item '$name' updated successfully!";
         }
     } elseif ($action === 'toggle_status') {

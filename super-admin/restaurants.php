@@ -177,17 +177,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($action === 'impersonate') {
                 Security::logAudit("SUPER_ADMIN_IMPERSONATE_TENANT", "Super Admin (" . $_SESSION['username'] . ") initiated support impersonation session for restaurant ID: {$restId}");
                 
-                $_SESSION['impersonating_superadmin'] = $_SESSION['admin_id'];
-                $_SESSION['sa_restaurant_id'] = isset($_SESSION['restaurant_id']) ? (int)$_SESSION['restaurant_id'] : 1;
+                // Regenerate session ID to prevent session fixation
+                session_regenerate_id(true);
+                
+                // Preserve superadmin context
+                $_SESSION['impersonating_superadmin'] = true;
+                $_SESSION['sa_original_admin_id'] = $_SESSION['admin_id'];
+                $_SESSION['sa_original_username'] = $_SESSION['username'];
+                $_SESSION['sa_original_role'] = $_SESSION['role'];
+                $_SESSION['sa_original_restaurant_id'] = isset($_SESSION['restaurant_id']) ? (int)$_SESSION['restaurant_id'] : 1;
+                
+                // Set impersonation context
                 $_SESSION['restaurant_id'] = $restId;
+                $_SESSION['is_super_admin'] = false; // Impersonation uses tenant role
                 
                 $ownerRes = $conn->query("SELECT id, username, full_name, role FROM admin_users WHERE restaurant_id = {$restId} ORDER BY id ASC LIMIT 1");
                 if ($ownerRes && $owner = $ownerRes->fetch_assoc()) {
                     $_SESSION['admin_id'] = $owner['id'];
+                    $_SESSION['username'] = $owner['username'];
+                    $_SESSION['full_name'] = $owner['full_name'];
                     $_SESSION['role'] = strtoupper($owner['role']);
+                }
+                
+                // Force password change check for impersonated account
+                $forceChangeRes = $conn->query("SELECT force_password_change FROM admin_users WHERE id = " . $owner['id']);
+                if ($forceChangeRes && $fc = $forceChangeRes->fetch_assoc()) {
+                    $_SESSION['force_password_change'] = (bool)$fc['force_password_change'];
                 }
 
                 header('Location: ../admin/index.php');
+                exit;
+            } elseif ($action === 'exit_impersonation') {
+                // Exit impersonation and restore superadmin context
+                Security::logAudit("SUPER_ADMIN_EXIT_IMPERSONATION", "Super Admin (" . ($_SESSION['sa_original_username'] ?? 'unknown') . ") exited impersonation session");
+                
+                if (isset($_SESSION['impersonating_superadmin']) && $_SESSION['impersonating_superadmin']) {
+                    $_SESSION['admin_id'] = $_SESSION['sa_original_admin_id'];
+                    $_SESSION['username'] = $_SESSION['sa_original_username'];
+                    $_SESSION['role'] = $_SESSION['sa_original_role'];
+                    $_SESSION['restaurant_id'] = $_SESSION['sa_original_restaurant_id'];
+                    $_SESSION['is_super_admin'] = true;
+                    
+                    // Clear impersonation session vars
+                    unset($_SESSION['impersonating_superadmin']);
+                    unset($_SESSION['sa_original_admin_id']);
+                    unset($_SESSION['sa_original_username']);
+                    unset($_SESSION['sa_original_role']);
+                    unset($_SESSION['sa_original_restaurant_id']);
+                    unset($_SESSION['force_password_change']);
+                    
+                    // Regenerate session ID
+                    session_regenerate_id(true);
+                }
+                
+                header('Location: restaurants.php');
                 exit;
             }
         }

@@ -333,8 +333,13 @@ include 'includes/sidebar.php';
             document.getElementById('qrModalTitle').textContent = name;
             document.getElementById('qrTokenText').textContent = 'QR Token: ' + qrToken;
             document.getElementById('assetCodeText').textContent = 'Asset Code: ' + code;
-            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(qrToken || code);
-            document.getElementById('qrModalImg').src = qrUrl;
+            const qrDataUrl = 'data:image/svg+xml;base64,' + btoa(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+                    <rect width="200" height="200" fill="white"/>
+                    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="10" fill="black">${(qrToken || code).substring(0, 30)}</text>
+                </svg>
+            `);
+            document.getElementById('qrModalImg').src = qrDataUrl;
             document.getElementById('qrModal').classList.remove('hidden');
             document.getElementById('qrModal').classList.add('flex');
         }

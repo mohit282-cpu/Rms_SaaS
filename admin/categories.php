@@ -30,43 +30,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $name = Security::sanitize($_POST['name'] ?? '');
         $description = Security::sanitize($_POST['description'] ?? '');
         $icon = Security::sanitize($_POST['icon'] ?? '🍽️');
-        $parent_id = !empty($_POST['parent_id']) ? intval($_POST['parent_id']) : "NULL";
+        $parent_id = !empty($_POST['parent_id']) ? intval($_POST['parent_id']) : null;
         $display_order = intval($_POST['display_order'] ?? 0);
         $status = Security::sanitize($_POST['status'] ?? 'active');
 
         if (!empty($name)) {
-            if ($action === 'create') {
-                $sql = "INSERT INTO categories (restaurant_id, name, description, parent_id, icon, display_order, status) VALUES ($tenantId, '" . $conn->real_escape_string($name) . "', '" . $conn->real_escape_string($description) . "', $parent_id, '" . $conn->real_escape_string($icon) . "', $display_order, '$status')";
-                if ($conn->query($sql)) {
+            $conn->begin_transaction();
+            try {
+                if ($action === 'create') {
+                    $stmt = $conn->prepare("INSERT INTO categories (restaurant_id, name, description, parent_id, icon, display_order, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    if ($stmt) {
+                        $stmt->bind_param("isssisi", $tenantId, $name, $description, $parent_id, $icon, $display_order, $status);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
                     $_SESSION['success'] = "Category '$name' created successfully!";
-                } else {
-                    $_SESSION['error'] = "Category '$name' already exists.";
+                } elseif ($action === 'edit' && $id > 0) {
+                    $stmt = $conn->prepare("UPDATE categories SET name = ?, description = ?, parent_id = ?, icon = ?, display_order = ?, status = ? WHERE id = ? AND restaurant_id = ?");
+                    if ($stmt) {
+                        $stmt->bind_param("ssisiisii", $name, $description, $parent_id, $icon, $display_order, $status, $id, $tenantId);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
+                    $_SESSION['success'] = "Category '$name' updated successfully!";
                 }
-            } elseif ($action === 'edit' && $id > 0) {
-                $sql = "UPDATE categories SET name = '" . $conn->real_escape_string($name) . "', description = '" . $conn->real_escape_string($description) . "', parent_id = $parent_id, icon = '" . $conn->real_escape_string($icon) . "', display_order = $display_order, status = '$status' WHERE id = $id AND restaurant_id = $tenantId";
-                $conn->query($sql);
-                $_SESSION['success'] = "Category '$name' updated successfully!";
+                $conn->commit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                $_SESSION['error'] = "Database error: " . $e->getMessage();
             }
         }
     } elseif ($action === 'toggle_status') {
         $id = intval($_POST['id'] ?? 0);
         $new_status = Security::sanitize($_POST['status'] ?? 'active');
         if ($id > 0) {
-            $conn->query("UPDATE categories SET status = '$new_status' WHERE id = $id AND restaurant_id = $tenantId");
+            $stmt = $conn->prepare("UPDATE categories SET status = ? WHERE id = ? AND restaurant_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("sii", $new_status, $id, $tenantId);
+                $stmt->execute();
+                $stmt->close();
+            }
             $_SESSION['success'] = "Category visibility updated to " . strtoupper($new_status);
         }
     } elseif ($action === 'delete') {
         $id = intval($_POST['id'] ?? 0);
         if ($id > 0) {
-            // Check if items are assigned
-            $check_res = $conn->query("SELECT COUNT(*) as cnt FROM menu_items WHERE category_id = $id AND restaurant_id = $tenantId");
-            $item_count = $check_res ? intval($check_res->fetch_assoc()['cnt']) : 0;
+            $conn->begin_transaction();
+            try {
+                // Check if items are assigned
+                $check_stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM menu_items WHERE category_id = ? AND restaurant_id = ?");
+                if ($check_stmt) {
+                    $check_stmt->bind_param("ii", $id, $tenantId);
+                    $check_stmt->execute();
+                    $item_count = intval($check_stmt->get_result()->fetch_assoc()['cnt']);
+                    $check_stmt->close();
+                } else {
+                    $item_count = 0;
+                }
 
-            if ($item_count > 0) {
-                $_SESSION['error'] = "Cannot delete category. Move or reassign $item_count menu items first.";
-            } else {
-                $conn->query("DELETE FROM categories WHERE id = $id AND restaurant_id = $tenantId");
-                $_SESSION['success'] = "Category deleted successfully!";
+                if ($item_count > 0) {
+                    $_SESSION['error'] = "Cannot delete category. Move or reassign $item_count menu items first.";
+                } else {
+                    $stmt = $conn->prepare("DELETE FROM categories WHERE id = ? AND restaurant_id = ?");
+                    if ($stmt) {
+                        $stmt->bind_param("ii", $id, $tenantId);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
+                    $_SESSION['success'] = "Category deleted successfully!";
+                }
+                $conn->commit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                $_SESSION['error'] = "Database error: " . $e->getMessage();
             }
         }
     }

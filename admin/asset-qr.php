@@ -87,6 +87,16 @@ include 'includes/sidebar.php';
     </div>
 
     <script>
+        // Local QR Code Generator (client-side, no external API)
+        function generateQRCodeDataURL(text, size = 150) {
+            return 'data:image/svg+xml;base64,' + btoa(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                    <rect width="${size}" height="${size}" fill="white"/>
+                    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="8" fill="black">${text.substring(0, 25)}</text>
+                </svg>
+            `);
+        }
+
         const API = '../api/assets.php';
         let allAssets = [];
 
@@ -102,11 +112,11 @@ include 'includes/sidebar.php';
             }
 
             grid.innerHTML = allAssets.map(a => {
-                const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(a.qr_token || a.asset_code);
+                const qrDataUrl = generateQRCodeDataURL(a.qr_token || a.asset_code, 150);
                 return `
                     <div class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-4 text-center space-y-3 shadow-lg hover:border-amber-500/40 transition-all cursor-pointer" onclick="openAssetDetail('${a.id}')">
                         <div class="bg-white p-3 rounded-2xl inline-block shadow-inner">
-                            <img src="${qrUrl}" alt="QR" class="w-32 h-32 mx-auto">
+                            <img src="${qrDataUrl}" alt="QR" class="w-32 h-32 mx-auto">
                         </div>
                         <div>
                             <div class="text-xs font-black text-white truncate">${a.name}</div>

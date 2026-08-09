@@ -43,7 +43,7 @@ $isAssetSection = in_array($currentPage, $assetPages);
         <!-- Impersonation Notice Banner -->
         <div class="bg-purple-500/20 border-b border-purple-500/40 p-2.5 text-center text-[10px] font-bold text-purple-300">
             👤 Support Impersonation Mode
-            <a href="logout.php?exit_impersonation=1" class="block font-black text-amber-400 hover:underline mt-0.5">Exit to Super Admin →</a>
+            <a href="../super-admin/restaurants.php?action=exit_impersonation" class="block font-black text-amber-400 hover:underline mt-0.5">Exit to Super Admin →</a>
         </div>
     <?php endif; ?>
 
