@@ -10,6 +10,14 @@ if (!$conn) {
 
 $tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
 
+// Get tax settings for bill calculation
+$settings = CalculationEngine::getSettings($tenantId);
+$vatPercent = floatval($settings['tax_percentage'] ?? 13.00);
+$scPercent = !empty($settings['service_charge_enabled']) ? floatval($settings['service_charge_amount'] ?? 10.00) : 0.00;
+$scType = $settings['service_charge_type'] ?? 'percent';
+$taxEnabled = !empty($settings['tax_enabled']);
+$scEnabled = !empty($settings['service_charge_enabled']);
+
 // Handle POST Form Submissions (Add, Edit, Reserve, Status Update, Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     CSRF::requireValidToken();
@@ -340,9 +348,17 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                     <span>Subtotal</span>
                     <span id="drawerSubtotal">Rs.0</span>
                 </div>
-                <div class="flex justify-between text-xs text-zinc-400">
-                    <span>Service Tax (10%)</span>
+                <div class="flex justify-between text-xs text-zinc-400" id="drawerServiceChargeRow">
+                    <span>Service Charge (<?= $scPercent ?>%)</span>
+                    <span id="drawerServiceCharge">Rs.0</span>
+                </div>
+                <div class="flex justify-between text-xs text-zinc-400" id="drawerTaxRow">
+                    <span>VAT (<?= $vatPercent ?>%)</span>
                     <span id="drawerTax">Rs.0</span>
+                </div>
+                <div class="flex justify-between text-xs text-zinc-400" id="drawerDiscountRow" style="display: none;">
+                    <span>Discount</span>
+                    <span id="drawerDiscount">Rs.0</span>
                 </div>
                 <div class="flex justify-between text-sm font-black text-white pt-2 border-t border-zinc-800">
                     <span>Total Amount Due</span>
@@ -794,9 +810,39 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 itemsContainer.innerHTML = `<div class="text-center py-6 text-xs text-zinc-500 bg-zinc-950 rounded-2xl border border-zinc-800">No active items ordered</div>`;
             }
 
-            const total = t.running_total ? parseFloat(t.running_total) : (t.active_order ? parseFloat(t.active_order.total_amount) : 0);
-            document.getElementById('drawerSubtotal').textContent = formatPrice(total);
-            document.getElementById('drawerTotalAmount').textContent = formatPrice(total);
+            const items = t.items || [];
+            let subtotal = 0;
+            items.forEach(i => {
+                subtotal += parseFloat(i.price) * parseInt(i.quantity);
+            });
+
+            // Calculate service charge
+            let serviceCharge = 0;
+            if (<?= $scEnabled ? 'true' : 'false' ?>) {
+                if ('<?= $scType ?>' === 'percent') {
+                    serviceCharge = Math.round((subtotal * <?= $scPercent ?>) / 100 * 100) / 100;
+                } else {
+                    serviceCharge = <?= $scPercent ?>;
+                }
+            }
+
+            // Calculate tax
+            let tax = 0;
+            if (<?= $taxEnabled ? 'true' : 'false' ?>) {
+                const taxableBase = subtotal + serviceCharge;
+                tax = Math.round((taxableBase * <?= $vatPercent ?>) / 100 * 100) / 100;
+            }
+
+            const grandTotal = Math.max(0, Math.round((subtotal + serviceCharge + tax) * 100) / 100);
+
+            document.getElementById('drawerSubtotal').textContent = formatPrice(subtotal);
+            document.getElementById('drawerServiceCharge').textContent = formatPrice(serviceCharge);
+            document.getElementById('drawerTax').textContent = formatPrice(tax);
+            document.getElementById('drawerTotalAmount').textContent = formatPrice(grandTotal);
+
+            // Show/hide rows based on settings
+            document.getElementById('drawerServiceChargeRow').style.display = '<?= $scEnabled ? 'flex' : 'none' ?>';
+            document.getElementById('drawerTaxRow').style.display = '<?= $taxEnabled ? 'flex' : 'none' ?>';
 
             document.getElementById('tableDrawer').classList.remove('translate-x-full');
         }
@@ -885,33 +931,21 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         function triggerQuickPayment() {
             if (!selectedTableNumber) return;
             const tNum = selectedTableNumber;
+            const t = allTablesData.find(x => x.table_number.toString() === tNum.toString());
             
-            if (!confirm(`Confirm bill settlement & payment completion for Table ${tNum}?`)) return;
-
-            showToast(`Settling payment for Table ${tNum}...`, 'info');
-
-            const formData = new FormData();
-            formData.append('action', 'settle_table_payment');
-            formData.append('table_number', tNum);
-
-            fetch('../api/orders-stream.php', {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin'
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showToast(data.message || `Table ${tNum} bill settled successfully!`, 'success');
-                    refreshDashboardStream();
-                    closeTableDrawer();
-                } else {
-                    showToast(data.message || 'Failed to settle payment', 'error');
-                }
-            })
-            .catch(err => {
-                showToast('Connection error while settling payment', 'error');
-            });
+            // Find the active order for this table
+            let orderId = null;
+            if (t && t.active_order && t.active_order.id) {
+                orderId = t.active_order.id;
+            }
+            
+            if (orderId) {
+                // Open RPOS with the existing order
+                window.open(`pos.php?order_id=${orderId}`, '_blank');
+            } else {
+                // No active order, just open RPOS for this table
+                window.open(`pos.php?table_number=${encodeURIComponent(tNum)}`, '_blank');
+            }
         }
 
         function updateSelectedTableStatus(status) {

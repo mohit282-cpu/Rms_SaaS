@@ -46,13 +46,6 @@ require_once __DIR__ . '/helpers/Response.php';
 require_once __DIR__ . '/helpers/Inventory.php';
 require_once __DIR__ . '/helpers/PermissionService.php';
 require_once __DIR__ . '/helpers/AuthorizationService.php';
-require_once __DIR__ . '/helpers/RBAC.php';
-require_once __DIR__ . '/helpers/CalculationEngine.php';
-require_once __DIR__ . '/helpers/ModifierService.php';
-require_once __DIR__ . '/helpers/BillService.php';
-require_once __DIR__ . '/helpers/RefundService.php';
-require_once __DIR__ . '/helpers/ShiftService.php';
-require_once __DIR__ . '/helpers/LoyaltyService.php';
 
 // Set Global Production Security Headers
 Security::setSecurityHeaders();

@@ -7,26 +7,22 @@ $currentPage = $currentPage ?? '';
 $userRole = strtolower($_SESSION['user_role'] ?? $_SESSION['role'] ?? 'admin');
 $isAdminOrManager = in_array($userRole, ['admin', 'manager', 'owner']);
 
-if (!function_exists('sidebarLink')) {
-    function sidebarLink($href, $icon, $label, $currentPage, $pageKey) {
-        $isActive = ($currentPage === $pageKey);
-        $baseClass = "flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all w-full select-none ";
-        if ($isActive) {
-            return '<a href="' . $href . '" class="' . $baseClass . 'bg-amber-500 text-zinc-950 font-black shadow-lg shadow-amber-500/20"><span class="text-base w-5 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
-        }
-        return '<a href="' . $href . '" class="' . $baseClass . 'text-zinc-400 hover:text-white hover:bg-zinc-900"><span class="text-base w-5 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
+function sidebarLink($href, $icon, $label, $currentPage, $pageKey) {
+    $isActive = ($currentPage === $pageKey);
+    $baseClass = "flex items-center gap-3 px-3.5 py-2.5 rounded-2xl font-bold text-xs transition-all w-full select-none ";
+    if ($isActive) {
+        return '<a href="' . $href . '" class="' . $baseClass . 'bg-amber-500 text-zinc-950 font-black shadow-lg shadow-amber-500/20"><span class="text-base w-5 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
     }
+    return '<a href="' . $href . '" class="' . $baseClass . 'text-zinc-400 hover:text-white hover:bg-zinc-900"><span class="text-base w-5 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
 }
 
-if (!function_exists('sidebarSubLink')) {
-    function sidebarSubLink($href, $icon, $label, $currentPage, $pageKey) {
-        $isActive = ($currentPage === $pageKey);
-        $baseClass = "flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-[11px] transition-all w-full select-none ";
-        if ($isActive) {
-            return '<a href="' . $href . '" class="' . $baseClass . 'bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold"><span class="text-xs w-4 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
-        }
-        return '<a href="' . $href . '" class="' . $baseClass . 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80 font-medium"><span class="text-xs w-4 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
+function sidebarSubLink($href, $icon, $label, $currentPage, $pageKey) {
+    $isActive = ($currentPage === $pageKey);
+    $baseClass = "flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-[11px] transition-all w-full select-none ";
+    if ($isActive) {
+        return '<a href="' . $href . '" class="' . $baseClass . 'bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold"><span class="text-xs w-4 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
     }
+    return '<a href="' . $href . '" class="' . $baseClass . 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80 font-medium"><span class="text-xs w-4 text-center shrink-0">' . $icon . '</span><span class="truncate">' . $label . '</span></a>';
 }
 
 $invPages = ['inventory','inventory-items','inventory-categories','suppliers','purchase-orders','goods-receiving','stock-movements','recipes','waste','stock-audit','inventory-reports'];
@@ -109,25 +105,11 @@ $isAssetSection = in_array($currentPage, $assetPages);
             </nav>
         </details>
 
-        <!-- OPERATIONS ACCORDION -->
-        <div class="space-y-0.5 pt-1 border-t border-zinc-800/60">
-            <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">Operations & CRM</div>
-            <?php echo sidebarLink('customers.php', '🎴', 'Customers & CRM', $currentPage, 'customers'); ?>
-            <?php echo sidebarLink('reservations.php', '📅', 'Reservations', $currentPage, 'reservations'); ?>
-            <?php echo sidebarLink('expenses.php', '💵', 'Expenses', $currentPage, 'expenses'); ?>
-            <?php echo sidebarLink('shifts.php', '⏱️', 'Shift Management', $currentPage, 'shifts'); ?>
-            <?php echo sidebarLink('loyalty.php', '🎁', 'Loyalty Program', $currentPage, 'loyalty'); ?>
-            <?php echo sidebarLink('analytics.php', '📈', 'Advanced Analytics', $currentPage, 'analytics'); ?>
-        </div>
-
         <!-- SYSTEM SECTION -->
         <?php if ($isAdminOrManager): ?>
         <div class="space-y-0.5 pt-1 border-t border-zinc-800/60">
             <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">System</div>
-            <?php echo sidebarLink('settings.php', '⚙️', 'Restaurant Settings', $currentPage, 'settings'); ?>
-            <?php echo sidebarLink('staff.php', '👥', 'Staff & RBAC Roles', $currentPage, 'staff'); ?>
-            <?php echo sidebarLink('modifiers.php', '🧪', 'Modifiers & Add-ons', $currentPage, 'modifiers'); ?>
-            <?php echo sidebarLink('payment-settings.php', '💳', 'Payment Gateways', $currentPage, 'payment-settings'); ?>
+            <?php echo sidebarLink('payment-settings.php', '⚙️', 'Settings', $currentPage, 'settings'); ?>
         </div>
         <?php endif; ?>
     </div>
