@@ -343,6 +343,78 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 </div>
             </div>
 
+            <!-- CUSTOMER SECTION -->
+            <div class="space-y-2">
+                <h4 class="text-xs font-black text-zinc-400 uppercase tracking-wider">Customer</h4>
+                <div id="customerSection" class="space-y-3">
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-3">
+                        <div class="flex items-center gap-2">
+                            <span class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs">👤</span>
+                            <span class="text-xs font-bold text-zinc-400">Walk-in Guest</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="tel" id="customerPhoneInput" placeholder="Enter phone to find/create customer" class="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500" maxlength="15">
+                            <button onclick="searchCustomerByPhone()" class="h-10 px-4 rounded-xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-md">Search</button>
+                        </div>
+                        <div id="customerCreateForm" class="hidden space-y-2 pt-2 border-t border-zinc-800">
+                            <input type="text" id="customerNameInput" placeholder="Customer Name" class="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500">
+                            <input type="email" id="customerEmailInput" placeholder="Email (optional)" class="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500">
+                            <button onclick="createCustomer()" class="w-full h-10 rounded-xl bg-emerald-500 text-zinc-950 font-black text-xs active:scale-95 shadow-md">Create Customer</button>
+                        </div>
+                    </div>
+                    <div id="customerDetailsBox" class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-sm">✓</span>
+                                <span class="text-xs font-bold text-emerald-400">Customer Linked</span>
+                            </div>
+                            <button onclick="unlinkCustomer()" class="text-xs text-rose-400 hover:text-rose-300 font-bold">Unlink</button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="bg-zinc-900/50 rounded-xl p-2 border border-zinc-800/40">
+                                <span class="text-[10px] font-bold text-zinc-500 block">Name</span>
+                                <span id="customerDisplayName" class="font-bold text-white"></span>
+                            </div>
+                            <div class="bg-zinc-900/50 rounded-xl p-2 border border-zinc-800/40">
+                                <span class="text-[10px] font-bold text-zinc-500 block">Phone</span>
+                                <span id="customerDisplayPhone" class="font-bold text-white"></span>
+                            </div>
+                            <div class="bg-zinc-900/50 rounded-xl p-2 border border-zinc-800/40">
+                                <span class="text-[10px] font-bold text-zinc-500 block">Total Visits</span>
+                                <span id="customerDisplayVisits" class="font-bold text-amber-400"></span>
+                            </div>
+                            <div class="bg-zinc-900/50 rounded-xl p-2 border border-zinc-800/40">
+                                <span class="text-[10px] font-bold text-zinc-500 block">Total Spent</span>
+                                <span id="customerDisplaySpent" class="font-bold text-emerald-400"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LOYALTY SECTION -->
+            <div class="space-y-2" id="loyaltySection" style="display: none;">
+                <h4 class="text-xs font-black text-zinc-400 uppercase tracking-wider">Loyalty</h4>
+                <div id="loyaltyBox" class="bg-zinc-950 border border-emerald-500/20 rounded-2xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-emerald-400">🏆 Available Points</span>
+                        <span id="loyaltyPointsDisplay" class="text-lg font-black text-emerald-400">0</span>
+                    </div>
+                    <div class="flex items-center justify-between text-xs text-zinc-400">
+                        <span>Points Value</span>
+                        <span id="loyaltyValueDisplay" class="font-bold text-white">Rs.0</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="number" id="loyaltyPointsToRedeem" placeholder="Points to redeem" min="1" class="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500">
+                        <button onclick="applyLoyaltyPoints()" class="h-10 px-4 rounded-xl bg-emerald-500 text-zinc-950 font-black text-xs active:scale-95 shadow-md">Apply</button>
+                    </div>
+                    <div id="loyaltyDiscountRow" class="hidden flex justify-between text-xs text-zinc-400 bg-zinc-900/50 rounded-xl p-2 border border-zinc-800/40">
+                        <span>Loyalty Discount</span>
+                        <span id="loyaltyDiscountAmount" class="font-bold text-emerald-400">Rs.0</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- BILL SUMMARY -->
             <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-2">
                 <div class="flex justify-between text-xs text-zinc-400">
@@ -361,17 +433,132 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                     <span>Discount</span>
                     <span id="drawerDiscount">Rs.0</span>
                 </div>
+                <div class="flex justify-between text-xs text-zinc-400" id="drawerNCRRow" style="display: none;">
+                    <span>NCR / Complimentary</span>
+                    <span id="drawerNCR">Rs.0</span>
+                </div>
+                <div class="flex justify-between text-xs text-zinc-400" id="drawerLoyaltyRow" style="display: none;">
+                    <span>Loyalty Discount</span>
+                    <span id="drawerLoyaltyDiscount">Rs.0</span>
+                </div>
                 <div class="flex justify-between text-sm font-black text-white pt-2 border-t border-zinc-800">
                     <span>Total Amount Due</span>
                     <span id="drawerTotalAmount" class="text-amber-400">Rs.0</span>
                 </div>
             </div>
 
-            <!-- QUICK WORKFLOW ACTION BUTTONS -->
-            <div class="grid grid-cols-2 gap-2">
-                <button onclick="triggerQuickPayment()" class="h-11 rounded-2xl bg-emerald-500 text-zinc-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95">
-                    💳 Settle & Bill
-                </button>
+            <!-- PAYMENT METHOD SELECTION -->
+            <div class="space-y-3" id="paymentSection" style="display: none;">
+                <h4 class="text-xs font-black text-zinc-400 uppercase tracking-wider">Payment</h4>
+                <div class="grid grid-cols-3 gap-2" id="paymentMethodButtons">
+                    <button type="button" onclick="selectPaymentMethod('cash')" class="h-14 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 hover:border-amber-500/40 transition-all" data-method="cash">
+                        <span class="text-2xl">💵</span>
+                        <span>Cash</span>
+                    </button>
+                    <button type="button" onclick="selectPaymentMethod('card')" class="h-14 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 hover:border-blue-500/40 transition-all" data-method="card">
+                        <span class="text-2xl">💳</span>
+                        <span>Card</span>
+                    </button>
+                    <button type="button" onclick="selectPaymentMethod('digital')" class="h-14 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 hover:border-purple-500/40 transition-all" data-method="digital">
+                        <span class="text-2xl">📱</span>
+                        <span>Digital QR</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- CASH PAYMENT INPUT -->
+            <div class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-3" id="cashPaymentSection">
+                <h4 class="text-xs font-black text-zinc-400 uppercase tracking-wider">Cash Payment</h4>
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs text-zinc-400">
+                        <span>Amount Due</span>
+                        <span id="cashAmountDue" class="font-black text-amber-400">Rs.0</span>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-zinc-300 mb-1">Cash Received</label>
+                        <input type="number" step="0.01" id="cashReceivedInput" placeholder="Enter amount received" class="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-base text-white font-black outline-none focus:border-amber-500 text-right" oninput="calculateChange()">
+                    </div>
+                    <div class="flex justify-between text-sm font-bold">
+                        <span class="text-zinc-400">Change Due</span>
+                        <span id="cashChangeDue" class="text-emerald-400">Rs.0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CARD PAYMENT INPUT -->
+            <div class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-3" id="cardPaymentSection">
+                <h4 class="text-xs font-black text-zinc-400 uppercase tracking-wider">Card Payment</h4>
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs text-zinc-400">
+                        <span>Amount</span>
+                        <span id="cardAmountDue" class="font-black text-blue-400">Rs.0</span>
+                    </div>
+                    <div class="text-center py-2">
+                        <span class="text-xs text-zinc-500">Tap/Insert card on terminal</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DIGITAL QR PAYMENT INPUT -->
+            <div class="hidden bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-3" id="digitalPaymentSection">
+                <h4 class="text-xs font-black text-zinc-400 uppercase tracking-wider">Digital QR Payment</h4>
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs text-zinc-400">
+                        <span>Amount</span>
+                        <span id="digitalAmountDue" class="font-black text-purple-400">Rs.0</span>
+                    </div>
+                    <div class="text-center py-2">
+                        <span class="text-xs text-zinc-500">Customer scans QR to pay</span>
+                    </div>
+                    <div class="p-3 bg-white rounded-xl inline-block">
+                        <img id="digitalQRImage" src="" alt="Payment QR" class="w-32 h-32 mx-auto">
+                    </div>
+                    <div class="text-center">
+                        <button onclick="confirmDigitalPayment()" class="h-10 px-4 rounded-xl bg-emerald-500 text-zinc-950 font-black text-xs active:scale-95 shadow-md">✓ Mark Payment Received</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAYMENT CONFIRMATION -->
+            <div class="hidden bg-zinc-950 border border-amber-500/20 rounded-2xl p-4 space-y-3" id="paymentConfirmationSection">
+                <h4 class="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">⚠️ Confirm Payment</h4>
+                <div class="space-y-2 text-xs">
+                    <div class="flex justify-between text-zinc-400"><span>Table:</span><span id="confirmTable" class="font-bold text-white"></span></div>
+                    <div class="flex justify-between text-zinc-400"><span>Order:</span><span id="confirmOrder" class="font-bold text-white"></span></div>
+                    <div class="flex justify-between text-zinc-400"><span>Customer:</span><span id="confirmCustomer" class="font-bold text-white"></span></div>
+                    <div class="flex justify-between text-zinc-400"><span>Payment Method:</span><span id="confirmMethod" class="font-bold text-amber-400"></span></div>
+                    <div class="flex justify-between text-zinc-400 pt-2 border-t border-zinc-800"><span class="font-black">Grand Total:</span><span id="confirmTotal" class="font-black text-amber-400 text-lg"></span></div>
+                    <div id="confirmCashDetails" class="hidden space-y-1 text-[10px] text-zinc-500">
+                        <div class="flex justify-between"><span>Received:</span><span id="confirmCashReceived" class="font-bold"></span></div>
+                        <div class="flex justify-between"><span>Change:</span><span id="confirmCashChange" class="font-bold text-emerald-400"></span></div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-2">
+                    <button onclick="hidePaymentConfirmation()" class="h-11 rounded-2xl bg-zinc-800 font-bold text-xs text-zinc-300">Cancel</button>
+                    <button onclick="processPayment()" class="h-11 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">✓ Confirm & Settle</button>
+                </div>
+            </div>
+
+            <!-- PAYMENT SUCCESS STATE -->
+            <div class="hidden bg-zinc-950 border border-emerald-500/30 rounded-2xl p-6 text-center space-y-4" id="paymentSuccessSection">
+                <div class="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 font-black text-3xl mx-auto">✓</div>
+                <div>
+                    <h4 class="font-black text-white text-base">Payment Successful</h4>
+                    <p class="text-xs text-zinc-400 mt-1">Table <span id="successTableNum" class="font-bold text-amber-400"></span> settled</p>
+                </div>
+                <div class="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/40 space-y-1 text-xs">
+                    <div class="flex justify-between text-zinc-400"><span>Order:</span><span id="successOrderId" class="font-bold text-white"></span></div>
+                    <div class="flex justify-between text-zinc-400"><span>Amount Paid:</span><span id="successAmount" class="font-bold text-emerald-400"></span></div>
+                    <div class="flex justify-between text-zinc-400"><span>Method:</span><span id="successMethod" class="font-bold text-amber-400"></span></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="printReceipt()" class="h-11 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs hover:text-white">🖨️ Print Receipt</button>
+                    <button onclick="closeTableDrawer(); refreshDashboardStream()" class="h-11 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">Close Panel</button>
+                </div>
+            </div>
+
+            <!-- QUICK ACTIONS (for non-payment states) -->
+            <div class="grid grid-cols-2 gap-2" id="quickActionsSection">
                 <button onclick="openTableQRModalFromDrawer()" class="h-11 rounded-2xl bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 hover:border-amber-500/40">
                     📱 View Table QR
                 </button>
@@ -380,6 +567,9 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 </button>
                 <button onclick="updateSelectedTableStatus('vacant')" class="h-11 rounded-2xl bg-zinc-950 border border-zinc-800 text-emerald-400 font-bold text-xs hover:border-emerald-500/40">
                     🟢 Mark Vacant
+                </button>
+                <button onclick="updateSelectedTableStatus('reserved')" class="h-11 rounded-2xl bg-zinc-950 border border-zinc-800 text-amber-400 font-bold text-xs hover:border-amber-500/40">
+                    🟡 Reserve
                 </button>
             </div>
 
@@ -775,6 +965,11 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
 
         function openTableDrawer(tableNum) {
             selectedTableNumber = tableNum;
+            currentCustomerId = 0;
+            currentLoyaltyPoints = 0;
+            currentLoyaltyDiscount = 0;
+            selectedPaymentMethod = null;
+
             const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
             if (!t) return;
 
@@ -844,6 +1039,40 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             // Show/hide rows based on settings
             document.getElementById('drawerServiceChargeRow').style.display = '<?= $scEnabled ? 'flex' : 'none' ?>';
             document.getElementById('drawerTaxRow').style.display = '<?= $taxEnabled ? 'flex' : 'none' ?>';
+            
+            // Reset loyalty/discount rows
+            document.getElementById('drawerDiscountRow').style.display = 'none';
+            document.getElementById('drawerNCRRow').style.display = 'none';
+            document.getElementById('drawerLoyaltyRow').style.display = 'none';
+            document.getElementById('loyaltyDiscountRow').classList.add('hidden');
+            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+
+            // Reset customer/loyalty sections
+            document.getElementById('customerSection').querySelector('.bg-zinc-950').classList.remove('hidden');
+            document.getElementById('customerDetailsBox').classList.add('hidden');
+            document.getElementById('customerCreateForm').classList.add('hidden');
+            document.getElementById('customerPhoneInput').value = '';
+            document.getElementById('customerNameInput').value = '';
+            document.getElementById('customerEmailInput').value = '';
+            document.getElementById('loyaltySection').style.display = 'none';
+            document.getElementById('loyaltyDiscountRow').classList.add('hidden');
+            document.getElementById('drawerLoyaltyRow').style.display = 'none';
+            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+
+            // Show payment section if table is waiting for bill
+            const isWaitingBill = (st === 'payment_pending');
+            document.getElementById('paymentSection').style.display = isWaitingBill ? 'block' : 'none';
+            document.getElementById('cashPaymentSection').classList.add('hidden');
+            document.getElementById('cardPaymentSection').classList.add('hidden');
+            document.getElementById('digitalPaymentSection').classList.add('hidden');
+            document.getElementById('paymentConfirmationSection').classList.add('hidden');
+            document.getElementById('paymentSuccessSection').classList.add('hidden');
+            document.getElementById('quickActionsSection').style.display = isWaitingBill ? 'none' : 'grid';
+
+            // Reset payment method buttons
+            document.querySelectorAll('#paymentMethodButtons button').forEach(btn => {
+                btn.className = 'h-14 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 hover:border-amber-500/40 transition-all';
+            });
 
             document.getElementById('tableDrawer').classList.remove('translate-x-full');
         }
@@ -991,10 +1220,450 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             });
         }
 
-        // Initialize Realtime Polling Stream (Every 2 seconds)
+        // ================================================================
+        // TABLE BILLING & PAYMENT FUNCTIONS
+        // ================================================================
+        
+        let currentCustomerId = 0;
+        let currentLoyaltyPoints = 0;
+        let currentLoyaltyDiscount = 0;
+        let selectedPaymentMethod = null;
+
+        function searchCustomerByPhone() {
+            const phone = document.getElementById('customerPhoneInput').value.trim();
+            if (!phone) {
+                showToast('Please enter a phone number', 'warning');
+                return;
+            }
+
+            showToast('Searching customer...', 'info');
+
+            fetch('../api/table-payment.php?action=search_customer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'phone=' + encodeURIComponent(phone),
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.customer && data.exists) {
+                        linkCustomer(data.customer);
+                    } else {
+                        // Customer not found - show create form
+                        document.getElementById('customerPhoneInput').value = phone;
+                        document.getElementById('customerCreateForm').classList.remove('hidden');
+                        showToast('Customer not found. Enter details to create.', 'info');
+                    }
+                } else {
+                    showToast(data.message || 'Search failed', 'error');
+                }
+            })
+            .catch(err => showToast('Connection error', 'error'));
+        }
+
+        function createCustomer() {
+            const phone = document.getElementById('customerPhoneInput').value.trim();
+            const name = document.getElementById('customerNameInput').value.trim();
+            const email = document.getElementById('customerEmailInput').value.trim();
+
+            if (!name) {
+                showToast('Customer name is required', 'warning');
+                return;
+            }
+
+            fetch('../api/table-payment.php?action=create_customer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'phone=' + encodeURIComponent(phone) + '&name=' + encodeURIComponent(name) + '&email=' + encodeURIComponent(email),
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.customer) {
+                    linkCustomer(data.customer);
+                    document.getElementById('customerCreateForm').classList.add('hidden');
+                    document.getElementById('customerNameInput').value = '';
+                    document.getElementById('customerEmailInput').value = '';
+                } else {
+                    showToast(data.message || 'Failed to create customer', 'error');
+                }
+            })
+            .catch(err => showToast('Connection error', 'error'));
+        }
+
+        function linkCustomer(customer) {
+            currentCustomerId = customer.id;
+            currentLoyaltyPoints = customer.loyalty_points || 0;
+            
+            document.getElementById('customerSection').querySelector('.bg-zinc-950').classList.add('hidden');
+            document.getElementById('customerDetailsBox').classList.remove('hidden');
+            document.getElementById('customerDisplayName').textContent = customer.name;
+            document.getElementById('customerDisplayPhone').textContent = customer.phone;
+            document.getElementById('customerDisplayVisits').textContent = customer.total_visits || 0;
+            document.getElementById('customerDisplaySpent').textContent = formatPrice(customer.total_spent || 0);
+
+            // Show loyalty section
+            document.getElementById('loyaltySection').style.display = 'block';
+            updateLoyaltyDisplay();
+
+            // Fetch loyalty details
+            fetchLoyaltyInfo(customer.id);
+
+            showToast('Customer linked: ' + customer.name, 'success');
+        }
+
+        function unlinkCustomer() {
+            currentCustomerId = 0;
+            currentLoyaltyPoints = 0;
+            currentLoyaltyDiscount = 0;
+            
+            document.getElementById('customerDetailsBox').classList.add('hidden');
+            document.getElementById('customerSection').querySelector('.bg-zinc-950').classList.remove('hidden');
+            document.getElementById('customerCreateForm').classList.add('hidden');
+            document.getElementById('loyaltySection').style.display = 'none';
+            document.getElementById('loyaltyDiscountRow').classList.add('hidden');
+            document.getElementById('drawerLoyaltyRow').style.display = 'none';
+            
+            updateBillTotals();
+        }
+
+        function fetchLoyaltyInfo(customerId) {
+            fetch('../api/table-payment.php?action=get_loyalty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'customer_id=' + customerId,
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    currentLoyaltyPoints = data.loyalty_points || 0;
+                    updateLoyaltyDisplay();
+                }
+            })
+            .catch(err => console.error('Loyalty fetch error:', err));
+        }
+
+        function updateLoyaltyDisplay() {
+            document.getElementById('loyaltyPointsDisplay').textContent = currentLoyaltyPoints.toLocaleString();
+            document.getElementById('loyaltyValueDisplay').textContent = formatPrice(currentLoyaltyPoints * 0.10);
+            document.getElementById('loyaltyPointsToRedeem').max = currentLoyaltyPoints;
+            document.getElementById('loyaltyPointsToRedeem').placeholder = 'Max: ' + currentLoyaltyPoints + ' points';
+        }
+
+        function applyLoyaltyPoints() {
+            const points = parseInt(document.getElementById('loyaltyPointsToRedeem').value) || 0;
+            if (!points || points <= 0) {
+                showToast('Enter points to redeem', 'warning');
+                return;
+            }
+
+            if (!currentCustomerId) {
+                showToast('No customer linked', 'warning');
+                return;
+            }
+
+            // Get current bill total for validation
+            const subtotalText = document.getElementById('drawerSubtotal').textContent;
+            const serviceChargeText = document.getElementById('drawerServiceCharge').textContent;
+            const taxText = document.getElementById('drawerTax').textContent;
+            
+            const subtotal = parseFloat(subtotalText.replace(/[^0-9.]/g, '')) || 0;
+            const serviceCharge = parseFloat(serviceChargeText.replace(/[^0-9.]/g, '')) || 0;
+            const tax = parseFloat(taxText.replace(/[^0-9.]/g, '')) || 0;
+            const billTotal = subtotal + serviceCharge + tax;
+
+            showToast('Applying loyalty points...', 'info');
+
+            fetch('../api/table-payment.php?action=apply_loyalty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'customer_id=' + currentCustomerId + '&points=' + points + '&bill_total=' + billTotal,
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    currentLoyaltyDiscount = data.discount_value;
+                    currentLoyaltyPoints = data.remaining_points;
+                    
+                    document.getElementById('loyaltyDiscountRow').classList.remove('hidden');
+                    document.getElementById('loyaltyDiscountAmount').textContent = formatPrice(data.discount_value);
+                    document.getElementById('drawerLoyaltyRow').style.display = 'flex';
+                    document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(data.discount_value);
+                    
+                    updateLoyaltyDisplay();
+                    updateBillTotals();
+                    
+                    showToast(data.points_redeemed + ' points applied (' + formatPrice(data.discount_value) + ' discount)', 'success');
+                } else {
+                    showToast(data.message || 'Failed to apply loyalty', 'error');
+                }
+            })
+            .catch(err => showToast('Connection error', 'error'));
+        }
+
+        function updateBillTotals() {
+            const subtotalText = document.getElementById('drawerSubtotal').textContent;
+            const serviceChargeText = document.getElementById('drawerServiceCharge').textContent;
+            const taxText = document.getElementById('drawerTax').textContent;
+            const discountText = document.getElementById('drawerDiscount').textContent;
+            const ncrText = document.getElementById('drawerNCR').textContent;
+            
+            const subtotal = parseFloat(subtotalText.replace(/[^0-9.]/g, '')) || 0;
+            const serviceCharge = parseFloat(serviceChargeText.replace(/[^0-9.]/g, '')) || 0;
+            const tax = parseFloat(taxText.replace(/[^0-9.]/g, '')) || 0;
+            const discount = parseFloat(discountText.replace(/[^0-9.]/g, '')) || 0;
+            const ncr = parseFloat(ncrText.replace(/[^0-9.]/g, '')) || 0;
+            
+            const grandTotal = Math.max(0, subtotal + serviceCharge + tax - discount - ncr - currentLoyaltyDiscount);
+            
+            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(currentLoyaltyDiscount);
+            document.getElementById('drawerTotalAmount').textContent = formatPrice(grandTotal);
+            
+            // Show/hide loyalty row
+            document.getElementById('drawerLoyaltyRow').style.display = currentLoyaltyDiscount > 0 ? 'flex' : 'none';
+        }
+
+        function selectPaymentMethod(method) {
+            selectedPaymentMethod = method;
+            
+            // Update button styles
+            document.querySelectorAll('#paymentMethodButtons button').forEach(btn => {
+                if (btn.dataset.method === method) {
+                    btn.className = 'h-14 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs flex flex-col items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 active:scale-95';
+                } else {
+                    btn.className = 'h-14 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-300 font-bold text-xs flex flex-col items-center justify-center gap-1.5 hover:border-amber-500/40 transition-all';
+                }
+            });
+
+            // Show payment section
+            document.getElementById('paymentSection').style.display = 'block';
+            
+            // Hide all payment input sections
+            document.getElementById('cashPaymentSection').classList.add('hidden');
+            document.getElementById('cardPaymentSection').classList.add('hidden');
+            document.getElementById('digitalPaymentSection').classList.add('hidden');
+            document.getElementById('paymentConfirmationSection').classList.add('hidden');
+            document.getElementById('paymentSuccessSection').classList.add('hidden');
+
+            // Show selected payment input
+            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
+            const grandTotal = parseFloat(grandTotalText.replace(/[^0-9.]/g, '')) || 0;
+
+            if (method === 'cash') {
+                document.getElementById('cashPaymentSection').classList.remove('hidden');
+                document.getElementById('cashAmountDue').textContent = formatPrice(grandTotal);
+                document.getElementById('cashReceivedInput').value = '';
+                document.getElementById('cashChangeDue').textContent = formatPrice(0);
+            } else if (method === 'card') {
+                document.getElementById('cardPaymentSection').classList.remove('hidden');
+                document.getElementById('cardAmountDue').textContent = formatPrice(grandTotal);
+            } else if (method === 'digital') {
+                document.getElementById('digitalPaymentSection').classList.remove('hidden');
+                document.getElementById('digitalAmountDue').textContent = formatPrice(grandTotal);
+                generateDigitalQR(grandTotal);
+            }
+
+            // Hide quick actions
+            document.getElementById('quickActionsSection').style.display = 'none';
+        }
+
+        function calculateChange() {
+            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
+            const grandTotal = parseFloat(grandTotalText.replace(/[^0-9.]/g, '')) || 0;
+            const received = parseFloat(document.getElementById('cashReceivedInput').value) || 0;
+            const change = Math.max(0, received - grandTotal);
+            document.getElementById('cashChangeDue').textContent = formatPrice(change);
+        }
+
+        function generateDigitalQR(amount) {
+            // In production, this would call the API to get a real payment URL
+            const paymentUrl = window.location.origin + '/payment.php?amount=' + amount + '&table=' + selectedTableNumber;
+            const qrDataUrl = generateQRCodeDataURL(paymentUrl, 200);
+            document.getElementById('digitalQRImage').src = qrDataUrl;
+        }
+
+        function confirmDigitalPayment() {
+            // For digital QR, we just mark as received after customer pays
+            showPaymentConfirmation('digital');
+        }
+
+        function showPaymentConfirmation(method) {
+            selectedPaymentMethod = method;
+            
+            const tableNum = selectedTableNumber;
+            const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
+            const orderId = t && t.active_order ? t.active_order.id : null;
+            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
+            const customerName = currentCustomerId ? document.getElementById('customerDisplayName').textContent : 'Walk-in Guest';
+
+            document.getElementById('confirmTable').textContent = 'T-' + tableNum;
+            document.getElementById('confirmOrder').textContent = orderId ? '#' + orderId : 'N/A';
+            document.getElementById('confirmCustomer').textContent = customerName;
+            
+            const methodLabels = {
+                'cash': '💵 Cash',
+                'card': '💳 Card',
+                'digital': '📱 Digital QR'
+            };
+            document.getElementById('confirmMethod').textContent = methodLabels[method] || method;
+            document.getElementById('confirmTotal').textContent = grandTotalText;
+
+            if (method === 'cash') {
+                const received = parseFloat(document.getElementById('cashReceivedInput').value) || 0;
+                const grandTotal = parseFloat(document.getElementById('drawerTotalAmount').textContent.replace(/[^0-9.]/g, '')) || 0;
+                const change = Math.max(0, received - grandTotal);
+                document.getElementById('confirmCashReceived').textContent = formatPrice(received);
+                document.getElementById('confirmCashChange').textContent = formatPrice(change);
+                document.getElementById('confirmCashDetails').classList.remove('hidden');
+            } else {
+                document.getElementById('confirmCashDetails').classList.add('hidden');
+            }
+
+            // Hide other sections
+            document.getElementById('cashPaymentSection').classList.add('hidden');
+            document.getElementById('cardPaymentSection').classList.add('hidden');
+            document.getElementById('digitalPaymentSection').classList.add('hidden');
+            document.getElementById('paymentSection').style.display = 'none';
+            document.getElementById('paymentConfirmationSection').classList.remove('hidden');
+            document.getElementById('paymentSuccessSection').classList.add('hidden');
+        }
+
+        function hidePaymentConfirmation() {
+            document.getElementById('paymentConfirmationSection').classList.add('hidden');
+            document.getElementById('paymentSection').style.display = 'block';
+            
+            // Show the payment input section again
+            if (selectedPaymentMethod === 'cash') {
+                document.getElementById('cashPaymentSection').classList.remove('hidden');
+            } else if (selectedPaymentMethod === 'card') {
+                document.getElementById('cardPaymentSection').classList.remove('hidden');
+            } else if (selectedPaymentMethod === 'digital') {
+                document.getElementById('digitalPaymentSection').classList.remove('hidden');
+            }
+        }
+
+        function processPayment() {
+            if (!selectedTableNumber || !selectedPaymentMethod) {
+                showToast('No payment method selected', 'warning');
+                return;
+            }
+
+            const tableNum = selectedTableNumber;
+            const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
+            const orderId = t && t.active_order ? t.active_order.id : null;
+            
+            if (!orderId) {
+                showToast('No active order found', 'error');
+                return;
+            }
+
+            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
+            const grandTotal = parseFloat(grandTotalText.replace(/[^0-9.]/g, '')) || 0;
+
+            // Validate cash received
+            let cashReceived = 0;
+            if (selectedPaymentMethod === 'cash') {
+                cashReceived = parseFloat(document.getElementById('cashReceivedInput').value) || 0;
+                if (cashReceived + 0.001 < grandTotal) {
+                    showToast('Cash received is less than amount due', 'warning');
+                    return;
+                }
+            }
+
+            hidePaymentConfirmation();
+            showToast('Processing payment...', 'info');
+
+            const formData = new FormData();
+            formData.append('action', 'process_payment');
+            formData.append('table_number', tableNum);
+            formData.append('order_id', orderId);
+            formData.append('payment_method', selectedPaymentMethod);
+            formData.append('customer_id', currentCustomerId);
+            formData.append('loyalty_points_redeemed', currentLoyaltyPoints > 0 ? Math.round(currentLoyaltyDiscount / 0.10) : 0);
+            formData.append('cash_received', cashReceived);
+
+            fetch('../api/table-payment.php', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showPaymentSuccess(data);
+                    refreshDashboardStream();
+                } else {
+                    // Show error and restore payment section
+                    showToast(data.message || 'Payment failed', 'error');
+                    document.getElementById('paymentConfirmationSection').classList.add('hidden');
+                    document.getElementById('paymentSection').style.display = 'block';
+                    if (selectedPaymentMethod === 'cash') {
+                        document.getElementById('cashPaymentSection').classList.remove('hidden');
+                    } else if (selectedPaymentMethod === 'card') {
+                        document.getElementById('cardPaymentSection').classList.remove('hidden');
+                    } else if (selectedPaymentMethod === 'digital') {
+                        document.getElementById('digitalPaymentSection').classList.remove('hidden');
+                    }
+                }
+            })
+            .catch(err => {
+                showToast('Connection error during payment', 'error');
+                document.getElementById('paymentConfirmationSection').classList.add('hidden');
+                document.getElementById('paymentSection').style.display = 'block';
+            });
+        }
+
+        function showPaymentSuccess(data) {
+            const tableNum = selectedTableNumber;
+            
+            document.getElementById('successTableNum').textContent = 'T-' + tableNum;
+            document.getElementById('successOrderId').textContent = '#' + data.order_id;
+            document.getElementById('successAmount').textContent = formatPrice(data.grand_total);
+            
+            const methodLabels = {
+                'cash': '💵 Cash',
+                'card': '💳 Card',
+                'digital': '📱 Digital QR'
+            };
+            document.getElementById('successMethod').textContent = methodLabels[data.payment_method] || data.payment_method;
+
+            // Hide all sections
+            document.getElementById('paymentSection').style.display = 'none';
+            document.getElementById('paymentConfirmationSection').classList.add('hidden');
+            document.getElementById('cashPaymentSection').classList.add('hidden');
+            document.getElementById('cardPaymentSection').classList.add('hidden');
+            document.getElementById('digitalPaymentSection').classList.add('hidden');
+            document.getElementById('quickActionsSection').style.display = 'none';
+            document.getElementById('paymentSuccessSection').classList.remove('hidden');
+
+            // Reset loyalty state
+            currentLoyaltyDiscount = 0;
+            currentLoyaltyPoints = 0;
+            document.getElementById('loyaltyDiscountRow').classList.add('hidden');
+            document.getElementById('drawerLoyaltyRow').style.display = 'none';
+            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+            
+            showToast('Payment successful!', 'success');
+        }
+
+        function printReceipt() {
+            const tableNum = selectedTableNumber;
+            const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
+            const orderId = t && t.active_order ? t.active_order.id : null;
+            
+            if (!orderId) return;
+
+            // Open receipt in new window for printing
+            window.open('receipt.php?order_id=' + orderId, '_blank');
+        }
+
+        // Initialize: hide payment section by default
         document.addEventListener('DOMContentLoaded', () => {
-            refreshDashboardStream();
-            setInterval(refreshDashboardStream, 2000);
+            document.getElementById('paymentSection').style.display = 'none';
+            document.getElementById('loyaltySection').style.display = 'none';
         });
     </script>
 </body>

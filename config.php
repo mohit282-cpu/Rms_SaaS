@@ -116,14 +116,19 @@ function getDBConnection() {
         return $conn;
     }
 
-    $conn = @new mysqli(DB_HOST, DB_USER, DB_PASS);
+    try {
+        $conn = @new mysqli(DB_HOST, DB_USER, DB_PASS);
 
-    if ($conn->connect_error) {
-        return null;
-    }
+        if ($conn->connect_error) {
+            return null;
+        }
 
-    if (!$conn->select_db(DB_NAME)) {
-        // Database must exist. Run `php database/migrate.php` once to provision it.
+        if (!$conn->select_db(DB_NAME)) {
+            // Database must exist. Run `php database/migrate.php` once to provision it.
+            return null;
+        }
+    } catch (\Throwable $e) {
+        error_log('Database Connection Error: ' . $e->getMessage());
         return null;
     }
 
