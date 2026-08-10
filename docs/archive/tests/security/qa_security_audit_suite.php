@@ -1,7 +1,7 @@
 <?php
 // tests/security/qa_security_audit_suite.php - Complete Automated Senior QA & Security Audit Verification Suite
 
-require_once __DIR__ . '/../../config.php';
+require_once __DIR__ . '/../../../../config.php';
 
 function assertAudit($condition, string $description) {
     if ($condition) {
@@ -25,12 +25,12 @@ echo "--- DOMAIN 1: SECRETS & ENVIRONMENT CONFIGURATION ---\n";
 assertAudit(defined('QR_SECRET_KEY') && QR_SECRET_KEY !== '', "HMAC/JWT Secret key is defined and non-empty");
 assertAudit(QR_SECRET_KEY !== 'RMS_SECURE_HMAC_SECRET_KEY_2026_CHANGE_IF_NEEDED', "Secret key does NOT match legacy hardcoded default constant");
 
-$envEx = @file_get_contents(__DIR__ . '/../../.env.example');
+$envEx = @file_get_contents(__DIR__ . '/../../../../.env.example');
 assertAudit($envEx && strpos($envEx, 'CHANGE_ME') !== false, ".env.example uses CHANGE_ME placeholder instead of real credentials");
 
 // --- TEST DOMAIN 2: DATABASE MIGRATION CLI SECURITY GUARD ---
 echo "\n--- DOMAIN 2: DATABASE MIGRATION CLI SECURITY GUARD ---\n";
-$migFile = __DIR__ . '/../../database/migrate.php';
+$migFile = __DIR__ . '/../../../../database/migrate.php';
 $migContent = @file_get_contents($migFile);
 assertAudit($migContent && strpos($migContent, "PHP_SAPI !== 'cli'") !== false, "database/migrate.php enforces CLI-only execution (PHP_SAPI !== 'cli')");
 
@@ -53,7 +53,7 @@ assertAudit(CSRF::verifyToken('INVALID_TOKEN_123') === false, "CSRF token verifi
 
 // --- TEST DOMAIN 5: REMOVE LEGACY PAYMENT BYPASS ---
 echo "\n--- DOMAIN 5: REMOVE LEGACY PAYMENT BYPASS ---\n";
-$ordersStreamFile = __DIR__ . '/../../api/orders-stream.php';
+$ordersStreamFile = __DIR__ . '/../../../../api/orders-stream.php';
 $streamContent = @file_get_contents($ordersStreamFile);
 assertAudit($streamContent && strpos($streamContent, "UPDATE orders SET payment_status = 'paid'") === false, "Legacy payment bypass in api/orders-stream.php has been PERMANENTLY REMOVED");
 
@@ -84,7 +84,7 @@ assertAudit($earn2['success'] === true && !empty($earn2['already_processed']), "
 
 // --- TEST DOMAIN 8: INVENTORY OVERSELLING PREVENTION ---
 echo "\n--- TEST DOMAIN 8: INVENTORY OVERSELLING PREVENTION ---\n";
-$orderSvcFile = __DIR__ . '/../../helpers/OrderService.php';
+$orderSvcFile = __DIR__ . '/../../../../helpers/OrderService.php';
 $orderSvcContent = @file_get_contents($orderSvcFile);
 assertAudit($orderSvcContent && strpos($orderSvcContent, "stock_quantity >= ?") !== false, "Inventory deduction enforces explicit non-negative stock condition (stock_quantity >= ?)");
 

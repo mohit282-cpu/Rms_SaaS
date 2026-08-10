@@ -1,7 +1,7 @@
 <?php
 // tests/hr_management_test.php - Comprehensive Automated Test Suite for RMS SaaS HR, Shifts, Attendance & Payroll
 
-require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../../../config.php';
 
 function assertHrTest($condition, $description) {
     if ($condition) {

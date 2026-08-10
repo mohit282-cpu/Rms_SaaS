@@ -15,6 +15,12 @@
 # Disable directory listing
 Options -Indexes
 
+# Protect sensitive files and directories
+<FilesMatch "^\.env|\.app_secret|\.log$|\.sql$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
 # Protect config file
 <Files "config.php">
     Order allow,deny

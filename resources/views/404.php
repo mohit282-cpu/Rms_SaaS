@@ -14,7 +14,7 @@
             <p class="text-xs text-zinc-400 mt-2">The page or resource you are looking for does not exist or has been moved.</p>
         </div>
         <div class="pt-2">
-            <a href="/RMS_System/index.php" class="inline-flex items-center justify-center h-12 px-6 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">
+            <a href="index.php" class="inline-flex items-center justify-center h-12 px-6 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">
                 🍽️ Return to Restaurant Homepage
             </a>
         </div>

@@ -1,7 +1,7 @@
 <?php
 // tests/customer_qr_checkout_test.php - Automated Verification of Customer QR Ordering & Checkout Session
 
-require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../../../config.php';
 
 $conn = getDBConnection();
 if (!$conn) {

@@ -628,7 +628,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             <!-- Customer Destination URL Box -->
             <div class="bg-zinc-950 p-2.5 rounded-2xl border border-zinc-800 text-left">
                 <span class="text-[10px] font-bold text-zinc-500 uppercase block mb-0.5">Customer Menu Ordering URL:</span>
-                <div id="qrModalCustomerUrl" class="text-xs font-mono font-bold text-amber-400 truncate selection:bg-amber-500 selection:text-zinc-950">http://localhost/RMS_System/menu.php?token=...</div>
+                <div id="qrModalCustomerUrl" class="text-xs font-mono font-bold text-amber-400 truncate selection:bg-amber-500 selection:text-zinc-950"><?php echo htmlspecialchars((empty($_SERVER['HTTPS']) ? 'http://' : 'https://') . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/menu.php?token=...'); ?></div>
             </div>
 
             <div class="grid grid-cols-2 gap-2">

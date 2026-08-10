@@ -9,6 +9,26 @@ require_once __DIR__ . '/app/Helpers/Autoloader.php';
 Autoloader::register();
 Autoloader::loadEnv(__DIR__ . '/.env');
 
+// Production Error Display & Server Logging Configuration
+$appEnv = strtolower(getenv('APP_ENV') ?: 'production');
+$appDebug = filter_var(getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN);
+
+if ($appEnv === 'production' || !$appDebug) {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+    error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED & ~E_STRICT);
+} else {
+    ini_set('display_errors', '1');
+    ini_set('display_startup_errors', '1');
+    error_reporting(E_ALL);
+}
+ini_set('log_errors', '1');
+$logDir = __DIR__ . '/storage/logs';
+if (!is_dir($logDir)) {
+    @mkdir($logDir, 0755, true);
+}
+ini_set('error_log', $logDir . '/php_errors.log');
+
 // Database Configuration & Core Autoloader
 define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
 define('DB_USER', getenv('DB_USERNAME') ?: 'root');

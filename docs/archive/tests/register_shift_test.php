@@ -1,7 +1,7 @@
 <?php
 // tests/register_shift_test.php - Comprehensive Automated Test Suite for Register Shift & Cash Float System
 
-require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../../../config.php';
 
 function assertShiftTest($condition, $description) {
     if ($condition) {
