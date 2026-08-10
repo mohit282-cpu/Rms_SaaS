@@ -59,6 +59,7 @@ if (!$conn) {
     $orderId = $conn->insert_id;
 
     // Set tenant context to test tenant
+    Auth::startSession();
     $_SESSION['restaurant_id'] = $testTenant;
 
     // Legal transition: new -> preparing

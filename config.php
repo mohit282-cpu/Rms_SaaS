@@ -46,12 +46,15 @@ require_once __DIR__ . '/helpers/Response.php';
 require_once __DIR__ . '/helpers/Inventory.php';
 require_once __DIR__ . '/helpers/PermissionService.php';
 require_once __DIR__ . '/helpers/AuthorizationService.php';
+require_once __DIR__ . '/helpers/BillingService.php';
 
 // Set Global Production Security Headers
 Security::setSecurityHeaders();
 
-// Initialize Secure Session
-Auth::startSession();
+// Global Money Formatter Helper
+function formatPrice($amount) {
+    return 'Rs. ' . number_format((float)$amount, 2);
+}
 
 // Cryptographic Token Helpers
 function getOrCreateTableToken($table_number) {
@@ -148,6 +151,12 @@ function ensureDatabaseSchema($conn) {
     static $schemaChecked = false;
     if ($schemaChecked) return;
     $schemaChecked = true;
+
+    // Performance Optimization: Check if schema is already provisioned
+    $check_table = @$conn->query("SHOW TABLES LIKE 'admin_users'");
+    if ($check_table && $check_table->num_rows > 0) {
+        return; // Schema already exists. Skip 60+ DDL executions for instant performance.
+    }
 
     // 0. Admin Users table check
     @$conn->query("CREATE TABLE IF NOT EXISTS admin_users (

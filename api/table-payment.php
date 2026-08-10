@@ -135,6 +135,20 @@ try {
             ]);
             break;
 
+        case 'calculate_bill':
+            // Calculate authoritative bill totals for order
+            $orderId = intval($_POST['order_id'] ?? $_GET['order_id'] ?? 0);
+            $pointsToRedeem = intval($_POST['loyalty_points'] ?? $_GET['loyalty_points'] ?? 0);
+            $isNCR = !empty($_POST['is_ncr']) || !empty($_GET['is_ncr']);
+
+            if (!$orderId) {
+                Response::error('Order ID is required', 400);
+            }
+
+            $bill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, $pointsToRedeem, $isNCR);
+            Response::success('Bill calculated successfully', ['bill' => $bill]);
+            break;
+
         case 'process_payment':
             // Main payment processing - atomic transaction
             $tableNumber = Security::sanitize(trim($_POST['table_number'] ?? ''));
@@ -151,11 +165,6 @@ try {
             $allowedMethods = ['cash', 'card', 'digital'];
             if (!in_array($paymentMethod, $allowedMethods)) {
                 Response::error('Invalid payment method', 400);
-            }
-            
-            // For cash, validate cash received
-            if ($paymentMethod === 'cash' && $cashReceived <= 0) {
-                Response::error('Cash received amount required', 400);
             }
             
             $conn->begin_transaction();
@@ -186,57 +195,16 @@ try {
                     throw new Exception('Cannot pay for a cancelled order');
                 }
                 
-                // 2. Recalculate totals server-side from order items
-                $itemsStmt = $conn->prepare("
-                    SELECT oi.quantity, oi.price, mi.name 
-                    FROM order_items oi
-                    JOIN menu_items mi ON oi.menu_item_id = mi.id
-                    WHERE oi.order_id = ? AND oi.restaurant_id = ?
-                ");
-                $itemsStmt->bind_param("ii", $orderId, $tenantId);
-                $itemsStmt->execute();
-                $items = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-                $itemsStmt->close();
-                
-                $subtotal = 0;
-                foreach ($items as $item) {
-                    $subtotal += $item['quantity'] * $item['price'];
-                }
-                
-                // Get payment settings for tax/service charge
-                $settingsStmt = $conn->prepare("SELECT tax_enabled, tax_percentage, service_charge_enabled, service_charge_type, service_charge_amount FROM payment_settings WHERE restaurant_id = ? LIMIT 1");
-                $settingsStmt->bind_param("i", $tenantId);
-                $settingsStmt->execute();
-                $settings = $settingsStmt->get_result()->fetch_assoc();
-                $settingsStmt->close();
-                
-                $serviceCharge = 0;
-                if (!empty($settings['service_charge_enabled'])) {
-                    if ($settings['service_charge_type'] === 'percent') {
-                        $serviceCharge = round(($subtotal * $settings['service_charge_amount']) / 100, 2);
-                    } else {
-                        $serviceCharge = $settings['service_charge_amount'];
-                    }
-                }
-                
-                $tax = 0;
-                if (!empty($settings['tax_enabled'])) {
-                    $taxableBase = $subtotal + $serviceCharge;
-                    $tax = round(($taxableBase * $settings['tax_percentage']) / 100, 2);
-                }
-                
-                $loyaltyDiscount = round($loyaltyPointsRedeemed * 0.10, 2);
-                if ($loyaltyDiscount > $subtotal + $serviceCharge + $tax) {
-                    $loyaltyDiscount = $subtotal + $serviceCharge + $tax;
-                    $loyaltyPointsRedeemed = (int)($loyaltyDiscount / 0.10);
-                }
-                
-                $grandTotal = max(0, round($subtotal + $serviceCharge + $tax - $loyaltyDiscount, 2));
+                // 2. Authoritative server-side bill calculation via BillingService
+                $bill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, $loyaltyPointsRedeemed, false);
+                $grandTotal = $bill['grand_total'];
+                $loyaltyDiscount = $bill['loyalty_discount'];
+                $loyaltyPointsRedeemed = $bill['loyalty_points_redeemed'];
                 
                 // 3. Validate payment amount
                 if ($paymentMethod === 'cash') {
-                    if ($cashReceived + 0.001 < $grandTotal) { // small epsilon for floating point
-                        throw new Exception('Cash received is less than amount due');
+                    if ($cashReceived + 0.001 < $grandTotal) {
+                        throw new Exception('Cash received (Rs. ' . number_format($cashReceived, 2) . ') is less than amount due (Rs. ' . number_format($grandTotal, 2) . ')');
                     }
                 }
                 
@@ -254,7 +222,7 @@ try {
                     VALUES (?, ?, ?, ?, ?, 'paid', ?, NOW())
                 ");
                 $referenceId = $paymentMethod === 'cash' ? 'CASH-' . $transactionId : ($paymentMethod === 'card' ? 'CARD-' . $transactionId : 'QR-' . $transactionId);
-                $paymentStmt->bind_param("iisdss", $tenantId, $transactionId, $orderId, $gatewayName, $grandTotal, $referenceId);
+                $paymentStmt->bind_param("isisds", $tenantId, $transactionId, $orderId, $gatewayName, $grandTotal, $referenceId);
                 $paymentStmt->execute();
                 $paymentStmt->close();
                 
@@ -295,8 +263,8 @@ try {
                     }
                 }
                 
-                // 7. Update table status to vacant
-                $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
+                // 7. Update table status to cleaning (workflow: paid -> cleaning -> vacant)
+                $conn->query("UPDATE tables SET status = 'cleaning', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
                 
                 // 8. Update dining session if exists
                 if (!empty($order['dining_session_id'])) {
@@ -304,7 +272,19 @@ try {
                 }
                 
                 // 9. Create audit log
-                Security::logAudit('BILL_SETTLED', "Order #$orderId (Table $tableNumber) settled for " . formatPrice($grandTotal) . " via " . strtoupper($paymentMethod) . ($customerId ? " Customer #$customerId" : ""));
+                Security::logAudit('BILL_SETTLED', "Order #$orderId (Table $tableNumber) settled for " . BillingService::formatMoney($grandTotal) . " via " . strtoupper($paymentMethod) . ($customerId ? " Customer #$customerId" : ""));
+                
+                // 10. Fetch order items for receipt
+                $itemsStmt = $conn->prepare("
+                    SELECT oi.quantity, oi.price, mi.name as item_name
+                    FROM order_items oi
+                    JOIN menu_items mi ON oi.menu_item_id = mi.id
+                    WHERE oi.order_id = ?
+                ");
+                $itemsStmt->bind_param("i", $orderId);
+                $itemsStmt->execute();
+                $orderItems = $itemsStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+                $itemsStmt->close();
                 
                 $conn->commit();
                 
@@ -316,7 +296,8 @@ try {
                     'cash_change' => $paymentMethod === 'cash' ? round($cashReceived - $grandTotal, 2) : 0,
                     'customer_id' => $effectiveCustomerId,
                     'loyalty_points_redeemed' => $loyaltyPointsRedeemed,
-                    'loyalty_discount' => $loyaltyDiscount
+                    'loyalty_discount' => $loyaltyDiscount,
+                    'items' => $orderItems
                 ]);
                 
             } catch (Exception $e) {
@@ -407,7 +388,7 @@ try {
                 $remainingBalance = max(0, round($grandTotal - $alreadyPaid, 2));
 
                 if ($splitAmount > $remainingBalance + 0.01) {
-                    throw new Exception("Split amount (" . formatPrice($splitAmount) . ") exceeds remaining balance (" . formatPrice($remainingBalance) . ")");
+                    throw new Exception("Split amount (" . BillingService::formatMoney($splitAmount) . ") exceeds remaining balance (" . BillingService::formatMoney($remainingBalance) . ")");
                 }
 
                 // Create partial payment transaction
@@ -416,7 +397,7 @@ try {
                 $refId = strtoupper($paymentMethod) . '-' . $txnId;
 
                 $paymentStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, 'paid', ?, NOW())");
-                $paymentStmt->bind_param("iisdss", $tenantId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
+                $paymentStmt->bind_param("isisds", $tenantId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
                 $paymentStmt->execute();
                 $paymentStmt->close();
 
@@ -431,7 +412,7 @@ try {
                     $uStmt->close();
 
                     // Free table
-                    $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
+$conn->query("UPDATE tables SET status = 'cleaning', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
 
                     // Handle customer loyalty points earn if customer attached
                     if ($customerId > 0) {
@@ -442,7 +423,7 @@ try {
                         }
                     }
 
-                    Security::logAudit('SPLIT_BILL_COMPLETED', "Order #$orderId fully settled via split payments. Final payment: " . formatPrice($splitAmount));
+                    Security::logAudit('SPLIT_BILL_COMPLETED', "Order #$orderId fully settled via split payments. Final payment: " . BillingService::formatMoney($splitAmount));
                     $conn->commit();
 
                     Response::success('Split payment successful - Bill fully settled!', [
@@ -460,7 +441,7 @@ try {
                     $uStmt->execute();
                     $uStmt->close();
 
-                    Security::logAudit('SPLIT_BILL_PARTIAL', "Partial payment of " . formatPrice($splitAmount) . " received for Order #$orderId. Remaining: " . formatPrice($newRemaining));
+                    Security::logAudit('SPLIT_BILL_PARTIAL', "Partial payment of " . BillingService::formatMoney($splitAmount) . " received for Order #$orderId. Remaining: " . BillingService::formatMoney($newRemaining));
                     $conn->commit();
 
                     Response::success('Partial split payment recorded', [
@@ -559,9 +540,9 @@ try {
                 $updSourceStmt->close();
 
                 // Free source table
-                $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$sTable' AND restaurant_id = $tenantId");
+                $conn->query("UPDATE tables SET status = 'cleaning', guest_count = 0, reserved_by = '' WHERE table_number = '$sTable' AND restaurant_id = $tenantId");
 
-                Security::logAudit('MERGE_BILLS', "Merged Order #$sId (Table $sTable) into Order #$tId (Table {$targetOrder['table_number']}). New total: " . formatPrice($newSubtotal));
+                Security::logAudit('MERGE_BILLS', "Merged Order #$sId (Table $sTable) into Order #$tId (Table {$targetOrder['table_number']}). New total: " . BillingService::formatMoney($newSubtotal));
                 $conn->commit();
 
                 Response::success("Orders merged successfully! Order #$sId items consolidated into Order #$tId.", [
@@ -618,7 +599,7 @@ try {
                 $refId = "NCR-REASON:" . strtoupper($reason) . "-" . $txnId;
 
                 $paymentStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, 'ncr', 0.00, 'ncr', ?, NOW())");
-                $paymentStmt->bind_param("iisss", $tenantId, $txnId, $orderId, $refId);
+                $paymentStmt->bind_param("isis", $tenantId, $txnId, $orderId, $refId);
                 $paymentStmt->execute();
                 $paymentStmt->close();
 
@@ -630,9 +611,9 @@ try {
                 $updStmt->close();
 
                 // Free table
-                $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
+                $conn->query("UPDATE tables SET status = 'cleaning', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
 
-                Security::logAudit('NCR_BILL_APPLIED', "NCR Complimentary waiver applied to Order #$orderId (Table $tableNumber). Waived amount: " . formatPrice($waivedAmount) . ". Reason: $reason. Authorizer: " . ($_SESSION['username'] ?? 'admin'));
+                Security::logAudit('NCR_BILL_APPLIED', "NCR Complimentary waiver applied to Order #$orderId (Table $tableNumber). Waived amount: " . BillingService::formatMoney($waivedAmount) . ". Reason: $reason. Authorizer: " . ($_SESSION['username'] ?? 'admin'));
                 $conn->commit();
 
                 Response::success("NCR Complimentary billing applied successfully. Order #$orderId cleared.", [

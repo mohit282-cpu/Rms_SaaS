@@ -111,7 +111,7 @@ if ($tStmt) {
 
             <!-- QUICK ACTIONS TOOLBAR -->
             <section class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs font-bold">
-                <a href="../pos.php" class="h-9 px-3.5 rounded-2xl bg-amber-500 text-zinc-950 font-black flex items-center gap-1.5 shadow-lg shadow-amber-500/20 shrink-0">
+                <a href="tables.php" class="h-9 px-3.5 rounded-2xl bg-amber-500 text-zinc-950 font-black flex items-center gap-1.5 shadow-lg shadow-amber-500/20 shrink-0">
                     <span>+</span> New Order
                 </a>
                 <a href="tables.php" class="h-9 px-3.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:border-amber-500/40 flex items-center gap-1.5 shrink-0">

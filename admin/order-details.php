@@ -175,11 +175,15 @@ $items_stmt->close();
 
     <script src="../js/modern.js"></script>
     <script>
+        const csrfToken = '<?= CSRF::generateToken() ?>';
         function changeOrderStatus(orderId, status) {
             fetch('../api/update-order.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ order_id: orderId, status: status })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                body: JSON.stringify({ order_id: orderId, status: status, csrf_token: csrfToken })
             })
             .then(r => r.json())
             .then(data => {

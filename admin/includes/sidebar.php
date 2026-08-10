@@ -60,16 +60,22 @@ $isAssetSection = in_array($currentPage, $assetPages);
     <div class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-4">
         <!-- MAIN SECTION -->
         <div class="space-y-0.5">
-            <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">Main</div>
+            <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">Main Operations</div>
             <?php echo sidebarLink('index.php', '📊', 'Operations Center', $currentPage, 'dashboard'); ?>
-            <?php echo sidebarLink('tables.php', '📍', 'Floor & Tables', $currentPage, 'tables'); ?>
+            <?php echo sidebarLink('tables.php', '📍', 'Floor & Tables Billing', $currentPage, 'tables'); ?>
             <?php echo sidebarLink('orders.php', '📋', 'Orders Queue', $currentPage, 'orders'); ?>
+            <?php echo sidebarLink('billing-dashboard.php', '💳', 'Billing Dashboard', $currentPage, 'billing-dashboard'); ?>
+            <?php echo sidebarLink('reservations.php', '📅', 'Reservations', $currentPage, 'reservations'); ?>
+            <?php echo sidebarLink('customers.php', '👥', 'Customer CRM & Loyalty', $currentPage, 'customers'); ?>
+            <?php echo sidebarLink('shifts.php', '🔑', 'Shift Register', $currentPage, 'shifts'); ?>
+            <?php echo sidebarLink('expenses.php', '💸', 'Expenses & P&L', $currentPage, 'expenses'); ?>
+        </div>
+
+        <!-- CATALOG SECTION -->
+        <div class="space-y-0.5 pt-1 border-t border-zinc-800/60">
+            <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">Catalog</div>
             <?php echo sidebarLink('menu-items.php', '🍔', 'Menu Catalog', $currentPage, 'menu-items'); ?>
             <?php echo sidebarLink('categories.php', '🏷️', 'Categories', $currentPage, 'categories'); ?>
-            <?php echo sidebarLink('payment-settings.php', '💳', 'Payment Configuration', $currentPage, 'payment-settings'); ?>
-            <?php if ($isAdminOrManager): ?>
-                <?php echo sidebarLink('change-password.php', '🔐', 'Security & IAM', $currentPage, 'security'); ?>
-            <?php endif; ?>
         </div>
 
         <!-- INVENTORY SYSTEM ACCORDION -->
@@ -108,8 +114,11 @@ $isAssetSection = in_array($currentPage, $assetPages);
         <!-- SYSTEM SECTION -->
         <?php if ($isAdminOrManager): ?>
         <div class="space-y-0.5 pt-1 border-t border-zinc-800/60">
-            <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">System</div>
-            <?php echo sidebarLink('payment-settings.php', '⚙️', 'Settings', $currentPage, 'settings'); ?>
+            <div class="px-3 py-1 text-[9px] font-black text-zinc-500 uppercase tracking-widest">System Admin</div>
+            <?php echo sidebarLink('staff.php', '👥', 'Staff & RBAC', $currentPage, 'staff'); ?>
+            <?php echo sidebarLink('settings.php', '⚙️', 'Restaurant Settings', $currentPage, 'settings'); ?>
+            <?php echo sidebarLink('payment-settings.php', '💳', 'Payment Gateway Config', $currentPage, 'payment-settings'); ?>
+            <?php echo sidebarLink('change-password.php', '🔐', 'Security & IAM', $currentPage, 'security'); ?>
         </div>
         <?php endif; ?>
     </div>

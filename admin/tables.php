@@ -476,12 +476,18 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                     </div>
                     <div>
                         <label class="block text-xs font-bold text-zinc-300 mb-1">Cash Received</label>
-                        <input type="number" step="0.01" id="cashReceivedInput" placeholder="Enter amount received" class="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-base text-white font-black outline-none focus:border-amber-500 text-right" oninput="calculateChange()">
+                        <input type="number" step="0.01" id="cashReceivedInput" placeholder="Enter amount received" class="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-base text-white font-black outline-none focus:border-amber-500 text-right" oninput="validateCashPayment()">
                     </div>
                     <div class="flex justify-between text-sm font-bold">
                         <span class="text-zinc-400">Change Due</span>
                         <span id="cashChangeDue" class="text-emerald-400">Rs.0</span>
                     </div>
+                    <div id="cashValidationError" class="hidden text-xs text-rose-400 font-bold text-center py-1">
+                        Insufficient cash received. Amount received must be greater than or equal to amount due.
+                    </div>
+                    <button type="button" onclick="showPaymentConfirmation('cash')" id="cashPayButton" class="w-full h-12 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        ✓ PAY
+                    </button>
                 </div>
             </div>
 
@@ -496,6 +502,9 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                     <div class="text-center py-2">
                         <span class="text-xs text-zinc-500">Tap/Insert card on terminal</span>
                     </div>
+                    <button type="button" onclick="showPaymentConfirmation('card')" id="cardPayButton" class="w-full h-12 rounded-2xl bg-blue-500 text-white font-black text-xs active:scale-95 shadow-lg shadow-blue-500/20">
+                        ✓ PAY
+                    </button>
                 </div>
             </div>
 
@@ -513,9 +522,9 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                     <div class="p-3 bg-white rounded-xl inline-block">
                         <img id="digitalQRImage" src="" alt="Payment QR" class="w-32 h-32 mx-auto">
                     </div>
-                    <div class="text-center">
-                        <button onclick="confirmDigitalPayment()" class="h-10 px-4 rounded-xl bg-emerald-500 text-zinc-950 font-black text-xs active:scale-95 shadow-md">✓ Mark Payment Received</button>
-                    </div>
+                    <button type="button" onclick="showPaymentConfirmation('digital')" id="digitalPayButton" class="w-full h-12 rounded-2xl bg-purple-500 text-white font-black text-xs active:scale-95 shadow-lg shadow-purple-500/20">
+                        ✓ PAYMENT RECEIVED
+                    </button>
                 </div>
             </div>
 
@@ -543,17 +552,37 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             <div class="hidden bg-zinc-950 border border-emerald-500/30 rounded-2xl p-6 text-center space-y-4" id="paymentSuccessSection">
                 <div class="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 font-black text-3xl mx-auto">✓</div>
                 <div>
-                    <h4 class="font-black text-white text-base">Payment Successful</h4>
+                    <h4 class="font-black text-white text-base">✓ PAYMENT SUCCESSFUL</h4>
                     <p class="text-xs text-zinc-400 mt-1">Table <span id="successTableNum" class="font-bold text-amber-400"></span> settled</p>
                 </div>
-                <div class="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/40 space-y-1 text-xs">
+                <div class="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/40 space-y-1 text-xs text-left">
+                    <div class="flex justify-between text-zinc-400"><span>Bill #</span><span id="successBillNum" class="font-bold text-amber-400"></span></div>
                     <div class="flex justify-between text-zinc-400"><span>Order:</span><span id="successOrderId" class="font-bold text-white"></span></div>
                     <div class="flex justify-between text-zinc-400"><span>Amount Paid:</span><span id="successAmount" class="font-bold text-emerald-400"></span></div>
-                    <div class="flex justify-between text-zinc-400"><span>Method:</span><span id="successMethod" class="font-bold text-amber-400"></span></div>
+                    <div class="flex justify-between text-zinc-400"><span>Payment Method:</span><span id="successMethod" class="font-bold text-amber-400"></span></div>
+                    <div id="successCashDetails" class="hidden space-y-1 text-zinc-500 border-t border-zinc-800 pt-2">
+                        <div class="flex justify-between"><span>Cash Received:</span><span id="successCashReceived" class="font-bold text-white"></span></div>
+                        <div class="flex justify-between"><span>Change Due:</span><span id="successChangeDue" class="font-bold text-emerald-400"></span></div>
+                    </div>
+                    <div class="flex justify-between text-zinc-400 border-t border-zinc-800 pt-2">
+                        <span class="font-black">Status:</span>
+                        <span class="font-bold text-emerald-400">PAID</span>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-zinc-500 border-t border-zinc-800 pt-2">
+                        <span>Date/Time:</span>
+                        <span id="successDateTime" class="font-bold"></span>
+                    </div>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="printReceipt()" class="h-11 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs hover:text-white">🖨️ Print Receipt</button>
-                    <button onclick="closeTableDrawer(); refreshDashboardStream()" class="h-11 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">Close Panel</button>
+                <div class="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-800">
+                    <button onclick="printReceipt()" class="h-11 rounded-2xl bg-zinc-800 text-zinc-300 font-bold text-xs hover:text-white flex items-center justify-center gap-1.5 active:scale-95 transition-all">
+                        🧾 Print Receipt
+                    </button>
+                    <button onclick="viewReceipt()" class="h-11 rounded-2xl bg-blue-500 text-white font-bold text-xs active:scale-95 shadow-lg flex items-center justify-center gap-1.5 hover:bg-blue-600 transition-all">
+                        👁️ View Receipt
+                    </button>
+                    <button onclick="closeTableDrawer(); refreshDashboardStream()" class="col-span-2 h-11 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">
+                        Close Panel
+                    </button>
                 </div>
             </div>
 
@@ -725,18 +754,8 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         let isStreamLoading = false;
 
         function fetchFloorStream(signal) {
-            const path = window.location.pathname;
-            const adminIdx = path.indexOf('/admin');
-            const rootPath = adminIdx !== -1 ? path.substring(0, adminIdx) : '/RMS_System';
-            const absoluteUrl = window.location.origin + rootPath + '/api/tables-stream.php';
             const opts = { signal, credentials: 'same-origin', headers: { 'Accept': 'application/json' } };
-
-            return fetch(absoluteUrl, opts).then(r => {
-                if (!r.ok && r.status !== 401 && r.status !== 403) {
-                    return fetch('../api/tables-stream.php', opts);
-                }
-                return r;
-            }).catch(() => fetch('../api/tables-stream.php', opts));
+            return fetch('../api/tables-stream.php', opts);
         }
 
         function refreshDashboardStream() {
@@ -963,12 +982,19 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             }).join('');
         }
 
+        let currentCustomerId = 0;
+        let currentLoyaltyPoints = 0;
+        let currentLoyaltyDiscount = 0;
+        let selectedPaymentMethod = null;
+        let currentBill = null;
+
         function openTableDrawer(tableNum) {
             selectedTableNumber = tableNum;
             currentCustomerId = 0;
             currentLoyaltyPoints = 0;
             currentLoyaltyDiscount = 0;
             selectedPaymentMethod = null;
+            currentBill = null;
 
             const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
             if (!t) return;
@@ -1006,47 +1032,6 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 itemsContainer.innerHTML = `<div class="text-center py-6 text-xs text-zinc-500 bg-zinc-950 rounded-2xl border border-zinc-800">No active items ordered</div>`;
             }
 
-            const items = t.items || [];
-            let subtotal = 0;
-            items.forEach(i => {
-                subtotal += parseFloat(i.price) * parseInt(i.quantity);
-            });
-
-            // Calculate service charge
-            let serviceCharge = 0;
-            if (<?= $scEnabled ? 'true' : 'false' ?>) {
-                if ('<?= $scType ?>' === 'percent') {
-                    serviceCharge = Math.round((subtotal * <?= $scPercent ?>) / 100 * 100) / 100;
-                } else {
-                    serviceCharge = <?= $scPercent ?>;
-                }
-            }
-
-            // Calculate tax
-            let tax = 0;
-            if (<?= $taxEnabled ? 'true' : 'false' ?>) {
-                const taxableBase = subtotal + serviceCharge;
-                tax = Math.round((taxableBase * <?= $vatPercent ?>) / 100 * 100) / 100;
-            }
-
-            const grandTotal = Math.max(0, Math.round((subtotal + serviceCharge + tax) * 100) / 100);
-
-            document.getElementById('drawerSubtotal').textContent = formatPrice(subtotal);
-            document.getElementById('drawerServiceCharge').textContent = formatPrice(serviceCharge);
-            document.getElementById('drawerTax').textContent = formatPrice(tax);
-            document.getElementById('drawerTotalAmount').textContent = formatPrice(grandTotal);
-
-            // Show/hide rows based on settings
-            document.getElementById('drawerServiceChargeRow').style.display = '<?= $scEnabled ? 'flex' : 'none' ?>';
-            document.getElementById('drawerTaxRow').style.display = '<?= $taxEnabled ? 'flex' : 'none' ?>';
-            
-            // Reset loyalty/discount rows
-            document.getElementById('drawerDiscountRow').style.display = 'none';
-            document.getElementById('drawerNCRRow').style.display = 'none';
-            document.getElementById('drawerLoyaltyRow').style.display = 'none';
-            document.getElementById('loyaltyDiscountRow').classList.add('hidden');
-            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
-
             // Reset customer/loyalty sections
             document.getElementById('customerSection').querySelector('.bg-zinc-950').classList.remove('hidden');
             document.getElementById('customerDetailsBox').classList.add('hidden');
@@ -1058,6 +1043,24 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('loyaltyDiscountRow').classList.add('hidden');
             document.getElementById('drawerLoyaltyRow').style.display = 'none';
             document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+
+            // Fetch authoritative bill calculations from backend if active order exists
+            const orderId = t.active_order ? t.active_order.id : null;
+            if (orderId) {
+                fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId, { credentials: 'same-origin' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.bill) {
+                            currentBill = data.bill;
+                            renderBillSummary();
+                        } else {
+                            fallbackCalculateBill(t);
+                        }
+                    })
+                    .catch(() => fallbackCalculateBill(t));
+            } else {
+                fallbackCalculateBill(t);
+            }
 
             // Show payment section if table is waiting for bill
             const isWaitingBill = (st === 'payment_pending');
@@ -1077,6 +1080,55 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('tableDrawer').classList.remove('translate-x-full');
         }
 
+        function fallbackCalculateBill(t) {
+            const items = t.items || [];
+            let subtotal = 0;
+            items.forEach(i => { subtotal += parseFloat(i.price) * parseInt(i.quantity); });
+
+            let sc = <?= $scEnabled ? 'true' : 'false' ?> ? Math.round((subtotal * <?= $scPercent ?>) / 100 * 100) / 100 : 0;
+            let vat = <?= $taxEnabled ? 'true' : 'false' ?> ? Math.round(((subtotal + sc) * <?= $vatPercent ?>) / 100 * 100) / 100 : 0;
+            let gt = Math.max(0, subtotal + sc + vat);
+
+            currentBill = {
+                subtotal: subtotal,
+                service_charge: sc,
+                vat: vat,
+                discount: 0,
+                loyalty_discount: 0,
+                ncr_amount: 0,
+                grand_total: gt,
+                formatted: {
+                    subtotal: formatPrice(subtotal),
+                    service_charge: formatPrice(sc),
+                    vat: formatPrice(vat),
+                    discount: formatPrice(0),
+                    loyalty_discount: formatPrice(0),
+                    ncr_amount: formatPrice(0),
+                    grand_total: formatPrice(gt)
+                }
+            };
+            renderBillSummary();
+        }
+
+        function renderBillSummary() {
+            if (!currentBill) return;
+            document.getElementById('drawerSubtotal').textContent = currentBill.formatted.subtotal;
+            document.getElementById('drawerServiceCharge').textContent = currentBill.formatted.service_charge;
+            document.getElementById('drawerTax').textContent = currentBill.formatted.vat;
+            document.getElementById('drawerDiscount').textContent = currentBill.formatted.discount;
+            document.getElementById('drawerNCR').textContent = currentBill.formatted.ncr_amount;
+            document.getElementById('drawerLoyaltyDiscount').textContent = currentBill.formatted.loyalty_discount;
+            document.getElementById('drawerTotalAmount').textContent = currentBill.formatted.grand_total;
+
+            document.getElementById('drawerServiceChargeRow').style.display = currentBill.service_charge > 0 ? 'flex' : 'none';
+            document.getElementById('drawerTaxRow').style.display = currentBill.vat > 0 ? 'flex' : 'none';
+            document.getElementById('drawerLoyaltyRow').style.display = currentBill.loyalty_discount > 0 ? 'flex' : 'none';
+
+            if (selectedPaymentMethod) {
+                updatePaymentAmountDisplays();
+            }
+        }
+
         function closeTableDrawer() {
             document.getElementById('tableDrawer').classList.add('translate-x-full');
         }
@@ -1085,12 +1137,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         let currentQRImageUrl = '';
 
         function generateQRCodeDataURL(text, size = 300) {
-            return 'data:image/svg+xml;base64,' + btoa(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-                    <rect width="${size}" height="${size}" fill="white"/>
-                    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="8" fill="black">${text.substring(0, 50)}</text>
-                </svg>
-            `);
+            return 'https://api.qrserver.com/v1/create-qr-code/?size=' + size + 'x' + size + '&data=' + encodeURIComponent(text);
         }
 
         function showTableQRModal(tableNum, explicitToken) {
@@ -1169,22 +1216,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
 
         function triggerQuickPayment() {
             if (!selectedTableNumber) return;
-            const tNum = selectedTableNumber;
-            const t = allTablesData.find(x => x.table_number.toString() === tNum.toString());
-            
-            // Find the active order for this table
-            let orderId = null;
-            if (t && t.active_order && t.active_order.id) {
-                orderId = t.active_order.id;
-            }
-            
-            if (orderId) {
-                // Open RPOS with the existing order
-                window.open(`pos.php?order_id=${orderId}`, '_blank');
-            } else {
-                // No active order, just open RPOS for this table
-                window.open(`pos.php?table_number=${encodeURIComponent(tNum)}`, '_blank');
-            }
+            openTableDrawer(selectedTableNumber);
         }
 
         function updateSelectedTableStatus(status) {
@@ -1224,11 +1256,6 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         // TABLE BILLING & PAYMENT FUNCTIONS
         // ================================================================
         
-        let currentCustomerId = 0;
-        let currentLoyaltyPoints = 0;
-        let currentLoyaltyDiscount = 0;
-        let selectedPaymentMethod = null;
-
         function searchCustomerByPhone() {
             const phone = document.getElementById('customerPhoneInput').value.trim();
             if (!phone) {
@@ -1325,7 +1352,18 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('loyaltyDiscountRow').classList.add('hidden');
             document.getElementById('drawerLoyaltyRow').style.display = 'none';
             
-            updateBillTotals();
+            const t = allTablesData.find(x => x.table_number.toString() === selectedTableNumber.toString());
+            const orderId = t && t.active_order ? t.active_order.id : null;
+            if (orderId) {
+                fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId, { credentials: 'same-origin' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && data.bill) {
+                            currentBill = data.bill;
+                            renderBillSummary();
+                        }
+                    });
+            }
         }
 
         function fetchLoyaltyInfo(customerId) {
@@ -1364,66 +1402,28 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 return;
             }
 
-            // Get current bill total for validation
-            const subtotalText = document.getElementById('drawerSubtotal').textContent;
-            const serviceChargeText = document.getElementById('drawerServiceCharge').textContent;
-            const taxText = document.getElementById('drawerTax').textContent;
-            
-            const subtotal = parseFloat(subtotalText.replace(/[^0-9.]/g, '')) || 0;
-            const serviceCharge = parseFloat(serviceChargeText.replace(/[^0-9.]/g, '')) || 0;
-            const tax = parseFloat(taxText.replace(/[^0-9.]/g, '')) || 0;
-            const billTotal = subtotal + serviceCharge + tax;
+            const t = allTablesData.find(x => x.table_number.toString() === selectedTableNumber.toString());
+            const orderId = t && t.active_order ? t.active_order.id : null;
+            if (!orderId) {
+                showToast('No active order to apply loyalty', 'warning');
+                return;
+            }
 
             showToast('Applying loyalty points...', 'info');
 
-            fetch('../api/table-payment.php?action=apply_loyalty', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'customer_id=' + currentCustomerId + '&points=' + points + '&bill_total=' + billTotal,
-                credentials: 'same-origin'
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    currentLoyaltyDiscount = data.discount_value;
-                    currentLoyaltyPoints = data.remaining_points;
-                    
-                    document.getElementById('loyaltyDiscountRow').classList.remove('hidden');
-                    document.getElementById('loyaltyDiscountAmount').textContent = formatPrice(data.discount_value);
-                    document.getElementById('drawerLoyaltyRow').style.display = 'flex';
-                    document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(data.discount_value);
-                    
-                    updateLoyaltyDisplay();
-                    updateBillTotals();
-                    
-                    showToast(data.points_redeemed + ' points applied (' + formatPrice(data.discount_value) + ' discount)', 'success');
-                } else {
-                    showToast(data.message || 'Failed to apply loyalty', 'error');
-                }
-            })
-            .catch(err => showToast('Connection error', 'error'));
-        }
-
-        function updateBillTotals() {
-            const subtotalText = document.getElementById('drawerSubtotal').textContent;
-            const serviceChargeText = document.getElementById('drawerServiceCharge').textContent;
-            const taxText = document.getElementById('drawerTax').textContent;
-            const discountText = document.getElementById('drawerDiscount').textContent;
-            const ncrText = document.getElementById('drawerNCR').textContent;
-            
-            const subtotal = parseFloat(subtotalText.replace(/[^0-9.]/g, '')) || 0;
-            const serviceCharge = parseFloat(serviceChargeText.replace(/[^0-9.]/g, '')) || 0;
-            const tax = parseFloat(taxText.replace(/[^0-9.]/g, '')) || 0;
-            const discount = parseFloat(discountText.replace(/[^0-9.]/g, '')) || 0;
-            const ncr = parseFloat(ncrText.replace(/[^0-9.]/g, '')) || 0;
-            
-            const grandTotal = Math.max(0, subtotal + serviceCharge + tax - discount - ncr - currentLoyaltyDiscount);
-            
-            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(currentLoyaltyDiscount);
-            document.getElementById('drawerTotalAmount').textContent = formatPrice(grandTotal);
-            
-            // Show/hide loyalty row
-            document.getElementById('drawerLoyaltyRow').style.display = currentLoyaltyDiscount > 0 ? 'flex' : 'none';
+            fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId + '&loyalty_points=' + points, { credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && data.bill) {
+                        currentBill = data.bill;
+                        currentLoyaltyDiscount = data.bill.loyalty_discount;
+                        renderBillSummary();
+                        showToast('Applied points! Loyalty discount: ' + data.bill.formatted.loyalty_discount, 'success');
+                    } else {
+                        showToast(data.message || 'Failed to apply loyalty', 'error');
+                    }
+                })
+                .catch(() => showToast('Connection error', 'error'));
         }
 
         function selectPaymentMethod(method) {
@@ -1448,46 +1448,57 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('paymentConfirmationSection').classList.add('hidden');
             document.getElementById('paymentSuccessSection').classList.add('hidden');
 
-            // Show selected payment input
-            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
-            const grandTotal = parseFloat(grandTotalText.replace(/[^0-9.]/g, '')) || 0;
-
             if (method === 'cash') {
                 document.getElementById('cashPaymentSection').classList.remove('hidden');
-                document.getElementById('cashAmountDue').textContent = formatPrice(grandTotal);
                 document.getElementById('cashReceivedInput').value = '';
                 document.getElementById('cashChangeDue').textContent = formatPrice(0);
             } else if (method === 'card') {
                 document.getElementById('cardPaymentSection').classList.remove('hidden');
-                document.getElementById('cardAmountDue').textContent = formatPrice(grandTotal);
             } else if (method === 'digital') {
                 document.getElementById('digitalPaymentSection').classList.remove('hidden');
-                document.getElementById('digitalAmountDue').textContent = formatPrice(grandTotal);
-                generateDigitalQR(grandTotal);
+                generateDigitalQR(currentBill ? currentBill.grand_total : 0);
             }
 
-            // Hide quick actions
+            updatePaymentAmountDisplays();
             document.getElementById('quickActionsSection').style.display = 'none';
         }
 
-        function calculateChange() {
-            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
-            const grandTotal = parseFloat(grandTotalText.replace(/[^0-9.]/g, '')) || 0;
+        function updatePaymentAmountDisplays() {
+            const dueFormatted = currentBill ? currentBill.formatted.grand_total : formatPrice(0);
+            document.getElementById('cashAmountDue').textContent = dueFormatted;
+            document.getElementById('cardAmountDue').textContent = dueFormatted;
+            document.getElementById('digitalAmountDue').textContent = dueFormatted;
+            validateCashPayment();
+        }
+
+        function validateCashPayment() {
+            const due = currentBill ? currentBill.grand_total : 0;
             const received = parseFloat(document.getElementById('cashReceivedInput').value) || 0;
-            const change = Math.max(0, received - grandTotal);
+            const change = Math.max(0, received - due);
             document.getElementById('cashChangeDue').textContent = formatPrice(change);
+            
+            const payButton = document.getElementById('cashPayButton');
+            const errorDiv = document.getElementById('cashValidationError');
+            
+            if (received > 0 && received + 0.001 < due) {
+                // Insufficient cash
+                payButton.disabled = true;
+                errorDiv.classList.remove('hidden');
+            } else if (received > 0 && received >= due) {
+                // Sufficient cash
+                payButton.disabled = false;
+                errorDiv.classList.add('hidden');
+            } else {
+                // No amount entered yet
+                payButton.disabled = true;
+                errorDiv.classList.add('hidden');
+            }
         }
 
         function generateDigitalQR(amount) {
-            // In production, this would call the API to get a real payment URL
             const paymentUrl = window.location.origin + '/payment.php?amount=' + amount + '&table=' + selectedTableNumber;
             const qrDataUrl = generateQRCodeDataURL(paymentUrl, 200);
             document.getElementById('digitalQRImage').src = qrDataUrl;
-        }
-
-        function confirmDigitalPayment() {
-            // For digital QR, we just mark as received after customer pays
-            showPaymentConfirmation('digital');
         }
 
         function showPaymentConfirmation(method) {
@@ -1496,7 +1507,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             const tableNum = selectedTableNumber;
             const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
             const orderId = t && t.active_order ? t.active_order.id : null;
-            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
+            const grandTotalFormatted = currentBill ? currentBill.formatted.grand_total : formatPrice(0);
             const customerName = currentCustomerId ? document.getElementById('customerDisplayName').textContent : 'Walk-in Guest';
 
             document.getElementById('confirmTable').textContent = 'T-' + tableNum;
@@ -1509,12 +1520,16 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 'digital': '📱 Digital QR'
             };
             document.getElementById('confirmMethod').textContent = methodLabels[method] || method;
-            document.getElementById('confirmTotal').textContent = grandTotalText;
+            document.getElementById('confirmTotal').textContent = grandTotalFormatted;
 
             if (method === 'cash') {
                 const received = parseFloat(document.getElementById('cashReceivedInput').value) || 0;
-                const grandTotal = parseFloat(document.getElementById('drawerTotalAmount').textContent.replace(/[^0-9.]/g, '')) || 0;
-                const change = Math.max(0, received - grandTotal);
+                const due = currentBill ? currentBill.grand_total : 0;
+                if (received + 0.001 < due) {
+                    showToast('Cash received (Rs. ' + received.toFixed(2) + ') is less than amount due (' + grandTotalFormatted + ')', 'error');
+                    return;
+                }
+                const change = Math.max(0, received - due);
                 document.getElementById('confirmCashReceived').textContent = formatPrice(received);
                 document.getElementById('confirmCashChange').textContent = formatPrice(change);
                 document.getElementById('confirmCashDetails').classList.remove('hidden');
@@ -1535,14 +1550,9 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('paymentConfirmationSection').classList.add('hidden');
             document.getElementById('paymentSection').style.display = 'block';
             
-            // Show the payment input section again
-            if (selectedPaymentMethod === 'cash') {
-                document.getElementById('cashPaymentSection').classList.remove('hidden');
-            } else if (selectedPaymentMethod === 'card') {
-                document.getElementById('cardPaymentSection').classList.remove('hidden');
-            } else if (selectedPaymentMethod === 'digital') {
-                document.getElementById('digitalPaymentSection').classList.remove('hidden');
-            }
+            if (selectedPaymentMethod === 'cash') document.getElementById('cashPaymentSection').classList.remove('hidden');
+            else if (selectedPaymentMethod === 'card') document.getElementById('cardPaymentSection').classList.remove('hidden');
+            else if (selectedPaymentMethod === 'digital') document.getElementById('digitalPaymentSection').classList.remove('hidden');
         }
 
         function processPayment() {
@@ -1560,10 +1570,8 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 return;
             }
 
-            const grandTotalText = document.getElementById('drawerTotalAmount').textContent;
-            const grandTotal = parseFloat(grandTotalText.replace(/[^0-9.]/g, '')) || 0;
+            const grandTotal = currentBill ? currentBill.grand_total : 0;
 
-            // Validate cash received
             let cashReceived = 0;
             if (selectedPaymentMethod === 'cash') {
                 cashReceived = parseFloat(document.getElementById('cashReceivedInput').value) || 0;
@@ -1582,7 +1590,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             formData.append('order_id', orderId);
             formData.append('payment_method', selectedPaymentMethod);
             formData.append('customer_id', currentCustomerId);
-            formData.append('loyalty_points_redeemed', currentLoyaltyPoints > 0 ? Math.round(currentLoyaltyDiscount / 0.10) : 0);
+            formData.append('loyalty_points_redeemed', currentBill ? currentBill.loyalty_points_redeemed : 0);
             formData.append('cash_received', cashReceived);
 
             fetch('../api/table-payment.php', {
@@ -1593,10 +1601,17 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    showPaymentSuccess(data);
+                    displayPaymentSuccess(data, tableNum, orderId, grandTotal, cashReceived);
+                    
+                    currentLoyaltyDiscount = 0;
+                    currentLoyaltyPoints = 0;
+                    document.getElementById('loyaltyDiscountRow').classList.add('hidden');
+                    document.getElementById('drawerLoyaltyRow').style.display = 'none';
+                    document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+                    
+                    showToast('Payment successful!', 'success');
                     refreshDashboardStream();
                 } else {
-                    // Show error and restore payment section
                     showToast(data.message || 'Payment failed', 'error');
                     document.getElementById('paymentConfirmationSection').classList.add('hidden');
                     document.getElementById('paymentSection').style.display = 'block';
@@ -1616,19 +1631,48 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             });
         }
 
-        function showPaymentSuccess(data) {
-            const tableNum = selectedTableNumber;
+        function displayPaymentSuccess(data, tableNum, orderId, grandTotal, cashReceived) {
+            const change = selectedPaymentMethod === 'cash' ? Math.max(0, cashReceived - grandTotal) : 0;
             
             document.getElementById('successTableNum').textContent = 'T-' + tableNum;
-            document.getElementById('successOrderId').textContent = '#' + data.order_id;
-            document.getElementById('successAmount').textContent = formatPrice(data.grand_total);
+            document.getElementById('successBillNum').textContent = data.transaction_id || '#' + orderId;
+            document.getElementById('successOrderId').textContent = '#' + orderId;
+            document.getElementById('successAmount').textContent = formatPrice(grandTotal);
             
             const methodLabels = {
                 'cash': '💵 Cash',
                 'card': '💳 Card',
                 'digital': '📱 Digital QR'
             };
-            document.getElementById('successMethod').textContent = methodLabels[data.payment_method] || data.payment_method;
+            document.getElementById('successMethod').textContent = methodLabels[selectedPaymentMethod] || selectedPaymentMethod;
+            
+            if (selectedPaymentMethod === 'cash') {
+                document.getElementById('successCashReceived').textContent = formatPrice(cashReceived);
+                document.getElementById('successChangeDue').textContent = formatPrice(change);
+                document.getElementById('successCashDetails').classList.remove('hidden');
+            } else {
+                document.getElementById('successCashDetails').classList.add('hidden');
+            }
+            
+            document.getElementById('successDateTime').textContent = new Date().toLocaleString();
+            
+            // Store receipt data for printing
+            window.lastPaymentData = {
+                order_id: orderId,
+                table_number: tableNum,
+                transaction_id: data.transaction_id,
+                grand_total: grandTotal,
+                payment_method: selectedPaymentMethod,
+                cash_received: cashReceived,
+                change: change,
+                customer_id: currentCustomerId,
+                customer_name: currentCustomerId ? document.getElementById('customerDisplayName').textContent : 'Walk-in Guest',
+                items: data.items || [],
+                subtotal: currentBill ? currentBill.subtotal : 0,
+                service_charge: currentBill ? currentBill.service_charge : 0,
+                vat: currentBill ? currentBill.vat : 0,
+                loyalty_discount: currentBill ? currentBill.loyalty_discount : 0
+            };
 
             // Hide all sections
             document.getElementById('paymentSection').style.display = 'none';
@@ -1638,32 +1682,42 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('digitalPaymentSection').classList.add('hidden');
             document.getElementById('quickActionsSection').style.display = 'none';
             document.getElementById('paymentSuccessSection').classList.remove('hidden');
-
-            // Reset loyalty state
-            currentLoyaltyDiscount = 0;
-            currentLoyaltyPoints = 0;
-            document.getElementById('loyaltyDiscountRow').classList.add('hidden');
-            document.getElementById('drawerLoyaltyRow').style.display = 'none';
-            document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
-            
-            showToast('Payment successful!', 'success');
         }
 
         function printReceipt() {
-            const tableNum = selectedTableNumber;
-            const t = allTablesData.find(x => x.table_number.toString() === tableNum.toString());
-            const orderId = t && t.active_order ? t.active_order.id : null;
-            
-            if (!orderId) return;
+            const orderId = (window.lastPaymentData && window.lastPaymentData.order_id)
+                || (activeReceipt && activeReceipt.order_no ? parseInt(activeReceipt.order_no.replace(/[^0-9]/g, '')) : null)
+                || (allTablesData.find(x => x.table_number.toString() === selectedTableNumber.toString())?.active_order?.id);
 
-            // Open receipt in new window for printing
-            window.open('receipt.php?order_id=' + orderId, '_blank');
+            if (!orderId) {
+                showToast('No active order found to print receipt', 'warning');
+                return;
+            }
+            window.open('../receipt.php?order_id=' + orderId + '&print=1', '_blank');
         }
 
-        // Initialize: hide payment section by default
+        function viewReceipt() {
+            const orderId = (window.lastPaymentData && window.lastPaymentData.order_id)
+                || (activeReceipt && activeReceipt.order_no ? parseInt(activeReceipt.order_no.replace(/[^0-9]/g, '')) : null)
+                || (allTablesData.find(x => x.table_number.toString() === selectedTableNumber.toString())?.active_order?.id);
+
+            if (!orderId) {
+                showToast('No active order found to view receipt', 'warning');
+                return;
+            }
+            window.open('../receipt.php?order_id=' + orderId, '_blank');
+        }
+
+        // Initialize: auto-load floor stream on page load and poll every 5s
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('paymentSection').style.display = 'none';
             document.getElementById('loyaltySection').style.display = 'none';
+            
+            // Auto-load floor layout immediately on page load
+            refreshDashboardStream();
+            
+            // Start automatic 5-second live floor polling
+            setInterval(refreshDashboardStream, 5000);
         });
     </script>
 </body>

@@ -56,6 +56,8 @@ $conn->query("INSERT INTO suppliers (id, restaurant_id, company_name, status) VA
 echo "\n--- TEST SUITE 1: Tenant Context Isolation & Query Scoping ---\n";
 
 // Set Active Session Context to Tenant A
+Auth::startSession();
+unset($_SESSION['customer_restaurant_id'], $_SESSION['kitchen_restaurant_id']);
 $_SESSION['admin_logged_in'] = true;
 $_SESSION['admin_id'] = 91;
 $_SESSION['restaurant_id'] = $tenantA;

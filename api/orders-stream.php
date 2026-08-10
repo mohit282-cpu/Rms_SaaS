@@ -106,12 +106,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $stmt->close();
             }
 
-            // If marked vacant or cleaning, close active dining session (tenant-scoped)
+            // If trying to mark vacant or cleaning, verify there are NO unpaid active orders (Fixes RMS Table Payment Bug)
             if ($status === 'vacant' || $status === 'cleaning') {
-                $upd1 = $conn->prepare("UPDATE orders SET payment_status = 'paid', status = 'completed' WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending'");
-                $upd1->bind_param("si", $table_number, $tenantId);
-                $upd1->execute();
-                $upd1->close();
+                $unpaid_stmt = $conn->prepare("SELECT id, total_amount FROM orders WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending' AND status != 'cancelled' LIMIT 1");
+                $unpaid_stmt->bind_param("si", $table_number, $tenantId);
+                $unpaid_stmt->execute();
+                $unpaid_res = $unpaid_stmt->get_result();
+                if ($unpaid_res && $unpaid_res->num_rows > 0) {
+                    $unpaid_order = $unpaid_res->fetch_assoc();
+                    $unpaid_stmt->close();
+                    $conn->rollback();
+                    Response::error("Cannot mark table " . htmlspecialchars($table_number) . " as " . $status . ". There is an unpaid order (#" . $unpaid_order['id'] . "). Please complete payment in RPOS first.", 400);
+                    exit;
+                }
+                $unpaid_stmt->close();
+
+                // Close dining session safely
                 $upd2 = $conn->prepare("UPDATE dining_sessions SET status = 'closed' WHERE table_number = ? AND restaurant_id = ? AND status = 'active'");
                 $upd2->bind_param("si", $table_number, $tenantId);
                 $upd2->execute();
@@ -145,13 +155,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $upd2->execute();
             $upd2->close();
 
-            $upd3 = $conn->prepare("UPDATE tables SET status = 'vacant' WHERE table_number = ? AND restaurant_id = ?");
+            $upd3 = $conn->prepare("UPDATE tables SET status = 'cleaning' WHERE table_number = ? AND restaurant_id = ?");
             $upd3->bind_param("si", $table_number, $tenantId);
             $upd3->execute();
             $upd3->close();
 
             $conn->commit();
-            Response::success("Table $table_number bill settled & marked vacant successfully!");
+            Response::success("Table $table_number bill settled & marked for cleaning!");
         } catch (Throwable $e) {
             $conn->rollback();
             Response::error("Failed to settle bill: " . $e->getMessage(), 500);

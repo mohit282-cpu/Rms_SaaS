@@ -146,7 +146,7 @@ $pricingPlans = [
         'cta'     => 'Request Essential',
         'popular' => false,
         'features'=> [
-            'RPOS Cashier Register & Billing',
+            'Floor & Table Billing',
             'Digital QR Code Table Ordering',
             'Kitchen Display System (KDS)',
             'Floor & Table Status Map',
@@ -222,14 +222,14 @@ $csrfField = CSRF::getField();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#090909">
     <title>RMS SaaS — Restaurant Management System</title>
-    <meta name="description" content="Run your entire restaurant with one connected platform for RPOS, QR ordering, kitchen display, table management, billing, inventory, staff, and analytics.">
+    <meta name="description" content="Run your entire restaurant with one connected platform for table billing, QR ordering, kitchen display, table management, inventory, staff, and analytics.">
     <link rel="canonical" href="<?= rmsCanonicalUrl() ?>">
 
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="RMS SaaS">
     <meta property="og:title" content="RMS SaaS — Restaurant Management System">
-    <meta property="og:description" content="Run your entire restaurant from one powerful platform: RPOS, KDS, Table Management, Billing, Inventory, QR Ordering, Staff Management & Analytics.">
+    <meta property="og:description" content="Run your entire restaurant from one powerful platform: Floor & Table Billing, KDS, Table Management, Inventory, QR Ordering, Staff Management & Analytics.">
     <meta property="og:url" content="<?= rmsCanonicalUrl() ?>">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="RMS SaaS — Restaurant Management System">
@@ -382,7 +382,7 @@ $csrfField = CSRF::getField();
 
                 <!-- Supporting Copy explaining modules -->
                 <p class="text-base sm:text-lg lg:text-xl text-[#A1A1AA] max-w-3xl mx-auto leading-relaxed font-normal">
-                    Connect <strong class="text-white font-semibold">RPOS</strong>, <strong class="text-white font-semibold">Kitchen Display System</strong>, <strong class="text-white font-semibold">Table Management</strong>, <strong class="text-white font-semibold">Billing</strong>, <strong class="text-white font-semibold">Inventory</strong>, <strong class="text-white font-semibold">QR Ordering</strong>, <strong class="text-white font-semibold">Staff Management</strong>, and <strong class="text-white font-semibold">Analytics</strong> into a single unified workspace.
+                    Connect <strong class="text-white font-semibold">Floor & Table Billing</strong>, <strong class="text-white font-semibold">Kitchen Display System</strong>, <strong class="text-white font-semibold">Table Management</strong>, <strong class="text-white font-semibold">Inventory</strong>, <strong class="text-white font-semibold">QR Ordering</strong>, <strong class="text-white font-semibold">Staff Management</strong>, and <strong class="text-white font-semibold">Analytics</strong> into a single unified workspace.
                 </p>
 
                 <!-- Action CTAs -->
@@ -530,7 +530,7 @@ $csrfField = CSRF::getField();
             <!-- Tab Buttons -->
             <div class="flex flex-wrap justify-center gap-2.5 mb-10">
                 <button type="button" class="tab-btn active px-5 py-3 rounded-xl border border-amber-500 bg-amber-500/10 text-amber-400 text-xs font-extrabold transition-all" data-tab="rpos">
-                    RPOS Register
+                    Floor & Table Billing
                 </button>
                 <button type="button" class="tab-btn px-5 py-3 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-extrabold transition-all" data-tab="kds">
                     Kitchen Display (KDS)
@@ -552,7 +552,7 @@ $csrfField = CSRF::getField();
                 <div id="tab-rpos" class="tab-panel rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
                         <div>
-                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">RPOS Register</h3>
+                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">Floor & Table Billing</h3>
                             <p class="text-xs sm:text-sm text-zinc-400 mt-1">Fast table-based billing and order management.</p>
                         </div>
                         <span class="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Cashier POS Module</span>
@@ -728,7 +728,7 @@ $csrfField = CSRF::getField();
                             <p class="text-xs text-zinc-400 mt-1">Counter &amp; cashier billing register</p>
                         </div>
                         <ul class="space-y-2 text-xs text-zinc-300 border-t border-[#242424] pt-4">
-                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> RPOS Terminal</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Table Billing Terminal</li>
                             <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Counter Billing</li>
                             <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Split Bill Engine</li>
                             <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Order Refunds</li>
