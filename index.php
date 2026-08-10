@@ -47,9 +47,11 @@ function svg_icon($name, $class = 'w-5 h-5') {
         'utensils'    => '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
         'receipt'     => '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
         'spark'       => '<path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/>',
-        'split'       => '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.83L4 4"/><path d="m20 4-6.83 6.87A4 4 0 0 0 12 13.7"/>',
-        'calendar'    => '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
-        'badge-percent'=> '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="M9 9h.01"/><path d="M15 15h.01"/>',
+        'split'         => '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.83L4 4"/><path d="m20 4-6.83 6.87A4 4 0 0 0 12 13.7"/>',
+        'calendar'      => '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+        'badge-percent' => '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="M9 9h.01"/><path d="M15 15h.01"/>',
+        'rocket'        => '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-3.05 11a22.35 22.35 0 0 1-3.95 2z"/><path d="M9 20a22 22 0 0 1 2-3.95"/>',
+        'user-check'    => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
     ];
     if (!isset($icons[$name])) {
         return '';
@@ -882,6 +884,231 @@ $csrfField = CSRF::getField();
                     </div>
                     <h3 class="text-lg font-extrabold text-white">Automated Reporting</h3>
                     <p class="text-xs text-[#A1A1AA] leading-relaxed">Real-time daily revenue, item margins, staff activity, and audit logs exported on demand.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS SECTION ============ -->
+    <section id="how-it-works" class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
+                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#111111] border border-[#242424] text-amber-400 text-xs font-extrabold uppercase tracking-wider">
+                    <span>ONBOARDING WORKFLOW</span>
+                </div>
+                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+                    How It Works
+                </h2>
+                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
+                    Get your restaurant running on RMS in four simple steps.
+                </p>
+            </div>
+
+            <!-- 4-Step Connected Timeline -->
+            <div class="relative">
+                <!-- Connecting Line (Desktop) -->
+                <div class="hidden lg:block absolute top-14 left-[12%] right-[12%] h-0.5 bg-[#242424] z-0"></div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 relative z-10">
+
+                    <!-- Step 01 -->
+                    <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 flex flex-col justify-between space-y-5 hover:border-amber-500/50 transition-all group shadow-sm">
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-black text-sm group-hover:scale-105 transition-transform">
+                                    01
+                                </div>
+                                <div class="p-2 rounded-lg bg-[#161616] text-zinc-400">
+                                    <?= svg_icon('mail', 'w-5 h-5') ?>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-extrabold text-white">01 — Request a Demo</h3>
+                                <p class="text-xs text-[#A1A1AA] mt-1.5 leading-relaxed">
+                                    Tell us about your restaurant and request access to RMS.
+                                </p>
+                            </div>
+
+                            <!-- Small Form Preview Mockup -->
+                            <div class="p-3.5 rounded-xl bg-[#090909] border border-[#242424] space-y-2 text-[11px] font-mono">
+                                <div class="flex justify-between text-zinc-400"><span>Restaurant</span><span class="text-white font-sans font-bold">Himalayan Kitchen</span></div>
+                                <div class="flex justify-between text-zinc-400"><span>Owner</span><span class="text-white font-sans">Ramesh Sharma</span></div>
+                                <div class="flex justify-between text-zinc-400"><span>Tables</span><span class="text-amber-400 font-bold">12 Tables</span></div>
+                                <div class="flex justify-between text-zinc-400"><span>Plan</span><span class="text-emerald-400 font-bold">Business (NPR 2.5k)</span></div>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-[#242424]">
+                            <a href="#request-demo" class="inline-flex items-center gap-1.5 text-xs font-extrabold text-amber-400 hover:text-amber-300">
+                                Request a Demo →
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Step 02 -->
+                    <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 flex flex-col justify-between space-y-5 hover:border-amber-500/50 transition-all group shadow-sm">
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-black text-sm group-hover:scale-105 transition-transform">
+                                    02
+                                </div>
+                                <div class="p-2 rounded-lg bg-[#161616] text-zinc-400">
+                                    <?= svg_icon('user-check', 'w-5 h-5') ?>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-extrabold text-white">02 — Super Admin Review</h3>
+                                <p class="text-xs text-[#A1A1AA] mt-1.5 leading-relaxed">
+                                    Our team reviews your restaurant request and contacts you to confirm requirements and plan.
+                                </p>
+                            </div>
+
+                            <!-- Small Pipeline Mockup -->
+                            <div class="p-3.5 rounded-xl bg-[#090909] border border-[#242424] space-y-2 text-[11px]">
+                                <div class="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">REVIEW PIPELINE</div>
+                                <div class="flex items-center justify-between font-mono pt-1 text-[#A1A1AA]">
+                                    <span>Request</span>
+                                    <span>→</span>
+                                    <span>Review</span>
+                                    <span>→</span>
+                                    <span class="text-emerald-400 font-bold">Approved</span>
+                                </div>
+                                <div class="pt-1 text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 p-1.5 rounded text-center">
+                                    STATUS: VERIFIED &amp; APPROVED
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-[#242424] text-[11px] text-zinc-400 font-medium">
+                            Super Admin Verification
+                        </div>
+                    </div>
+
+                    <!-- Step 03 -->
+                    <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 flex flex-col justify-between space-y-5 hover:border-amber-500/50 transition-all group shadow-sm">
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-black text-sm group-hover:scale-105 transition-transform">
+                                    03
+                                </div>
+                                <div class="p-2 rounded-lg bg-[#161616] text-zinc-400">
+                                    <?= svg_icon('key', 'w-5 h-5') ?>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-extrabold text-white">03 — Receive Your Credentials</h3>
+                                <p class="text-xs text-[#A1A1AA] mt-1.5 leading-relaxed">
+                                    After approval, your restaurant account is created manually by the Super Admin.
+                                </p>
+                            </div>
+
+                            <!-- Small Credentials Mockup -->
+                            <div class="p-3.5 rounded-xl bg-[#090909] border border-[#242424] space-y-2 text-[11px] font-mono">
+                                <div class="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">TENANT PROVISIONING</div>
+                                <div class="flex justify-between text-zinc-400"><span>Username</span><span class="text-amber-400 font-bold">admin_himalayan</span></div>
+                                <div class="flex justify-between text-zinc-400"><span>Password</span><span class="text-zinc-400">••••••••••••</span></div>
+                                <div class="flex justify-between text-zinc-400"><span>Isolation</span><span class="text-emerald-400 font-bold">Tenant ID #12</span></div>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-[#242424] text-[11px] text-zinc-400 font-medium">
+                            Secure Owner Account Created
+                        </div>
+                    </div>
+
+                    <!-- Step 04 -->
+                    <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 flex flex-col justify-between space-y-5 hover:border-amber-500/50 transition-all group shadow-sm">
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-black text-sm group-hover:scale-105 transition-transform">
+                                    04
+                                </div>
+                                <div class="p-2 rounded-lg bg-[#161616] text-zinc-400">
+                                    <?= svg_icon('rocket', 'w-5 h-5') ?>
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-extrabold text-white">04 — Login &amp; Go Live</h3>
+                                <p class="text-xs text-[#A1A1AA] mt-1.5 leading-relaxed">
+                                    Log in to your private restaurant portal, configure your restaurant, menu, tables, staff and operations, then start using RMS.
+                                </p>
+                            </div>
+
+                            <!-- Small Workflow Mockup -->
+                            <div class="p-3.5 rounded-xl bg-[#090909] border border-[#242424] space-y-1.5 text-[10px] font-mono">
+                                <div class="flex items-center justify-between text-zinc-400">
+                                    <span>Login</span> → <span>Setup</span> → <span>Menu</span> → <span class="text-emerald-400 font-bold">Live Ops</span>
+                                </div>
+                                <div class="p-1 rounded bg-emerald-500/10 text-emerald-400 font-sans font-bold text-center mt-1">
+                                    Ready for Table Sales &amp; POS
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-[#242424]">
+                            <a href="admin/login.php" class="inline-flex items-center gap-1.5 text-xs font-extrabold text-amber-400 hover:text-amber-300">
+                                Restaurant Login →
+                            </a>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- "Once You're Inside RMS" Checklist -->
+            <div class="mt-20 max-w-4xl mx-auto rounded-2xl border border-[#242424] bg-[#111111] p-8 sm:p-10 space-y-6">
+                <div class="text-center space-y-2">
+                    <span class="text-xs font-extrabold uppercase tracking-widest text-amber-400">ONBOARDING CHECKLIST</span>
+                    <h3 class="text-2xl sm:text-3xl font-extrabold text-white">Once You're Inside RMS</h3>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs font-semibold text-zinc-200 pt-2">
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Configure restaurant settings</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Add tables and floors</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Add menu and products</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Configure kitchen &amp; KDS</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Add staff and permissions</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Start taking orders</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Manage billing and payments</span>
+                    </div>
+                    <div class="flex items-center gap-3 p-3.5 rounded-xl bg-[#090909] border border-[#242424]">
+                        <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black shrink-0">✓</span>
+                        <span>Track inventory and reports</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Bottom CTA -->
+            <div class="mt-16 text-center space-y-6">
+                <h3 class="text-2xl sm:text-3xl font-extrabold text-white">
+                    Ready to get your restaurant started?
+                </h3>
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <a href="#request-demo" class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-xs hover:bg-amber-400 active:scale-95 transition-all shadow-lg">
+                        Request a Demo →
+                    </a>
+                    <a href="#pricing" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-[#111111] border border-[#242424] text-white font-semibold text-xs hover:border-zinc-600 active:scale-95 transition-all">
+                        View Pricing
+                    </a>
                 </div>
             </div>
         </div>
