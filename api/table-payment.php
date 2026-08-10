@@ -85,6 +85,9 @@ try {
             if (!$customer) {
                 Response::error('Customer not found', 404);
             }
+            // Expire past lots first so the returned balance is current
+            LoyaltyService::sweepExpiredPoints($conn, $tenantId, $customerId);
+            $customer = LoyaltyService::customer($conn, $tenantId, $customerId);
             $settings = LoyaltyService::settings($conn, $tenantId);
             $points = (int)$customer['loyalty_points'];
 
@@ -206,8 +209,7 @@ try {
             $bill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, $pointsToRedeem, false);
             $amount = (float)$bill['grand_total'];
 
-            $qrRes = $conn->query("SELECT restaurant_name, payment_note, qr_code_image FROM payment_settings WHERE restaurant_id = $tenantId AND is_active = 1 LIMIT 1");
-            $qrSettings = $qrRes ? $qrRes->fetch_assoc() : [];
+            $qrSettings = RestaurantSettingsService::getPaymentSettings($conn, $tenantId);
 
             $paymentUrl = 'https://pay.example.com/pay?order=' . $orderId . '&amount=' . urlencode(number_format($amount, 2, '.', '')) . '&tenant=' . $tenantId;
 
@@ -215,7 +217,11 @@ try {
                 'payment_url' => $paymentUrl,
                 'amount' => $amount,
                 'order_id' => $orderId,
-                'settings' => $qrSettings
+                'settings' => [
+                    'restaurant_name' => $qrSettings['restaurant_name'],
+                    'payment_note' => $qrSettings['payment_note'],
+                    'qr_code_image' => $qrSettings['qr_code_image'] ?? ''
+                ]
             ]);
             break;
 
@@ -327,11 +333,13 @@ try {
                     throw new Exception('Cash received (Rs. ' . number_format($cashReceived, 2) . ') is less than amount due (Rs. ' . number_format($grandTotal, 2) . ')');
                 }
 
-                // 8. Create payment record
+                $activeShift = RegisterShiftService::getActiveShift($conn, $tenantId);
+                $activeShiftId = $activeShift ? (int)$activeShift['id'] : null;
+
                 $transactionId = 'PAY-' . strtoupper(bin2hex(random_bytes(6)));
                 $referenceId = strtoupper($paymentMethod) . '-' . $transactionId . ($cashReceived > 0 ? ':CASH' . number_format($cashReceived, 2, '.', '') : '');
-                $payStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, 'paid', ?, NOW())");
-                $payStmt->bind_param("isisds", $tenantId, $transactionId, $orderId, $gatewayName, $grandTotal, $referenceId);
+                $payStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, shift_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, NOW())");
+                $payStmt->bind_param("iiisisds", $tenantId, $activeShiftId, $transactionId, $orderId, $gatewayName, $grandTotal, $referenceId);
                 $payStmt->execute();
                 $payStmt->close();
 
@@ -356,7 +364,7 @@ try {
                 // 11. Loyalty earning ledger + balance update (idempotency-protected, never duplicates)
                 $pointsEarned = 0;
                 if ($effectiveCustomerId > 0 && (int)$settings['is_enabled'] === 1) {
-                    $pointsEarned = LoyaltyService::pointsForEligibleAmount($settings, $grandTotal);
+                    $pointsEarned = LoyaltyService::pointsForEligibleAmount($settings, (float)$bill['earning_eligible']);
                     if ($pointsEarned > 0) {
                         LoyaltyService::recordEarning($conn, $tenantId, $effectiveCustomerId, $orderId, $pointsEarned, "Points earned from order #$orderId");
                     }
@@ -478,11 +486,14 @@ try {
                     throw new Exception("Split amount (" . BillingService::formatMoney($splitAmount) . ") exceeds remaining balance (" . BillingService::formatMoney($remainingBalance) . ")");
                 }
 
+                $activeShift = RegisterShiftService::getActiveShift($conn, $tenantId);
+                $activeShiftId = $activeShift ? (int)$activeShift['id'] : null;
+
                 $txnId = 'SPLIT-' . strtoupper(bin2hex(random_bytes(6)));
                 $gatewayName = ($paymentMethod === 'digital') ? 'digital_qr' : $paymentMethod;
-                $payStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, 'paid', ?, NOW())");
+                $payStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, shift_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, NOW())");
                 $refId = strtoupper($paymentMethod) . '-' . $txnId;
-                $payStmt->bind_param("isisds", $tenantId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
+                $payStmt->bind_param("iiisisds", $tenantId, $activeShiftId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
                 $payStmt->execute();
                 $payStmt->close();
 
@@ -504,7 +515,8 @@ try {
 
                     $settings = LoyaltyService::settings($conn, $tenantId);
                     if ($customerId > 0 && (int)$settings['is_enabled'] === 1) {
-                        $pointsEarned = LoyaltyService::pointsForEligibleAmount($settings, $grandTotal);
+                        $splitBill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, 0, false);
+                        $pointsEarned = LoyaltyService::pointsForEligibleAmount($settings, (float)$splitBill['earning_eligible']);
                         if ($pointsEarned > 0) {
                             LoyaltyService::recordEarning($conn, $tenantId, $customerId, $orderId, $pointsEarned, "Points earned from split-settled order #$orderId");
                         }
@@ -680,10 +692,14 @@ try {
                 OrderService::processOrderLoyaltyReversal($conn, $orderId, $tenantId);
 
                 // 2. Create refund payment record
+                $activeShift = RegisterShiftService::getActiveShift($conn, $tenantId);
+                $activeShiftId = $activeShift ? (int)$activeShift['id'] : null;
+
                 $refundTxn = 'RFND-' . strtoupper(bin2hex(random_bytes(6)));
-                $rfStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, 'REFUND', ?, 'refunded', ?, NOW())");
-                $refReason = substr('Refund: ' . $reason, 0, 100);
-                $rfStmt->bind_param("isiis", $tenantId, $refundTxn, $orderId, $paidTotal, $refReason);
+                $originalMethod = strtolower($order['payment_method'] ?? 'cash');
+                $refReason = strtoupper($originalMethod) . ':Refund-' . substr($reason, 0, 80);
+                $rfStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, shift_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'refunded', ?, NOW())");
+                $rfStmt->bind_param("iiisds", $tenantId, $activeShiftId, $refundTxn, $orderId, $originalMethod, $paidTotal, $refReason);
                 $rfStmt->execute();
                 $rfStmt->close();
 
@@ -737,10 +753,12 @@ function loyaltySettingsPayload(array $settings): array {
     return [
         'is_enabled' => (int)$settings['is_enabled'],
         'point_value' => (float)$settings['point_value'],
+        'earning_points' => (int)($settings['earning_points'] ?? 1),
         'earn_spend_amount' => (float)$settings['earn_spend_amount'],
         'min_redemption_points' => (int)$settings['min_redemption_points'],
         'max_redemption_points' => (int)$settings['max_redemption_points'],
         'max_discount_percent' => (float)$settings['max_discount_percent'],
+        'min_bill_amount' => (float)($settings['min_bill_amount'] ?? 0),
         'expiration_enabled' => (int)$settings['expiration_enabled'],
         'expiration_days' => (int)$settings['expiration_days'],
         'earning_basis' => $settings['earning_basis'] ?? 'subtotal_after_discounts'

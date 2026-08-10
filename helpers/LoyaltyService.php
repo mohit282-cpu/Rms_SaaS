@@ -75,11 +75,21 @@ class LoyaltyService {
             return $base;
         }
 
+        // Expire any earned lots past their expiration date before reading the
+        // balance, so the "available points" shown/used never includes stale points.
+        self::sweepExpiredPoints($conn, $tenantId, $customerId);
+        $customer = self::customer($conn, $tenantId, $customerId);
+        if (!$customer) {
+            $base['message'] = 'Customer not found for this restaurant.';
+            return $base;
+        }
+
         $availablePoints = max(0, (int)$customer['loyalty_points']);
         $pointValue = max(0.01, (float)$settings['point_value']);
         $minRedemption = (int)$settings['min_redemption_points'];
         $maxRedemption = (int)$settings['max_redemption_points'];
         $maxDiscountPercent = (float)$settings['max_discount_percent'];
+        $minBill = (float)($settings['min_bill_amount'] ?? 0);
         $requestedPoints = max(0, (int)$requestedPoints);
 
         $base['available_points'] = $availablePoints;
@@ -98,6 +108,12 @@ class LoyaltyService {
         }
         if ($maxRedemption > 0 && $requestedPoints > $maxRedemption) {
             $base['message'] = "Maximum $maxRedemption points can be redeemed per bill";
+            return $base;
+        }
+
+        // Minimum bill gate: redemption is not allowed below the configured spend floor
+        if ($minBill > 0 && ($preDiscountTotal + 0.001) < $minBill) {
+            $base['message'] = 'A minimum bill of ' . BillingService::formatMoney($minBill) . ' is required to redeem loyalty points';
             return $base;
         }
 
@@ -144,10 +160,91 @@ class LoyaltyService {
 
     /**
      * Points earned for a given eligible spend amount using the configured rate.
+     * Earning rule: "X points per Y spent" (earning_points per earn_spend_amount).
      */
     public static function pointsForEligibleAmount($settings, float $eligibleAmount): int {
         $earnSpend = max(0.01, (float)($settings['earn_spend_amount'] ?? 100.00));
-        return (int)floor(max(0, $eligibleAmount) / $earnSpend);
+        $earningPoints = max(1, (int)($settings['earning_points'] ?? 1));
+        return (int)floor(max(0, $eligibleAmount) / $earnSpend) * $earningPoints;
+    }
+
+    /**
+     * Expire earned point lots whose expiration date has passed (lot-based,
+     * idempotent via expiry_processed_at). Runs inside its own transaction when
+     * one is not already active; safe to call from read-style endpoints too.
+     *
+     * @return array{expired_lots:int, points_expired:int}
+     */
+    public static function sweepExpiredPoints($conn, int $tenantId, int $customerId = 0): array {
+        if (!$conn) {
+            return ['expired_lots' => 0, 'points_expired' => 0];
+        }
+        $tenantId = max(1, $tenantId);
+        $ownTxn = false;
+        if (!$conn->in_transaction) {
+            $conn->begin_transaction();
+            $ownTxn = true;
+        }
+
+        try {
+            if ($customerId > 0) {
+                $stmt = $conn->prepare("SELECT id, customer_id, points FROM loyalty_transactions WHERE restaurant_id = ? AND customer_id = ? AND type = 'earn' AND expiration_date IS NOT NULL AND expiration_date < CURDATE() AND expiry_processed_at IS NULL LIMIT 500");
+                $stmt->bind_param("ii", $tenantId, $customerId);
+            } else {
+                $stmt = $conn->prepare("SELECT id, customer_id, points FROM loyalty_transactions WHERE restaurant_id = ? AND type = 'earn' AND expiration_date IS NOT NULL AND expiration_date < CURDATE() AND expiry_processed_at IS NULL LIMIT 500");
+                $stmt->bind_param("i", $tenantId);
+            }
+            if (!$stmt) {
+                return ['expired_lots' => 0, 'points_expired' => 0];
+            }
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $expiredLots = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+            $stmt->close();
+
+            $totalExpired = 0;
+            foreach ($expiredLots as $lot) {
+                $lotId = (int)$lot['id'];
+                $custId = (int)$lot['customer_id'];
+                $lotPoints = (int)$lot['points'];
+                if ($lotPoints <= 0) {
+                    continue;
+                }
+
+                // Deduct from the customer balance (never below zero)
+                $uStmt = $conn->prepare("UPDATE customers SET loyalty_points = GREATEST(0, loyalty_points - ?) WHERE id = ? AND restaurant_id = ?");
+                $uStmt->bind_param("iii", $lotPoints, $custId, $tenantId);
+                $uStmt->execute();
+                $uStmt->close();
+
+                // Immutable 'expired' ledger entry (idempotent via idempotency_key)
+                $key = 'expire_' . $tenantId . '_' . $lotId;
+                $note = 'Points expired (lot #' . $lotId . ')';
+                $negPoints = -$lotPoints;
+                $lStmt = $conn->prepare("INSERT IGNORE INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, expiration_date, notes, idempotency_key, created_at) VALUES (?, ?, NULL, 'expired', ?, 0.00, NULL, ?, ?, NOW())");
+                $lStmt->bind_param("iisss", $tenantId, $custId, $negPoints, $note, $key);
+                $lStmt->execute();
+                $lStmt->close();
+
+                // Mark the lot processed so this sweep is idempotent
+                $mStmt = $conn->prepare("UPDATE loyalty_transactions SET expiry_processed_at = NOW() WHERE id = ? AND restaurant_id = ?");
+                $mStmt->bind_param("ii", $lotId, $tenantId);
+                $mStmt->execute();
+                $mStmt->close();
+
+                $totalExpired += $lotPoints;
+            }
+
+            if ($ownTxn) {
+                $conn->commit();
+            }
+            return ['expired_lots' => count($expiredLots), 'points_expired' => $totalExpired];
+        } catch (Throwable $e) {
+            if ($ownTxn) {
+                try { $conn->rollback(); } catch (Throwable $ignored) {}
+            }
+            return ['expired_lots' => 0, 'points_expired' => 0];
+        }
     }
 
     /**

@@ -26,31 +26,62 @@ $stats = [
     'pending_count' => 0
 ];
 
-// Query sales metrics from orders
-$stmt = $conn->prepare("SELECT payment_status, payment_method, SUM(total_amount) as sum_total, COUNT(id) as cnt FROM orders WHERE restaurant_id = ? AND DATE(created_at) = ? GROUP BY payment_status, payment_method");
+// Query sales metrics from settled payment transactions (authoritative: the
+// exact amounts collected) plus tax/SC/discount persisted at settlement time.
+$stmt = $conn->prepare("
+    SELECT pt.gateway_name, COALESCE(SUM(pt.amount),0) AS collected, COUNT(DISTINCT pt.order_id) AS cnt
+    FROM payment_transactions pt
+    WHERE pt.restaurant_id = ? AND pt.status = 'paid' AND DATE(pt.created_at) = ?
+    GROUP BY pt.gateway_name
+");
 $stmt->bind_param("is", $tenantId, $today);
 $stmt->execute();
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) {
-    $amt = (float)$row['sum_total'];
-    $cnt = (int)$row['cnt'];
-    $st = strtolower($row['payment_status']);
-    $method = strtolower($row['payment_method']);
-
-    if ($st === 'paid') {
-        $stats['today_sales'] += $amt;
-        $stats['paid_count'] += $cnt;
-        if ($method === 'cash') $stats['cash_sales'] += $amt;
-        elseif ($method === 'card') $stats['card_sales'] += $amt;
-        else $stats['digital_sales'] += $amt;
-    } elseif ($st === 'pending') {
-        $stats['outstanding'] += $amt;
-        $stats['pending_count'] += $cnt;
-    } elseif ($st === 'ncr') {
-        $stats['total_ncr'] += $amt;
-    }
+    $amt = (float)$row['collected'];
+    $method = strtolower($row['gateway_name']);
+    $stats['today_sales'] += $amt;
+    $stats['paid_count'] += (int)$row['cnt'];
+    if ($method === 'cash') $stats['cash_sales'] += $amt;
+    elseif ($method === 'card') $stats['card_sales'] += $amt;
+    else $stats['digital_sales'] += $amt;
 }
 $stmt->close();
+
+// Refunds collected for the day
+$rf_stmt = $conn->prepare("SELECT COALESCE(SUM(amount),0) AS rsum FROM payment_transactions WHERE restaurant_id = ? AND status = 'refunded' AND DATE(created_at) = ?");
+$rf_stmt->bind_param("is", $tenantId, $today);
+$rf_stmt->execute();
+$stats['total_refunds'] = round((float)$rf_stmt->get_result()->fetch_assoc()['rsum'], 2);
+$rf_stmt->close();
+
+// Tax / service charge / manual discount / NCR persisted on settled orders
+$agg_stmt = $conn->prepare("
+    SELECT COALESCE(SUM(tax_amount),0) AS tax_sum,
+           COALESCE(SUM(service_charge_amount),0) AS sc_sum,
+           COALESCE(SUM(discount_amount),0) AS disc_sum,
+           COALESCE(SUM(ncr_amount),0) AS ncr_sum,
+           SUM(CASE WHEN payment_status = 'pending' THEN COALESCE(total_amount,0) + COALESCE(tax_amount,0) + COALESCE(service_charge_amount,0) - COALESCE(discount_amount,0) - COALESCE(ncr_amount,0) ELSE 0 END) AS outstanding_sum,
+           SUM(CASE WHEN payment_status = 'pending' THEN 1 ELSE 0 END) AS pending_cnt
+    FROM orders WHERE restaurant_id = ? AND DATE(created_at) = ?
+");
+$agg_stmt->bind_param("is", $tenantId, $today);
+$agg_stmt->execute();
+$agg = $agg_stmt->get_result()->fetch_assoc();
+$agg_stmt->close();
+$stats['total_tax'] = round((float)($agg['tax_sum'] ?? 0), 2);
+$stats['total_sc'] = round((float)($agg['sc_sum'] ?? 0), 2);
+$stats['total_discount'] = round((float)($agg['disc_sum'] ?? 0), 2);
+$stats['total_ncr'] = round((float)($agg['ncr_sum'] ?? 0), 2);
+$stats['outstanding'] = round((float)($agg['outstanding_sum'] ?? 0), 2);
+$stats['pending_count'] = (int)($agg['pending_cnt'] ?? 0);
+
+// Loyalty discounts redeemed today (authoritative ledger amounts)
+$loy_stmt = $conn->prepare("SELECT COALESCE(SUM(-amount_equivalent),0) AS loy_sum FROM loyalty_transactions WHERE restaurant_id = ? AND type = 'redeem' AND DATE(created_at) = ?");
+$loy_stmt->bind_param("is", $tenantId, $today);
+$loy_stmt->execute();
+$stats['total_discount'] += round((float)$loy_stmt->get_result()->fetch_assoc()['loy_sum'], 2);
+$loy_stmt->close();
 
 // Fetch Recent Payment Transactions
 $transactions = [];

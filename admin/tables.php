@@ -10,14 +10,16 @@ if (!$conn) {
 
 $tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
 
-// Get tax settings for bill calculation
-$settings_res = $conn->query("SELECT tax_enabled, tax_percentage, service_charge_enabled, service_charge_type, service_charge_amount FROM payment_settings WHERE restaurant_id = $tenantId LIMIT 1");
-$settings = $settings_res ? $settings_res->fetch_assoc() : [];
+// Get tax settings for bill calculation (single source of truth)
+$settings = RestaurantSettingsService::getPaymentSettings($conn, $tenantId);
 $vatPercent = floatval($settings['tax_percentage'] ?? 13.00);
 $scPercent = !empty($settings['service_charge_enabled']) ? floatval($settings['service_charge_amount'] ?? 10.00) : 0.00;
 $scType = $settings['service_charge_type'] ?? 'percent';
 $taxEnabled = !empty($settings['tax_enabled']);
 $scEnabled = !empty($settings['service_charge_enabled']);
+$vatMode = $settings['vat_mode'] ?? 'exclusive';
+$currencySymbol = $settings['currency_symbol'] ?? 'Rs.';
+$currencyPosition = $settings['currency_position'] ?? 'left';
 
 // Handle POST Form Submissions (Add, Edit, Reserve, Status Update, Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -1093,28 +1095,43 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         }
 
         function fallbackCalculateBill(t) {
+            // Degraded fallback ONLY used when the authoritative calculate_bill
+            // API is unreachable. Mirrors the server engine (vat_mode + discounts).
             const items = t.items || [];
             let subtotal = 0;
             items.forEach(i => { subtotal += parseFloat(i.price) * parseInt(i.quantity); });
 
-            let sc = <?= $scEnabled ? 'true' : 'false' ?> ? Math.round((subtotal * <?= $scPercent ?>) / 100 * 100) / 100 : 0;
-            let vat = <?= $taxEnabled ? 'true' : 'false' ?> ? Math.round(((subtotal + sc) * <?= $vatPercent ?>) / 100 * 100) / 100 : 0;
-            let gt = Math.max(0, subtotal + sc + vat);
+            const manualDiscount = Math.max(0, parseFloat(t.discount_amount || t.discount || 0));
+            const loyaltyDisc = parseFloat(currentLoyaltyDiscount || 0) || 0;
+            const netBase = Math.max(0, subtotal - manualDiscount - loyaltyDisc);
+
+            let sc = 0, vat = 0;
+            if (<?= $scEnabled ? 'true' : 'false' ?>) {
+                sc = <?= $scType === 'fixed' ? 'Math.round(' . $scPercent . ' * 100) / 100' : 'Math.round((netBase * ' . $scPercent . ') / 100 * 100) / 100' ?>;
+            }
+            if (<?= $taxEnabled ? 'true' : 'false' ?>) {
+                <?php if ($vatMode === 'inclusive'): ?>
+                vat = Math.round((netBase * <?= $vatPercent ?>) / (100 + <?= $vatPercent ?>) * 100) / 100;
+                <?php else: ?>
+                vat = Math.round(((netBase + sc) * <?= $vatPercent ?>) / 100 * 100) / 100;
+                <?php endif; ?>
+            }
+            let gt = Math.max(0, netBase + sc + vat);
 
             currentBill = {
                 subtotal: subtotal,
                 service_charge: sc,
                 vat: vat,
-                discount: 0,
-                loyalty_discount: 0,
+                discount: manualDiscount,
+                loyalty_discount: loyaltyDisc,
                 ncr_amount: 0,
                 grand_total: gt,
                 formatted: {
                     subtotal: formatPrice(subtotal),
                     service_charge: formatPrice(sc),
                     vat: formatPrice(vat),
-                    discount: formatPrice(0),
-                    loyalty_discount: formatPrice(0),
+                    discount: formatPrice(manualDiscount),
+                    loyalty_discount: formatPrice(loyaltyDisc),
                     ncr_amount: formatPrice(0),
                     grand_total: formatPrice(gt)
                 }

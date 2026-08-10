@@ -1,5 +1,7 @@
 <?php
 // receipt.php - Print-friendly receipt for completed orders
+// All figures come from the authoritative billing engine (BillingService) and
+// tenant settings (RestaurantSettingsService). The receipt never re-derives math.
 require_once 'config.php';
 requireAdminLogin();
 
@@ -8,25 +10,31 @@ if (!$conn) {
     die("Database connection error");
 }
 
-$tenantId = (int)$_SESSION['restaurant_id'] ?? 0;
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
 $orderId = intval($_GET['order_id'] ?? 0);
 
 if (!$orderId) {
     die("Order ID required");
 }
 
-// Fetch restaurant/payment settings
-$settings_res = $conn->query("SELECT * FROM payment_settings WHERE restaurant_id = $tenantId LIMIT 1");
-$settings = $settings_res ? $settings_res->fetch_assoc() : [];
-$restaurantName = $settings['restaurant_name'] ?? 'QR Restaurant';
-$restaurantAddress = $settings['payment_note'] ?? '';
-$vatPercent = floatval($settings['tax_percentage'] ?? 13.00);
-$scPercent = !empty($settings['service_charge_enabled']) ? floatval($settings['service_charge_amount'] ?? 10.00) : 0.00;
-$scType = $settings['service_charge_type'] ?? 'percent';
-$taxEnabled = !empty($settings['tax_enabled']);
-$scEnabled = !empty($settings['service_charge_enabled']);
+// Tenant billing/restaurant settings (single source of truth)
+$sett = RestaurantSettingsService::getPaymentSettings($conn, $tenantId);
+$restaurantName = $sett['restaurant_name'] ?: 'QR Restaurant';
+$restaurantAddress = $sett['address'] ?? '';
+$restaurantPhone = $sett['phone'] ?? '';
+$restaurantEmail = $sett['email'] ?? '';
+$restaurantPan = $sett['pan_vat'] ?? '';
+$restaurantLogo = !empty($sett['logo']) ? ltrim((string)$sett['logo'], '/') : '';
+$vatPercent = floatval($sett['tax_percentage'] ?? 13.00);
+$scPercent = !empty($sett['service_charge_enabled']) ? floatval($sett['service_charge_amount'] ?? 10.00) : 0.00;
+$scType = $sett['service_charge_type'] ?? 'percent';
+$taxEnabled = !empty($sett['tax_enabled']);
+$scEnabled = !empty($sett['service_charge_enabled']);
+$vatMode = $sett['vat_mode'] ?? 'exclusive';
+$currencySymbol = $sett['currency_symbol'] ?? 'Rs.';
+$currencyPosition = $sett['currency_position'] ?? 'left';
 
-// Fetch order with items and payment info
+// Fetch order with items and payment info (tenant-scoped)
 $stmt = $conn->prepare("
     SELECT o.*, t.id as table_id, t.table_number, t.zone,
            pt.transaction_id, pt.gateway_name, pt.amount as paid_amount, pt.reference_id, pt.created_at as paid_at
@@ -44,6 +52,8 @@ $stmt->close();
 if (!$order) {
     die("Order not found");
 }
+
+$isNCR = (float)($order['ncr_amount'] ?? 0) > 0;
 
 // Fetch order items
 $stmt = $conn->prepare("
@@ -67,59 +77,50 @@ if (!empty($order['customer_id'])) {
     $stmt->close();
 }
 
-// Calculate bill breakdown using BillingService logic
-$subtotal = 0;
-foreach ($items as $item) {
-    $subtotal += (float)$item['price'] * (int)$item['quantity'];
-}
-$subtotal = round($subtotal, 2);
-
-$serviceCharge = 0;
-if ($scEnabled && $subtotal > 0) {
-    if ($scType === 'percent') {
-        $serviceCharge = round(($subtotal * $scPercent) / 100.0, 2);
-    } else {
-        $serviceCharge = round($scPercent, 2);
-    }
-}
-
-$tax = 0;
-if ($taxEnabled && $subtotal > 0) {
-    $taxableBase = $subtotal + $serviceCharge;
-    $tax = round(($taxableBase * $vatPercent) / 100.0, 2);
-}
-
-// Loyalty discount: re-derive from the redeemed points ledger + any manual order discount
-$loyaltyDiscount = 0.0;
+// Loyalty ledger lines for this order (redeemed + earned)
 $redeemedPoints = 0;
-if (!empty($order['customer_id'])) {
-    $stmt = $conn->prepare("SELECT points FROM loyalty_transactions WHERE order_id = ? AND restaurant_id = ? AND type = 'redeem' LIMIT 1");
-    if ($stmt) {
-        $stmt->bind_param("ii", $orderId, $tenantId);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $redeemedPoints = (int)abs((int)($row['points'] ?? 0));
-        $stmt->close();
+$earnedPoints = 0;
+$stmt = $conn->prepare("SELECT type, points FROM loyalty_transactions WHERE order_id = ? AND restaurant_id = ?");
+if ($stmt) {
+    $stmt->bind_param("ii", $orderId, $tenantId);
+    $stmt->execute();
+    $ledger = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+    foreach ($ledger as $entry) {
+        $p = (int)$entry['points'];
+        if ($entry['type'] === 'redeem') {
+            $redeemedPoints += abs($p);
+        } elseif ($entry['type'] === 'earn') {
+            $earnedPoints += $p;
+        }
     }
 }
-if ($redeemedPoints > 0) {
-    $loyaltyBill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, $redeemedPoints, false);
-    if ($loyaltyBill) {
-        $loyaltyDiscount = (float)$loyaltyBill['loyalty_discount'];
-    }
+$loyaltyBalance = 0;
+if ($customer) {
+    $loyaltyBalance = (int)($customer['loyalty_points'] ?? 0);
 }
-$manualDiscount = (float)($order['discount_amount'] ?? 0);
-$totalDiscount = round($loyaltyDiscount + $manualDiscount, 2);
 
-$grandTotal = round($subtotal + $serviceCharge + $tax - $totalDiscount, 2);
+// Authoritative bill breakdown. Pass the actually-redeemed points so the engine
+// reproduces exactly what was settled (loyalty discount + grand total).
+$bill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, $redeemedPoints, $isNCR);
+$subtotal = (float)$bill['subtotal'];
+$serviceCharge = (float)$bill['service_charge'];
+$tax = (float)$bill['vat'];
+$manualDiscount = (float)$bill['discount'];
+$loyaltyDiscount = (float)$bill['loyalty_discount'];
+$totalDiscount = round($manualDiscount + $loyaltyDiscount, 2);
+$grandTotal = (float)$bill['grand_total'];
+$ncrAmount = (float)$bill['ncr_amount'];
+
 $paidAmount = (float)($order['paid_amount'] ?? $order['total_amount'] ?? $grandTotal);
 $cashReceived = (float)($_GET['cash_received'] ?? $paidAmount);
 $change = max(0, $cashReceived - $paidAmount);
 
-// Format currency
-function fmt($amt) {
-    return 'Rs. ' . number_format((float)$amt, 2);
-}
+// Currency formatting honoring tenant symbol/position
+$fmt = function ($amt) use ($currencySymbol, $currencyPosition) {
+    $value = number_format((float)$amt, 2);
+    return $currencyPosition === 'right' ? $value . ' ' . $currencySymbol : $currencySymbol . ' ' . $value;
+};
 
 $paidAt = $order['paid_at'] ?? $order['updated_at'] ?? date('Y-m-d H:i:s');
 $dateTime = date('d M Y, h:i A', strtotime($paidAt));
@@ -156,11 +157,11 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
         .flex-between { display: flex; justify-content: space-between; }
         .bold { font-weight: bold; }
         .small { font-size: 10px; }
-        .logo { width: 60px; height: 60px; margin: 0 auto 10px; }
+        .logo { width: 60px; height: 60px; margin: 0 auto 10px; object-fit: contain; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen py-8 px-4">
-    
+
     <!-- Print Button (hidden on print) -->
     <div class="no-print text-center mb-4">
         <button onclick="window.print()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors">
@@ -173,9 +174,22 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
     <div class="receipt-container">
         <!-- Header -->
         <div class="text-center mb-4">
+            <?php if ($restaurantLogo): ?>
+                <img src="<?php echo htmlspecialchars($restaurantLogo); ?>" class="logo" alt="Logo">
+            <?php endif; ?>
             <div class="text-3xl font-bold text-gray-900"><?php echo htmlspecialchars($restaurantName); ?></div>
             <?php if ($restaurantAddress): ?>
                 <div class="text-sm text-gray-600 mt-1"><?php echo htmlspecialchars($restaurantAddress); ?></div>
+            <?php endif; ?>
+            <?php if ($restaurantPhone || $restaurantEmail): ?>
+                <div class="text-xs text-gray-500 mt-1">
+                    <?php if ($restaurantPhone): ?><?php echo htmlspecialchars($restaurantPhone); ?><?php endif; ?>
+                    <?php if ($restaurantPhone && $restaurantEmail): ?>&nbsp;|&nbsp;<?php endif; ?>
+                    <?php if ($restaurantEmail): ?><?php echo htmlspecialchars($restaurantEmail); ?><?php endif; ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($restaurantPan): ?>
+                <div class="text-xs text-gray-500 mt-1">PAN/VAT: <?php echo htmlspecialchars($restaurantPan); ?></div>
             <?php endif; ?>
             <div class="text-xs text-gray-500 mt-1">Table: <?php echo htmlspecialchars($order['table_number']); ?> (<?php echo htmlspecialchars($order['zone'] ?? 'Ground Floor'); ?>)</div>
         </div>
@@ -200,13 +214,16 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
 
         <!-- Items -->
         <div class="text-sm">
-            <div class="bold text-gray-900 mb-1">ITEMS</div>
+            <div class="bold text-gray-900 mb-1">ITEMS<?php echo $vatMode === 'inclusive' ? ' (prices include VAT)' : ''; ?></div>
             <?php foreach ($items as $item): ?>
+                <?php $itemIsNCR = (float)($item['ncr_amount'] ?? 0) > 0; ?>
                 <div class="flex-between mb-1">
-                    <span><?php echo (int)$item['quantity']; ?>x <?php echo htmlspecialchars($item['item_name']); ?></span>
-                    <span class="bold"><?php echo fmt($item['price'] * $item['quantity']); ?></span>
+                    <span><?php echo (int)$item['quantity']; ?>x <?php echo htmlspecialchars($item['item_name']); ?><?php echo $itemIsNCR ? ' <span class="text-green-600">(NCR)</span>' : ''; ?></span>
+                    <span class="bold"><?php echo $itemIsNCR ? 'FREE' : $fmt($item['price'] * $item['quantity']); ?></span>
                 </div>
-                <div class="text-xs text-gray-500 text-right">@ <?php echo fmt($item['price']); ?> each</div>
+                <?php if (!$itemIsNCR): ?>
+                    <div class="text-xs text-gray-500 text-right">@ <?php echo $fmt($item['price']); ?> each</div>
+                <?php endif; ?>
             <?php endforeach; ?>
         </div>
         <div class="divider"></div>
@@ -215,30 +232,42 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
         <div class="text-sm space-y-1">
             <div class="flex-between">
                 <span>Subtotal</span>
-                <span><?php echo fmt($subtotal); ?></span>
+                <span><?php echo $fmt($subtotal); ?></span>
             </div>
+            <?php if ($manualDiscount > 0): ?>
+            <div class="flex-between" style="color:#059669;">
+                <span>Discount</span>
+                <span>-<?php echo $fmt($manualDiscount); ?></span>
+            </div>
+            <?php endif; ?>
             <?php if ($serviceCharge > 0): ?>
             <div class="flex-between">
                 <span>Service Charge (<?php echo $scPercent; ?>%)</span>
-                <span><?php echo fmt($serviceCharge); ?></span>
+                <span><?php echo $fmt($serviceCharge); ?></span>
             </div>
             <?php endif; ?>
             <?php if ($tax > 0): ?>
             <div class="flex-between">
-                <span>VAT (<?php echo $vatPercent; ?>%)</span>
-                <span><?php echo fmt($tax); ?></span>
+                <span>VAT (<?php echo $vatPercent; ?>%)<?php echo $vatMode === 'inclusive' ? ' (incl. in prices)' : ''; ?></span>
+                <span><?php echo $fmt($tax); ?></span>
             </div>
             <?php endif; ?>
-            <?php if ($totalDiscount > 0): ?>
+            <?php if ($loyaltyDiscount > 0): ?>
             <div class="flex-between" style="color:#059669;">
-                <span>Discount<?php if ($loyaltyDiscount > 0 && $manualDiscount > 0): ?> (Loyalty + Other)<?php elseif ($loyaltyDiscount > 0): ?> (Loyalty)<?php endif; ?></span>
-                <span>-<?php echo fmt($totalDiscount); ?></span>
+                <span>Loyalty Discount<?php echo $redeemedPoints > 0 ? " ($redeemedPoints pts)" : ''; ?></span>
+                <span>-<?php echo $fmt($loyaltyDiscount); ?></span>
+            </div>
+            <?php endif; ?>
+            <?php if ($ncrAmount > 0): ?>
+            <div class="flex-between" style="color:#059669;">
+                <span>NCR Waived</span>
+                <span>-<?php echo $fmt($ncrAmount); ?></span>
             </div>
             <?php endif; ?>
             <div class="thick-divider"></div>
             <div class="flex-between text-lg bold">
                 <span>Grand Total</span>
-                <span><?php echo fmt($grandTotal); ?></span>
+                <span><?php echo $fmt($grandTotal); ?></span>
             </div>
         </div>
         <div class="divider"></div>
@@ -251,16 +280,30 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
             </div>
             <div class="flex-between">
                 <span>Amount Paid</span>
-                <span class="bold"><?php echo fmt($paidAmount); ?></span>
+                <span class="bold"><?php echo $fmt($paidAmount); ?></span>
             </div>
             <?php if (strtolower($paymentMethod) === 'cash'): ?>
             <div class="flex-between">
                 <span>Cash Received</span>
-                <span><?php echo fmt($cashReceived); ?></span>
+                <span><?php echo $fmt($cashReceived); ?></span>
             </div>
             <div class="flex-between">
                 <span>Change Due</span>
-                <span class="bold text-green-600"><?php echo fmt($change); ?></span>
+                <span class="bold text-green-600"><?php echo $fmt($change); ?></span>
+            </div>
+            <?php endif; ?>
+            <?php if ($earnedPoints > 0 || $redeemedPoints > 0): ?>
+            <div class="flex-between small" style="padding-top:4px;">
+                <span>Loyalty: Earned</span>
+                <span>+<?php echo $earnedPoints; ?> pts</span>
+            </div>
+            <div class="flex-between small">
+                <span>Loyalty: Redeemed</span>
+                <span>-<?php echo $redeemedPoints; ?> pts</span>
+            </div>
+            <div class="flex-between small">
+                <span>Loyalty: Balance</span>
+                <span><?php echo $loyaltyBalance; ?> pts</span>
             </div>
             <?php endif; ?>
         </div>
@@ -271,6 +314,9 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 mt-4 space-y-1">
+            <?php if (!empty($sett['payment_note'])): ?>
+                <div><?php echo htmlspecialchars($sett['payment_note']); ?></div>
+            <?php endif; ?>
             <div>Thank you for dining with us!</div>
             <div>Please visit again</div>
         </div>
@@ -298,54 +344,73 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
         <div class="small mb-1">Customer: <?php echo htmlspecialchars($customer['name']); ?></div>
         <?php endif; ?>
         <div class="divider"></div>
-        <div class="small bold mb-1">ITEMS</div>
+        <div class="small bold mb-1">ITEMS<?php echo $vatMode === 'inclusive' ? ' (VAT incl.)' : ''; ?></div>
         <?php foreach ($items as $item): ?>
+            <?php $itemIsNCR = (float)($item['ncr_amount'] ?? 0) > 0; ?>
             <div class="flex-between small mb-1">
-                <span><?php echo (int)$item['quantity']; ?>x <?php echo htmlspecialchars($item['item_name']); ?></span>
-                <span><?php echo fmt($item['price'] * $item['quantity']); ?></span>
+                <span><?php echo (int)$item['quantity']; ?>x <?php echo htmlspecialchars($item['item_name']); ?><?php echo $itemIsNCR ? ' (NCR)' : ''; ?></span>
+                <span><?php echo $itemIsNCR ? 'FREE' : $fmt($item['price'] * $item['quantity']); ?></span>
             </div>
         <?php endforeach; ?>
         <div class="divider"></div>
         <div class="flex-between small">
             <span>Subtotal</span>
-            <span><?php echo fmt($subtotal); ?></span>
+            <span><?php echo $fmt($subtotal); ?></span>
         </div>
+        <?php if ($manualDiscount > 0): ?>
+        <div class="flex-between small" style="color:#059669;">
+            <span>Discount</span>
+            <span>-<?php echo $fmt($manualDiscount); ?></span>
+        </div>
+        <?php endif; ?>
         <?php if ($serviceCharge > 0): ?>
         <div class="flex-between small">
             <span>SC (<?php echo $scPercent; ?>%)</span>
-            <span><?php echo fmt($serviceCharge); ?></span>
+            <span><?php echo $fmt($serviceCharge); ?></span>
         </div>
         <?php endif; ?>
         <?php if ($tax > 0): ?>
         <div class="flex-between small">
             <span>VAT (<?php echo $vatPercent; ?>%)</span>
-            <span><?php echo fmt($tax); ?></span>
+            <span><?php echo $fmt($tax); ?></span>
         </div>
         <?php endif; ?>
-        <?php if ($totalDiscount > 0): ?>
+        <?php if ($loyaltyDiscount > 0): ?>
         <div class="flex-between small" style="color:#059669;">
-            <span>Discount</span>
-            <span>-<?php echo fmt($totalDiscount); ?></span>
+            <span>Loyalty</span>
+            <span>-<?php echo $fmt($loyaltyDiscount); ?></span>
+        </div>
+        <?php endif; ?>
+        <?php if ($ncrAmount > 0): ?>
+        <div class="flex-between small" style="color:#059669;">
+            <span>NCR</span>
+            <span>-<?php echo $fmt($ncrAmount); ?></span>
         </div>
         <?php endif; ?>
         <div class="thick-divider"></div>
         <div class="flex-between bold">
             <span>TOTAL</span>
-            <span><?php echo fmt($grandTotal); ?></span>
+            <span><?php echo $fmt($grandTotal); ?></span>
         </div>
         <div class="divider"></div>
         <div class="flex-between small">
             <span>Paid</span>
-            <span><?php echo fmt($paidAmount); ?></span>
+            <span><?php echo $fmt($paidAmount); ?></span>
         </div>
         <?php if (strtolower($paymentMethod) === 'cash'): ?>
         <div class="flex-between small">
             <span>Received</span>
-            <span><?php echo fmt($cashReceived); ?></span>
+            <span><?php echo $fmt($cashReceived); ?></span>
         </div>
         <div class="flex-between small bold text-green-600">
             <span>Change</span>
-            <span><?php echo fmt($change); ?></span>
+            <span><?php echo $fmt($change); ?></span>
+        </div>
+        <?php endif; ?>
+        <?php if ($earnedPoints > 0 || $redeemedPoints > 0): ?>
+        <div class="flex-between small">
+            <span>Pts +/-</span>
+            <span>+<?php echo $earnedPoints; ?>/-<?php echo $redeemedPoints; ?></span>
         </div>
         <?php endif; ?>
         <div class="thick-divider"></div>

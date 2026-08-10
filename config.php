@@ -51,6 +51,9 @@ require_once __DIR__ . '/helpers/Inventory.php';
 require_once __DIR__ . '/helpers/PermissionService.php';
 require_once __DIR__ . '/helpers/AuthorizationService.php';
 require_once __DIR__ . '/helpers/BillingService.php';
+require_once __DIR__ . '/helpers/RestaurantSettingsService.php';
+require_once __DIR__ . '/helpers/HrService.php';
+require_once __DIR__ . '/helpers/RegisterShiftService.php';
 
 // Initialize PHP session automatically for all requests
 Auth::startSession();
@@ -67,64 +70,7 @@ function formatPrice($amount) {
  * Fetch Tenant-Specific Loyalty Settings with Fallback Defaults
  */
 function getLoyaltySettings($conn, $tenantId) {
-    static $cache = [];
-    $tenantId = (int)$tenantId;
-    if ($tenantId <= 0) {
-        $tenantId = 1;
-    }
-    if (isset($cache[$tenantId])) {
-        return $cache[$tenantId];
-    }
-
-    $defaults = [
-        'restaurant_id' => $tenantId,
-        'is_enabled' => 1,
-        'earn_spend_amount' => 100.00,
-        'point_value' => 1.00,
-        'min_redemption_points' => 100,
-        'max_redemption_points' => 500,
-        'max_discount_percent' => 20.00,
-        'expiration_enabled' => 0,
-        'expiration_days' => 365,
-        'earning_basis' => 'subtotal_after_discounts'
-    ];
-
-    if (!$conn) {
-        return $defaults;
-    }
-
-    $stmt = $conn->prepare("SELECT * FROM restaurant_loyalty_settings WHERE restaurant_id = ? LIMIT 1");
-    if ($stmt) {
-        $stmt->bind_param("i", $tenantId);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        if ($res && $row = $res->fetch_assoc()) {
-            $defaults = [
-                'restaurant_id' => (int)$row['restaurant_id'],
-                'is_enabled' => (int)$row['is_enabled'],
-                'earn_spend_amount' => max(0.01, floatval($row['earn_spend_amount'])),
-                'point_value' => max(0.01, floatval($row['point_value'])),
-                'min_redemption_points' => max(0, (int)$row['min_redemption_points']),
-                'max_redemption_points' => max(0, (int)$row['max_redemption_points']),
-                'max_discount_percent' => max(0.0, min(100.0, floatval($row['max_discount_percent']))),
-                'expiration_enabled' => (int)$row['expiration_enabled'],
-                'expiration_days' => max(1, (int)$row['expiration_days']),
-                'earning_basis' => $row['earning_basis'] ?: 'subtotal_after_discounts'
-            ];
-        } else {
-            // Provision default row for tenant if missing
-            $iStmt = $conn->prepare("INSERT IGNORE INTO restaurant_loyalty_settings (restaurant_id, is_enabled, earn_spend_amount, point_value, min_redemption_points, max_redemption_points, max_discount_percent, expiration_enabled, expiration_days, earning_basis) VALUES (?, 1, 100.00, 1.00, 100, 500, 20.00, 0, 365, 'subtotal_after_discounts')");
-            if ($iStmt) {
-                $iStmt->bind_param("i", $tenantId);
-                $iStmt->execute();
-                $iStmt->close();
-            }
-        }
-        $stmt->close();
-    }
-
-    $cache[$tenantId] = $defaults;
-    return $defaults;
+    return RestaurantSettingsService::getLoyaltySettings($conn, (int)$tenantId);
 }
 
 // Cryptographic Token Helpers
@@ -254,6 +200,100 @@ function ensureCriticalTenantColumns($conn) {
     }
     if (!in_array('idempotency_key', $lt_cols, true)) {
         try { $conn->query("ALTER TABLE loyalty_transactions ADD COLUMN idempotency_key VARCHAR(64) NULL DEFAULT NULL, ADD UNIQUE KEY uq_lt_idem (idempotency_key)"); } catch (Throwable $e) {}
+    }
+    if (!in_array('expiry_processed_at', $lt_cols, true)) {
+        try { $conn->query("ALTER TABLE loyalty_transactions ADD COLUMN expiry_processed_at DATETIME NULL DEFAULT NULL AFTER expiration_date"); } catch (Throwable $e) {}
+    }
+
+    // restaurant_loyalty_settings: earning multiplier + minimum redemption bill
+    $rls_cols = [];
+    $rls_res = $conn->query("SHOW COLUMNS FROM restaurant_loyalty_settings");
+    if ($rls_res) {
+        while ($rls_row = $rls_res->fetch_assoc()) {
+            $rls_cols[] = strtolower($rls_row['Field']);
+        }
+    }
+    if (!in_array('earning_points', $rls_cols, true)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN earning_points INT DEFAULT 1 AFTER earn_spend_amount"); } catch (Throwable $e) {}
+    }
+    if (!in_array('min_bill_amount', $rls_cols, true)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN min_bill_amount DECIMAL(10,2) DEFAULT 0.00 AFTER max_discount_percent"); } catch (Throwable $e) {}
+    }
+    if (!in_array('restaurant_id', $rls_cols, true)) {
+        // Table missing entirely: recreate with the full schema
+        try {
+            $conn->query("CREATE TABLE IF NOT EXISTS restaurant_loyalty_settings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                restaurant_id INT NOT NULL,
+                is_enabled TINYINT(1) DEFAULT 1,
+                earn_spend_amount DECIMAL(10,2) DEFAULT 100.00,
+                earning_points INT DEFAULT 1,
+                point_value DECIMAL(10,2) DEFAULT 1.00,
+                min_redemption_points INT DEFAULT 10,
+                max_redemption_points INT DEFAULT 500,
+                max_discount_percent DECIMAL(5,2) DEFAULT 20.00,
+                min_bill_amount DECIMAL(10,2) DEFAULT 0.00,
+                expiration_enabled TINYINT(1) DEFAULT 0,
+                expiration_days INT DEFAULT 365,
+                earning_basis VARCHAR(50) DEFAULT 'subtotal_after_discounts',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_rls_tenant (restaurant_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        } catch (Throwable $e) {}
+    }
+
+    // payment_settings: billing/restaurant info + VAT mode + unique tenant key
+    $ps_cols = [];
+    $ps_res = $conn->query("SHOW COLUMNS FROM payment_settings");
+    if ($ps_res) {
+        while ($ps_row = $ps_res->fetch_assoc()) {
+            $ps_cols[] = strtolower($ps_row['Field']);
+        }
+    }
+    if (count($ps_cols) > 0) {
+        if (!in_array('vat_mode', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN vat_mode ENUM('exclusive','inclusive') DEFAULT 'exclusive' AFTER tax_percentage"); } catch (Throwable $e) {}
+        }
+        if (!in_array('address', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN address VARCHAR(255) DEFAULT '' AFTER service_charge_amount"); } catch (Throwable $e) {}
+        }
+        if (!in_array('phone', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN phone VARCHAR(50) DEFAULT '' AFTER address"); } catch (Throwable $e) {}
+        }
+        if (!in_array('email', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN email VARCHAR(100) DEFAULT '' AFTER phone"); } catch (Throwable $e) {}
+        }
+        if (!in_array('pan_vat', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN pan_vat VARCHAR(50) DEFAULT '' AFTER email"); } catch (Throwable $e) {}
+        }
+        if (!in_array('currency', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN currency VARCHAR(10) DEFAULT 'NPR' AFTER pan_vat"); } catch (Throwable $e) {}
+        }
+        if (!in_array('currency_symbol', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN currency_symbol VARCHAR(10) DEFAULT 'Rs.' AFTER currency"); } catch (Throwable $e) {}
+        }
+        if (!in_array('currency_position', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN currency_position ENUM('left','right') DEFAULT 'left' AFTER currency_symbol"); } catch (Throwable $e) {}
+        }
+        if (!in_array('timezone', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN timezone VARCHAR(64) DEFAULT 'Asia/Kathmandu' AFTER currency_position"); } catch (Throwable $e) {}
+        }
+        if (!in_array('logo', $ps_cols, true)) {
+            try { $conn->query("ALTER TABLE payment_settings ADD COLUMN logo VARCHAR(255) DEFAULT '' AFTER restaurant_name"); } catch (Throwable $e) {}
+        }
+        // Deduplicate any legacy duplicate rows before enforcing the unique key
+        try { $conn->query("DELETE p1 FROM payment_settings p1 JOIN payment_settings p2 ON p1.restaurant_id = p2.restaurant_id AND p1.id > p2.id"); } catch (Throwable $e) {}
+        $ps_keys = [];
+        $pk_res = $conn->query("SHOW KEYS FROM payment_settings");
+        if ($pk_res) {
+            while ($pk_row = $pk_res->fetch_assoc()) {
+                $ps_keys[$pk_row['Key_name']] = true;
+            }
+        }
+        if (!isset($ps_keys['uq_pay_tenant'])) {
+            try { $conn->query("ALTER TABLE payment_settings ADD UNIQUE KEY uq_pay_tenant (restaurant_id)"); } catch (Throwable $e) {}
+        }
     }
 }
 
@@ -686,10 +726,12 @@ function ensureDatabaseSchema($conn) {
         restaurant_id INT NOT NULL UNIQUE,
         is_enabled TINYINT(1) DEFAULT 1,
         earn_spend_amount DECIMAL(10,2) DEFAULT 100.00,
+        earning_points INT DEFAULT 1,
         point_value DECIMAL(10,2) DEFAULT 1.00,
-        min_redemption_points INT DEFAULT 100,
+        min_redemption_points INT DEFAULT 10,
         max_redemption_points INT DEFAULT 500,
         max_discount_percent DECIMAL(5,2) DEFAULT 20.00,
+        min_bill_amount DECIMAL(10,2) DEFAULT 0.00,
         expiration_enabled TINYINT(1) DEFAULT 0,
         expiration_days INT DEFAULT 365,
         earning_basis VARCHAR(50) DEFAULT 'subtotal_after_discounts',
@@ -712,17 +754,23 @@ function ensureDatabaseSchema($conn) {
     if (!in_array('earn_spend_amount', $loyalty_cols)) {
         try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN earn_spend_amount DECIMAL(10,2) DEFAULT 100.00"); } catch (Throwable $e) {}
     }
+    if (!in_array('earning_points', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN earning_points INT DEFAULT 1 AFTER earn_spend_amount"); } catch (Throwable $e) {}
+    }
     if (!in_array('point_value', $loyalty_cols)) {
         try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN point_value DECIMAL(10,2) DEFAULT 1.00"); } catch (Throwable $e) {}
     }
     if (!in_array('min_redemption_points', $loyalty_cols)) {
-        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN min_redemption_points INT DEFAULT 100"); } catch (Throwable $e) {}
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN min_redemption_points INT DEFAULT 10"); } catch (Throwable $e) {}
     }
     if (!in_array('max_redemption_points', $loyalty_cols)) {
         try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN max_redemption_points INT DEFAULT 500"); } catch (Throwable $e) {}
     }
     if (!in_array('max_discount_percent', $loyalty_cols)) {
         try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN max_discount_percent DECIMAL(5,2) DEFAULT 20.00"); } catch (Throwable $e) {}
+    }
+    if (!in_array('min_bill_amount', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN min_bill_amount DECIMAL(10,2) DEFAULT 0.00 AFTER max_discount_percent"); } catch (Throwable $e) {}
     }
     if (!in_array('expiration_enabled', $loyalty_cols)) {
         try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN expiration_enabled TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}

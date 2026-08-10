@@ -14,11 +14,14 @@ $error = '';
 @$conn->query("CREATE TABLE IF NOT EXISTS expenses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     restaurant_id INT NOT NULL DEFAULT 1,
-    category VARCHAR(100) NOT NULL,
-    title VARCHAR(200) NOT NULL,
-    amount DECIMAL(10, 2) NOT NULL,
+    category VARCHAR(100) NOT NULL DEFAULT 'General',
+    category_name VARCHAR(100) NOT NULL DEFAULT 'General',
+    title VARCHAR(200) NOT NULL DEFAULT 'Expense',
+    description TEXT,
+    amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     expense_date DATE NOT NULL,
     vendor VARCHAR(150) DEFAULT '',
+    reference_no VARCHAR(100) DEFAULT '',
     payment_method VARCHAR(50) DEFAULT 'cash',
     notes TEXT,
     created_by VARCHAR(100) DEFAULT 'Admin',
@@ -26,8 +29,50 @@ $error = '';
     INDEX idx_exp_tenant_date (restaurant_id, expense_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+// Check and align table schema for legacy vs current columns
+$colsRes = $conn->query("SHOW COLUMNS FROM expenses");
+$cols = [];
+if ($colsRes) {
+    while ($col = $colsRes->fetch_assoc()) {
+        $cols[strtolower($col['Field'])] = true;
+    }
+}
+
+if (!isset($cols['category'])) {
+    @$conn->query("ALTER TABLE expenses ADD COLUMN category VARCHAR(100) DEFAULT 'General'");
+    if (isset($cols['category_name'])) {
+        @$conn->query("UPDATE expenses SET category = category_name WHERE category IS NULL OR category = '' OR category = 'General'");
+    }
+}
+if (!isset($cols['category_name'])) {
+    @$conn->query("ALTER TABLE expenses ADD COLUMN category_name VARCHAR(100) DEFAULT 'General'");
+    @$conn->query("UPDATE expenses SET category_name = category WHERE category_name IS NULL OR category_name = ''");
+}
+
+if (!isset($cols['title'])) {
+    @$conn->query("ALTER TABLE expenses ADD COLUMN title VARCHAR(200) DEFAULT 'Expense'");
+    if (isset($cols['description'])) {
+        @$conn->query("UPDATE expenses SET title = description WHERE title IS NULL OR title = '' OR title = 'Expense'");
+    }
+}
+if (!isset($cols['description'])) {
+    @$conn->query("ALTER TABLE expenses ADD COLUMN description TEXT DEFAULT NULL");
+    @$conn->query("UPDATE expenses SET description = title WHERE description IS NULL OR description = ''");
+}
+
+if (!isset($cols['vendor'])) {
+    @$conn->query("ALTER TABLE expenses ADD COLUMN vendor VARCHAR(150) DEFAULT ''");
+    if (isset($cols['reference_no'])) {
+        @$conn->query("UPDATE expenses SET vendor = reference_no WHERE vendor IS NULL OR vendor = ''");
+    }
+}
+if (!isset($cols['reference_no'])) {
+    @$conn->query("ALTER TABLE expenses ADD COLUMN reference_no VARCHAR(100) DEFAULT ''");
+    @$conn->query("UPDATE expenses SET reference_no = vendor WHERE reference_no IS NULL OR reference_no = ''");
+}
+
 // Handle POST Add Expense
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     CSRF::requireValidToken();
 
     $title = Security::sanitize($_POST['title'] ?? '');
@@ -42,8 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($title) || $amount <= 0) {
         $error = "Valid expense title and amount are required.";
     } else {
-        $stmt = $conn->prepare("INSERT INTO expenses (restaurant_id, category, title, amount, expense_date, vendor, payment_method, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("issdsssss", $tenantId, $category, $title, $amount, $date, $vendor, $method, $notes, $user);
+        $stmt = $conn->prepare("INSERT INTO expenses (restaurant_id, category, category_name, title, description, amount, expense_date, vendor, reference_no, payment_method, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssdssssss", $tenantId, $category, $category, $title, $title, $amount, $date, $vendor, $vendor, $method, $notes, $user);
         if ($stmt->execute()) {
             $message = "Expense '$title' of Rs. " . number_format($amount, 2) . " recorded!";
         } else {
@@ -150,18 +195,22 @@ if ($e_res) {
                             <?php if (empty($expenses)): ?>
                                 <tr><td colspan="6" class="py-8 text-center text-zinc-500">No expenses recorded yet.</td></tr>
                             <?php else: ?>
-                                <?php foreach ($expenses as $ex): ?>
+                                <?php foreach ($expenses as $ex):
+                                    $catVal = $ex['category'] ?? $ex['category_name'] ?? 'General';
+                                    $titleVal = $ex['title'] ?? $ex['description'] ?? 'Expense';
+                                    $vendorVal = $ex['vendor'] ?? $ex['reference_no'] ?? '';
+                                ?>
                                     <tr class="hover:bg-zinc-800/40">
                                         <td class="py-3 px-3 font-mono text-zinc-400"><?= date('Y-m-d', strtotime($ex['expense_date'])) ?></td>
                                         <td class="py-3 px-3">
                                             <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-amber-400">
-                                                <?= htmlspecialchars($ex['category']) ?>
+                                                <?= htmlspecialchars($catVal) ?>
                                             </span>
                                         </td>
-                                        <td class="py-3 px-3 font-bold text-white"><?= htmlspecialchars($ex['title']) ?></td>
-                                        <td class="py-3 px-3 text-zinc-400"><?= htmlspecialchars($ex['vendor'] ?: 'N/A') ?></td>
-                                        <td class="py-3 px-3 uppercase text-[10px] font-bold text-zinc-400"><?= htmlspecialchars($ex['payment_method']) ?></td>
-                                        <td class="py-3 px-3 font-black text-rose-400">Rs. <?= number_format($ex['amount'], 2) ?></td>
+                                        <td class="py-3 px-3 font-bold text-white"><?= htmlspecialchars($titleVal) ?></td>
+                                        <td class="py-3 px-3 text-zinc-400"><?= htmlspecialchars($vendorVal ?: 'N/A') ?></td>
+                                        <td class="py-3 px-3 uppercase text-[10px] font-bold text-zinc-400"><?= htmlspecialchars($ex['payment_method'] ?? 'cash') ?></td>
+                                        <td class="py-3 px-3 font-black text-rose-400">Rs. <?= number_format((float)($ex['amount'] ?? 0), 2) ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>

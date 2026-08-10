@@ -19,15 +19,21 @@ class PermissionService {
         'settings'  => ['view', 'update'],
         'waiter_calls' => ['view', 'manage'],
         'notifications' => ['view', 'update'],
+        'hr'          => ['view', 'create', 'update', 'delete', 'manage_salary'],
+        'shifts'      => ['view', 'create', 'update', 'delete', 'assign'],
+        'attendance'  => ['view', 'clock', 'manage'],
+        'payroll'     => ['view', 'calculate', 'approve', 'pay'],
     ];
 
     private static $rolePermissions = [
         'OWNER'             => ['*'],
-        'MANAGER'           => ['orders.*', 'payments.*', 'inventory.*', 'suppliers.*', 'purchase_orders.*', 'recipes.*', 'assets.*', 'tables.*', 'menu.*', 'reports.view', 'staff.view', 'settings.view', 'settings.update', 'notifications.*'],
-        'CASHIER'           => ['orders.view', 'orders.create', 'orders.settle', 'payments.view', 'payments.settle', 'tables.view', 'reports.view'],
-        'KITCHEN'           => ['orders.view', 'orders.update'],
-        'WAITER'            => ['orders.view', 'orders.create', 'tables.view', 'waiter_calls.manage'],
-        'INVENTORY_MANAGER' => ['inventory.*', 'suppliers.*', 'purchase_orders.*', 'recipes.*', 'assets.view'],
+        'MANAGER'           => ['orders.*', 'payments.*', 'inventory.*', 'suppliers.*', 'purchase_orders.*', 'recipes.*', 'assets.*', 'tables.*', 'menu.*', 'reports.view', 'staff.view', 'staff.create', 'staff.update', 'settings.view', 'settings.update', 'notifications.*', 'hr.view', 'hr.create', 'hr.update', 'shifts.*', 'attendance.*'],
+        'HR_MANAGER'        => ['staff.*', 'hr.*', 'shifts.*', 'attendance.*', 'payroll.*', 'reports.view', 'notifications.*'],
+        'ACCOUNTANT'        => ['payroll.*', 'reports.view', 'payments.view', 'orders.view', 'hr.view'],
+        'CASHIER'           => ['orders.view', 'orders.create', 'orders.settle', 'payments.view', 'payments.settle', 'tables.view', 'reports.view', 'attendance.clock'],
+        'KITCHEN'           => ['orders.view', 'orders.update', 'attendance.clock'],
+        'WAITER'            => ['orders.view', 'orders.create', 'tables.view', 'waiter_calls.manage', 'attendance.clock'],
+        'INVENTORY_MANAGER' => ['inventory.*', 'suppliers.*', 'purchase_orders.*', 'recipes.*', 'assets.view', 'attendance.clock'],
         'SUPER_ADMIN'       => ['*'],
     ];
 
