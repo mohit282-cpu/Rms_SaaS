@@ -54,6 +54,10 @@ require_once __DIR__ . '/helpers/BillingService.php';
 require_once __DIR__ . '/helpers/RestaurantSettingsService.php';
 require_once __DIR__ . '/helpers/HrService.php';
 require_once __DIR__ . '/helpers/RegisterShiftService.php';
+require_once __DIR__ . '/helpers/TenantDeletionService.php';
+require_once __DIR__ . '/helpers/QRCodeService.php';
+require_once __DIR__ . '/helpers/LoyaltyService.php';
+require_once __DIR__ . '/helpers/OrderService.php';
 
 // Initialize PHP session automatically for all requests
 Auth::startSession();

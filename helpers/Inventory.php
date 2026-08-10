@@ -54,10 +54,20 @@ class Inventory {
         return $labels[self::role()] ?? ucfirst(self::role());
     }
 
-    /** Check whether current role may WRITE to a module (auditor never writes). */
+    /** Check whether current role may WRITE to a module (auditor/accountant = read-only). */
     public static function canWrite($module) {
         $role = self::role();
-        if ($role === 'auditor') return false;
+        if (class_exists('PermissionService')) {
+            $action = 'update';
+            if ($module === 'suppliers') $permGroup = 'suppliers';
+            elseif ($module === 'purchase_orders') $permGroup = 'purchase_orders';
+            elseif ($module === 'recipes') $permGroup = 'recipes';
+            elseif ($module === 'assets') $permGroup = 'assets';
+            else $permGroup = 'inventory';
+
+            return PermissionService::hasPermission($role, $permGroup . '.' . $action) ||
+                   PermissionService::hasPermission($role, $permGroup . '.create');
+        }
         $allowed = self::$writePerms[$module] ?? [];
         return in_array($role, $allowed, true);
     }
@@ -65,6 +75,16 @@ class Inventory {
     /** Check whether current role may VIEW a module. */
     public static function canRead($module) {
         $role = self::role();
+        if (class_exists('PermissionService')) {
+            if ($module === 'suppliers') $permGroup = 'suppliers';
+            elseif ($module === 'purchase_orders') $permGroup = 'purchase_orders';
+            elseif ($module === 'recipes') $permGroup = 'recipes';
+            elseif ($module === 'assets') $permGroup = 'assets';
+            else $permGroup = 'inventory';
+
+            return PermissionService::hasPermission($role, $permGroup . '.view') ||
+                   PermissionService::hasPermission($role, $permGroup . '.*');
+        }
         $allowed = self::$readPerms[$role] ?? [];
         return in_array('*', $allowed, true) || in_array($module, $allowed, true);
     }

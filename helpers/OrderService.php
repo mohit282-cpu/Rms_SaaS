@@ -130,9 +130,16 @@ class OrderService {
             $qtyOrdered = intval($item['quantity']);
 
             // Deduct menu item stock quantity if menu_items tracking enabled (tenant-scoped)
-            $uStmt = $conn->prepare("UPDATE menu_items SET stock_quantity = GREATEST(0, stock_quantity - ?) WHERE id = ? AND restaurant_id = ?");
-            $uStmt->bind_param("iii", $qtyOrdered, $menuItemId, $tenantId);
+            $uStmt = $conn->prepare("UPDATE menu_items SET stock_quantity = stock_quantity - ? WHERE id = ? AND restaurant_id = ? AND stock_quantity >= ?");
+            $uStmt->bind_param("iiii", $qtyOrdered, $menuItemId, $tenantId, $qtyOrdered);
             $uStmt->execute();
+            if ($uStmt->affected_rows === 0) {
+                // If stock was lower than requested quantity, decrement available stock down to zero
+                $uFallback = $conn->prepare("UPDATE menu_items SET stock_quantity = 0 WHERE id = ? AND restaurant_id = ?");
+                $uFallback->bind_param("ii", $menuItemId, $tenantId);
+                $uFallback->execute();
+                $uFallback->close();
+            }
             $uStmt->close();
 
             // Deduct raw ingredients if recipe exists (tenant-scoped)
@@ -154,9 +161,15 @@ class OrderService {
                 $chkStmt->close();
 
                 if (!$alreadyConsumed) {
-                    $updStmt = $conn->prepare("UPDATE inventory_items SET current_stock = GREATEST(0, current_stock - ?) WHERE id = ? AND restaurant_id = ?");
-                    $updStmt->bind_param("dii", $neededQty, $invItemId, $tenantId);
+                    $updStmt = $conn->prepare("UPDATE inventory_items SET current_stock = current_stock - ? WHERE id = ? AND restaurant_id = ? AND current_stock >= ?");
+                    $updStmt->bind_param("diid", $neededQty, $invItemId, $tenantId, $neededQty);
                     $updStmt->execute();
+                    if ($updStmt->affected_rows === 0) {
+                        $updFb = $conn->prepare("UPDATE inventory_items SET current_stock = 0 WHERE id = ? AND restaurant_id = ?");
+                        $updFb->bind_param("ii", $invItemId, $tenantId);
+                        $updFb->execute();
+                        $updFb->close();
+                    }
                     $updStmt->close();
 
                     $logStmt = $conn->prepare("INSERT INTO inventory_transactions (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, notes, created_by) VALUES (?, ?, 'consumption', ?, 'out', 'order', ?, ?, ?)");

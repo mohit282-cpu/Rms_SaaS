@@ -277,6 +277,21 @@ class Auth {
     }
 
     /**
+     * Return canonical authenticated user ID, or null if unauthenticated.
+     * Never silently fall back to user ID 1 for financial/audit operations.
+     */
+    public static function userId(): ?int {
+        self::startSession();
+        if (isset($_SESSION['admin_id']) && (int)$_SESSION['admin_id'] > 0) {
+            return (int)$_SESSION['admin_id'];
+        }
+        if (isset($_SESSION['user_id']) && (int)$_SESSION['user_id'] > 0) {
+            return (int)$_SESSION['user_id'];
+        }
+        return null;
+    }
+
+    /**
      * Clear and destroy active session cleanly (Secure Logout)
      */
     public static function logout() {

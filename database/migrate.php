@@ -1,5 +1,13 @@
 <?php
 // database/migrate.php - SaaS Schema Migration & Database Constraint Upgrade Runner
+
+// Enforce CLI-only execution (Prevent web-accessible database migrations)
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    echo '<!DOCTYPE html><html lang="en"><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>';
+    exit;
+}
+
 require_once __DIR__ . '/../config.php';
 
 echo "=================================================================\n";

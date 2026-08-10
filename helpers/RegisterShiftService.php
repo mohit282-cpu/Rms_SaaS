@@ -170,27 +170,42 @@ class RegisterShiftService {
             return ['success' => false, 'error' => "Opening cash float must be a non-negative amount."];
         }
 
-        // Rule: Only one active open shift per register
-        $existing = self::getActiveShift($conn, $tenantId, $registerName);
-        if ($existing) {
-            return ['success' => false, 'error' => "An active register shift (#{$existing['id']}) is already open for $registerName."];
-        }
+        $conn->begin_transaction();
+        try {
+            // Acquire exclusive row lock on open shifts for this tenant & register to prevent race conditions
+            $checkStmt = $conn->prepare("SELECT id FROM shifts WHERE restaurant_id = ? AND register_name = ? AND status = 'open' FOR UPDATE");
+            $checkStmt->bind_param("is", $tenantId, $registerName);
+            $checkStmt->execute();
+            $checkRes = $checkStmt->get_result();
+            if ($checkRes && $checkRes->num_rows > 0) {
+                $checkStmt->close();
+                $conn->rollback();
+                return ['success' => false, 'error' => "An active register shift is already open for $registerName."];
+            }
+            $checkStmt->close();
 
-        $stmt = $conn->prepare("INSERT INTO shifts (restaurant_id, register_name, staff_id, staff_name, opening_cash, notes, status, open_time) VALUES (?, ?, ?, ?, ?, ?, 'open', NOW())");
-        $stmt->bind_param("isisds", $tenantId, $registerName, $staffId, $staffName, $openingCash, $notes);
+            $stmt = $conn->prepare("INSERT INTO shifts (restaurant_id, register_name, staff_id, staff_name, opening_cash, notes, status, open_time) VALUES (?, ?, ?, ?, ?, ?, 'open', NOW())");
+            $stmt->bind_param("isisds", $tenantId, $registerName, $staffId, $staffName, $openingCash, $notes);
 
-        if (!$stmt->execute()) {
-            $err = $stmt->error;
+            if (!$stmt->execute()) {
+                $err = $stmt->error;
+                $stmt->close();
+                $conn->rollback();
+                return ['success' => false, 'error' => "Failed to open register shift: " . $err];
+            }
+
+            $shiftId = $stmt->insert_id;
             $stmt->close();
-            return ['success' => false, 'error' => "Failed to open register shift: " . $err];
+
+            $conn->commit();
+
+            Security::logAudit('REGISTER_SHIFT_OPENED', "Opened Register Shift #$shiftId ($registerName) with opening float of Rs. " . number_format($openingCash, 2));
+
+            return ['success' => true, 'shift_id' => $shiftId];
+        } catch (Throwable $e) {
+            $conn->rollback();
+            return ['success' => false, 'error' => "Failed to open shift: " . $e->getMessage()];
         }
-
-        $shiftId = $stmt->insert_id;
-        $stmt->close();
-
-        Security::logAudit('REGISTER_SHIFT_OPENED', "Opened Register Shift #$shiftId ($registerName) with opening float of Rs. " . number_format($openingCash, 2));
-
-        return ['success' => true, 'shift_id' => $shiftId];
     }
 
     /**

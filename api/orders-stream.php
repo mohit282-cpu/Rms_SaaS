@@ -139,36 +139,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Handle POST Settle & Bill Payment (tenant-scoped)
+// Legacy payment bypass (settle_table_payment) is permanently REMOVED for financial security (RMS Rule 7).
+// All bill settlements must be processed authoritatively through api/table-payment.php.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'settle_table_payment') {
-    $table_number = Security::sanitize($_POST['table_number'] ?? '');
-    if (!empty($table_number)) {
-        $conn->begin_transaction();
-        try {
-            $upd1 = $conn->prepare("UPDATE orders SET payment_status = 'paid', status = 'completed', updated_at = NOW() WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending'");
-            $upd1->bind_param("si", $table_number, $tenantId);
-            $upd1->execute();
-            $upd1->close();
-
-            $upd2 = $conn->prepare("UPDATE dining_sessions SET status = 'closed', ended_at = NOW() WHERE table_number = ? AND restaurant_id = ? AND status = 'active'");
-            $upd2->bind_param("si", $table_number, $tenantId);
-            $upd2->execute();
-            $upd2->close();
-
-            $upd3 = $conn->prepare("UPDATE tables SET status = 'cleaning' WHERE table_number = ? AND restaurant_id = ?");
-            $upd3->bind_param("si", $table_number, $tenantId);
-            $upd3->execute();
-            $upd3->close();
-
-            $conn->commit();
-            Response::success("Table $table_number bill settled & marked for cleaning!");
-        } catch (Throwable $e) {
-            $conn->rollback();
-            Response::error("Failed to settle bill: " . $e->getMessage(), 500);
-        }
-    } else {
-        Response::error("Missing table number", 400);
-    }
+    Response::error("Legacy payment bypass disabled. All bill settlements must be processed via api/table-payment.php.", 400);
 }
 
 $status_filter = Security::sanitize($_GET['status'] ?? 'all');

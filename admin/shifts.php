@@ -13,7 +13,7 @@ $error = '';
 // Ensure database schema is provisioned
 RegisterShiftService::ensureRegisterShiftSchema($conn);
 
-$staffId = (int)($_SESSION['user_id'] ?? 1);
+$staffId = Auth::userId() ?? 0;
 $staffName = $_SESSION['admin_username'] ?? 'Cashier';
 
 // Fetch active open register shift

@@ -41,7 +41,11 @@ class PermissionService {
      * Normalize a role string to its canonical key.
      */
     public static function normalizeRole(?string $role): string {
-        return strtoupper(trim((string)($role ?? '')));
+        $r = strtoupper(trim((string)($role ?? '')));
+        if ($r === 'ADMIN') return 'OWNER';
+        if ($r === 'STORE_KEEPER') return 'INVENTORY_MANAGER';
+        if ($r === 'AUDITOR') return 'ACCOUNTANT';
+        return $r;
     }
 
     /**

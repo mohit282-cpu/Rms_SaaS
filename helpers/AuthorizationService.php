@@ -98,6 +98,21 @@ class AuthorizationService {
     }
 
     /**
+     * Require an authenticated staff session AND a specific permission for JSON API.
+     * Exits with 403 JSON when the role lacks the permission.
+     */
+    public static function requirePermissionApi(string $permission): int {
+        $tenantId = self::requireStaffApi();
+        if (!self::hasPermission($permission)) {
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Access Denied: Your role does not have permission for action: ' . $permission]);
+            exit;
+        }
+        return $tenantId;
+    }
+
+    /**
      * Require an authenticated staff session AND a specific permission.
      * Exits with 403 when the role lacks the permission.
      */

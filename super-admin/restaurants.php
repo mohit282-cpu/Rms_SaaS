@@ -52,48 +52,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
 
-                    $purgeTables = [
-                        'payment_transactions', 'order_items', 'orders', 'menu_addons',
-                        'recipe_items', 'recipes', 'menu_items', 'categories',
-                        'inventory_transactions', 'stock_audits', 'inventory_alerts',
-                        'inventory_waste', 'goods_receipts', 'purchase_order_items',
-                        'purchase_orders', 'suppliers', 'inventory_items',
-                        'inventory_units', 'inventory_categories',
-                        'asset_logs', 'asset_depreciation', 'asset_maintenance',
-                        'asset_transfers', 'asset_warranties', 'assets', 'asset_categories',
-                        'waiter_calls', 'dining_sessions', 'tables', 'notifications',
-                        'audit_logs', 'landing_page_settings',
-                        'payment_gateways', 'payment_settings', 'subscriptions'
-                    ];
-
-                    $conn->begin_transaction();
-                    try {
-                        foreach ($purgeTables as $t) {
-                            $stmt = $conn->prepare("DELETE FROM `{$t}` WHERE restaurant_id = ?");
-                            $stmt->bind_param("i", $restId);
-                            $stmt->execute();
-                            $stmt->close();
-                        }
-
-                        // Delete only non-super-admin users for this restaurant
-                        $conn->query("DELETE FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 0");
-
-                        // Reassign Super Admin users to target alternative tenant so superadmin account is NEVER lost
-                        if ($hasSaUsers) {
-                            $conn->query("UPDATE admin_users SET restaurant_id = {$targetRestId} WHERE restaurant_id = {$restId} AND is_super_admin = 1");
-                        }
-
-                        $stmt = $conn->prepare("DELETE FROM restaurants WHERE id = ?");
-                        $stmt->bind_param("i", $restId);
-                        $stmt->execute();
-                        $stmt->close();
-                        $conn->commit();
-
-                        Security::logAudit("SUPER_ADMIN_DELETE_TENANT", "Super Admin permanently deleted restaurant tenant ID: {$restId} ({$delRow['restaurant_name']}) and associated tenant data.");
-                        $message = "Restaurant tenant '{$delRow['restaurant_name']}' and associated tenant data have been permanently deleted.";
-                    } catch (Throwable $e) {
-                        $conn->rollback();
-                        $error = "Failed to delete restaurant tenant: " . $e->getMessage();
+                    $resDel = TenantDeletionService::deleteTenant($conn, $restId);
+                    if ($resDel['success']) {
+                        $message = $resDel['message'];
+                    } else {
+                        $error = $resDel['error'];
                     }
                 }
             } elseif ($action === 'reset_password') {

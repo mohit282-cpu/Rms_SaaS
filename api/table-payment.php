@@ -12,6 +12,11 @@ session_write_close();
 // Staff authentication with tenant context
 $tenantId = (int)AuthorizationService::requireStaffApi();
 
+// Enforce CSRF token verification on financial/state-changing POST requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    CSRF::requireValidToken();
+}
+
 $conn = getDBConnection();
 if (!$conn) {
     Response::error('Database connection failed', 500);
@@ -19,6 +24,15 @@ if (!$conn) {
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $inTx = false;
+
+// Action-level Financial Authorization Guards (Authentication IS NOT Authorization)
+if (in_array($action, ['process_payment', 'split_bill'], true)) {
+    AuthorizationService::requirePermissionApi('payments.settle');
+} elseif ($action === 'refund') {
+    AuthorizationService::requirePermissionApi('payments.refund');
+} elseif ($action === 'ncr' || $action === 'apply_ncr') {
+    AuthorizationService::requirePermissionApi('payments.ncr');
+}
 
 try {
     switch ($action) {

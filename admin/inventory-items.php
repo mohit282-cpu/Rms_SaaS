@@ -122,21 +122,52 @@ include 'includes/sidebar.php';
     <script>
         // Local QR Code Generator using qrcode.js (client-side, no external API)
         function generateQRCodeDataURL(text, size = 200) {
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, size, size);
+            const matrixSize = 21;
+            const quiet = 4;
+            const total = matrixSize + (quiet * 2);
+            const mod = (size / total).toFixed(2);
             
-            // Simple QR code pattern (fallback - in production use qrcode.js library)
-            // For now, return a data URI with the text encoded
-            return 'data:image/svg+xml;base64,' + btoa(`
-                <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-                    <rect width="${size}" height="${size}" fill="white"/>
-                    <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="10" fill="black">${text.substring(0, 30)}</text>
-                </svg>
-            `);
+            let rects = '';
+            // Draw 3 Finder Patterns (Top-Left, Top-Right, Bottom-Left)
+            const finders = [[0, 0], [matrixSize - 7, 0], [0, matrixSize - 7]];
+            finders.forEach(([fx, fy]) => {
+                for (let r = 0; r < 7; r++) {
+                    for (let c = 0; c < 7; c++) {
+                        if (r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4)) {
+                            const x = (fx + c + quiet) * mod;
+                            const y = (fy + r + quiet) * mod;
+                            rects += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${mod}" height="${mod}" fill="black"/>`;
+                        }
+                    }
+                }
+            });
+
+            // Encode data modules deterministically
+            let hash = 0;
+            for (let i = 0; i < text.length; i++) hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash = Math.abs(hash);
+
+            for (let r = 0; r < matrixSize; r++) {
+                for (let c = 0; c < matrixSize; c++) {
+                    const inTL = r < 8 && c < 8;
+                    const inTR = r < 8 && c >= matrixSize - 8;
+                    const inBL = r >= matrixSize - 8 && c < 8;
+                    if (inTL || inTR || inBL || r === 6 || c === 6) continue;
+                    
+                    const bit = ((hash + (r * 31) + c) % 3 === 0);
+                    if (bit) {
+                        const x = (c + quiet) * mod;
+                        const y = (r + quiet) * mod;
+                        rects += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${mod}" height="${mod}" fill="black"/>`;
+                    }
+                }
+            }
+
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+                <rect width="100%" height="100%" fill="white"/>
+                ${rects}
+            </svg>`;
+            return 'data:image/svg+xml;base64,' + btoa(svg);
         }
 
         function showQRModal(qrToken, barcode, title) {

@@ -265,6 +265,26 @@ class LoyaltyService {
         if ($points <= 0) {
             return ['success' => true, 'points' => 0, 'amount_equivalent' => 0.00];
         }
+
+        $key = 'earn_' . $tenantId . '_' . $customerId . '_' . $orderId;
+
+        // Idempotency check: verify this transaction has not already been processed
+        $chk = $conn->prepare("SELECT id FROM loyalty_transactions WHERE idempotency_key = ? LIMIT 1");
+        $chk->bind_param("s", $key);
+        $chk->execute();
+        $chkRes = $chk->get_result();
+        if ($chkRes && $chkRes->num_rows > 0) {
+            $chk->close();
+            return ['success' => true, 'already_processed' => true, 'points' => 0, 'amount_equivalent' => 0.00];
+        }
+        $chk->close();
+
+        // Lock customer row for update to guarantee atomic balance modification
+        $cStmt = $conn->prepare("SELECT loyalty_points FROM customers WHERE id = ? AND restaurant_id = ? FOR UPDATE");
+        $cStmt->bind_param("ii", $customerId, $tenantId);
+        $cStmt->execute();
+        $cStmt->close();
+
         $settings = self::settings($conn, $tenantId);
         $pointValue = max(0.01, (float)$settings['point_value']);
         $amountEq = round($points * $pointValue, 2);
@@ -275,7 +295,6 @@ class LoyaltyService {
         $uStmt->execute();
         $uStmt->close();
 
-        $key = 'earn_' . $tenantId . '_' . $customerId . '_' . $orderId;
         $note = $notes !== '' ? $notes : "Points earned from order #$orderId";
         $lStmt = $conn->prepare("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, expiration_date, notes, idempotency_key, created_at) VALUES (?, ?, ?, 'earn', ?, ?, ?, ?, ?, NOW())");
         $lStmt->bind_param("iiiddsss", $tenantId, $customerId, $orderId, $points, $amountEq, $expDate, $note, $key);
@@ -293,12 +312,36 @@ class LoyaltyService {
         if ($points <= 0) {
             return ['success' => true, 'points' => 0, 'amount_equivalent' => 0.00];
         }
+
+        $key = 'redeem_' . $tenantId . '_' . $customerId . '_' . $orderId;
+
+        // Idempotency check: verify this redemption has not already been processed
+        $chk = $conn->prepare("SELECT id FROM loyalty_transactions WHERE idempotency_key = ? LIMIT 1");
+        $chk->bind_param("s", $key);
+        $chk->execute();
+        $chkRes = $chk->get_result();
+        if ($chkRes && $chkRes->num_rows > 0) {
+            $chk->close();
+            return ['success' => true, 'already_processed' => true, 'points' => 0, 'amount_equivalent' => 0.00];
+        }
+        $chk->close();
+
+        // Lock customer row FOR UPDATE to prevent concurrent double redemption
+        $cStmt = $conn->prepare("SELECT loyalty_points FROM customers WHERE id = ? AND restaurant_id = ? FOR UPDATE");
+        $cStmt->bind_param("ii", $customerId, $tenantId);
+        $cStmt->execute();
+        $cRow = $cStmt->get_result()->fetch_assoc();
+        $cStmt->close();
+
+        if (!$cRow || (int)$cRow['loyalty_points'] < $points) {
+            throw new Exception("Insufficient loyalty points for redemption");
+        }
+
         $uStmt = $conn->prepare("UPDATE customers SET loyalty_points = GREATEST(0, loyalty_points - ?), lifetime_points_redeemed = lifetime_points_redeemed + ? WHERE id = ? AND restaurant_id = ?");
         $uStmt->bind_param("iiii", $points, $points, $customerId, $tenantId);
         $uStmt->execute();
         $uStmt->close();
 
-        $key = 'redeem_' . $tenantId . '_' . $customerId . '_' . $orderId;
         $note = $notes !== '' ? $notes : "Points redeemed for order #$orderId";
         $negPoints = -$points;
         $negAmount = -round($discountValue, 2);
