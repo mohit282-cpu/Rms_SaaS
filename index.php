@@ -18,45 +18,38 @@ function rmsCanonicalUrl() {
     return $scheme . '://' . $host . $uri;
 }
 
-// Lightweight inline SVG icon system (stroke-based, inherits currentColor)
+// Inline SVG icon system (stroke-based, inherits currentColor)
 function svg_icon($name, $class = 'w-5 h-5') {
     $icons = [
-        'bolt'      => '<path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/>',
-        'scan'      => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3z"/><path d="M21 14v.01M14 21h.01M17 21h4"/>',
-        'terminal'  => '<path d="m4 8 4 4-4 4"/><path d="M12 16h8"/>',
-        'monitor'   => '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
-        'chef'      => '<path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.46.32-.84.73-1.04a4 4 0 0 0-2.14-7.59 5 5 0 0 0-9.18 0 4 4 0 0 0-2.14 7.59c.41.2.73.58.73 1.04V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/>',
-        'grid'      => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
-        'box'       => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
-        'book'      => '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
-        'truck'     => '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
-        'wrench'    => '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
-        'card'      => '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
-        'wallet'    => '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>',
-        'users'     => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
-        'chart'     => '<path d="M3 3v18h18"/><path d="M8 17v-4"/><path d="M13 17V7"/><path d="M18 17v-7"/>',
-        'shield'    => '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
-        'lock'      => '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-        'key'       => '<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78Zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
-        'check'     => '<path d="M20 6 9 17l-5-5"/>',
-        'x'         => '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-        'arrow'     => '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
-        'menu'      => '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
-        'close'     => '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-        'phone'     => '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
-        'mail'      => '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
-        'clock'     => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
-        'bell'      => '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
-        'refresh'   => '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
-        'layers'    => '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
-        'building'  => '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/>',
-        'plus'      => '<path d="M5 12h14"/><path d="M12 5v14"/>',
-        'activity'  => '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
-        'login'     => '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
-        'utensils'  => '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
-        'receipt'   => '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
-        'search'    => '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-        'spark'     => '<path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/>',
+        'bolt'        => '<path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/>',
+        'scan'        => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3z"/><path d="M21 14v.01M14 21h.01M17 21h4"/>',
+        'terminal'    => '<path d="m4 8 4 4-4 4"/><path d="M12 16h8"/>',
+        'monitor'     => '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
+        'chef'        => '<path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.46.32-.84.73-1.04a4 4 0 0 0-2.14-7.59 5 5 0 0 0-9.18 0 4 4 0 0 0-2.14 7.59c.41.2.73.58.73 1.04V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/>',
+        'grid'        => '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+        'box'         => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+        'wrench'      => '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+        'card'        => '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
+        'users'       => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'chart'       => '<path d="M3 3v18h18"/><path d="M8 17v-4"/><path d="M13 17V7"/><path d="M18 17v-7"/>',
+        'shield'      => '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+        'lock'        => '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        'check'       => '<path d="M20 6 9 17l-5-5"/>',
+        'x'           => '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+        'arrow'       => '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+        'menu'        => '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
+        'phone'       => '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+        'mail'        => '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+        'clock'       => '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+        'plus'        => '<path d="M5 12h14"/><path d="M12 5v14"/>',
+        'activity'    => '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+        'login'       => '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
+        'utensils'    => '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+        'receipt'     => '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
+        'spark'       => '<path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/>',
+        'split'       => '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.17-2.83L4 4"/><path d="m20 4-6.83 6.87A4 4 0 0 0 12 13.7"/>',
+        'calendar'    => '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+        'badge-percent'=> '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="M9 9h.01"/><path d="M15 15h.01"/>',
     ];
     if (!isset($icons[$name])) {
         return '';
@@ -82,7 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $restType = Security::sanitize(trim($_POST['restaurant_type'] ?? 'Casual Dining'));
             $tableCount = max(1, min(1000, (int)($_POST['table_count'] ?? 10)));
             $preferredPlan = Security::sanitize(trim($_POST['preferred_plan'] ?? 'BUSINESS'));
-            $message = Security::sanitize(trim($_POST['message'] ?? ''));
+            $currentPos = Security::sanitize(trim($_POST['current_system'] ?? ''));
+            $userMsg = Security::sanitize(trim($_POST['message'] ?? ''));
+
+            $message = $userMsg;
+            if (!empty($currentPos)) {
+                $message = "Current POS/System: " . $currentPos . ($userMsg ? "\n\nNote: " . $userMsg : "");
+            }
 
             if (empty($restName) || empty($ownerName) || empty($email) || empty($phone)) {
                 $requestError = "Please fill in all required fields (Restaurant Name, Owner Name, Email, Phone).";
@@ -134,26 +133,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Static NPR pricing tiers (shown to all visitors; plan is stored with the onboarding request)
+// Static NPR pricing tiers
 $pricingPlans = [
     [
         'code'    => 'ESSENTIAL',
         'name'    => 'Essential',
         'price'   => 'NPR 1,500',
         'suffix'  => '/ month',
-        'tagline' => 'For small cafés & boutique diners',
-        'cta'     => 'Choose Essential',
+        'tagline' => 'For small cafés & boutique diners needing fast ordering & billing.',
+        'cta'     => 'Request Essential',
         'popular' => false,
-        'base'    => '',
         'features'=> [
-            'QR Table Ordering & Digital Menu',
-            'Cashier Billing POS Terminal',
+            'RPOS Cashier Register & Billing',
+            'Digital QR Code Table Ordering',
             'Kitchen Display System (KDS)',
-            'Table & Floor Map Management',
-            'Order Status & Live Receipts',
-            'Basic Daily Sales Reports',
-            'Single Restaurant Tenant Account',
-            'Up to 3 Staff User Accounts',
+            'Floor & Table Status Map',
+            'Basic Revenue Reports',
+            'Single Tenant Account',
+            'Up to 3 Staff Accounts',
         ],
     ],
     [
@@ -161,18 +158,17 @@ $pricingPlans = [
         'name'    => 'Business',
         'price'   => 'NPR 2,500',
         'suffix'  => '/ month',
-        'tagline' => 'For growing high-velocity restaurants',
-        'cta'     => 'Choose Business',
+        'tagline' => 'For busy, high-volume restaurants requiring complete operations control.',
+        'cta'     => 'Request Business',
         'popular' => true,
-        'base'    => 'Everything in Essential, plus:',
         'features'=> [
-            'Advanced POS & Split Bills',
-            'Full KDS Timer & Audio Alerts',
-            'Inventory & Unit Stock Tracking',
-            'Recipe & Ingredient Deductions',
-            'Supplier Records & Purchases',
-            'Nepal Digital Payments (eSewa, Khalti)',
-            'Advanced Revenue & Margin Reports',
+            'Everything in Essential, plus:',
+            'Split Bill & Partial Payments',
+            'NCR / Complimentary Billing',
+            'Loyalty Points & Customer Profiles',
+            'Ingredient & Recipe Stock Deductions',
+            'Nepal Digital Wallets (eSewa, Khalti)',
+            'Waste & Reorder Stock Alerts',
             'Up to 10 Staff Roles & Accounts',
         ],
     ],
@@ -181,19 +177,18 @@ $pricingPlans = [
         'name'    => 'Business Pro',
         'price'   => 'NPR 4,500',
         'suffix'  => '/ month',
-        'tagline' => 'For busy, multi-station establishments',
-        'cta'     => 'Choose Business Pro',
+        'tagline' => 'For multi-station establishments demanding advanced governance & inventory.',
+        'cta'     => 'Request Business Pro',
         'popular' => false,
-        'base'    => 'Everything in Business, plus:',
         'features'=> [
+            'Everything in Business, plus:',
             'Kitchen Asset & Warranty Register',
-            'Purchase Order & Stock Adjustments',
-            'Waste Recording & Low-Stock Alerts',
-            'Full Role-Based Access Control (RBAC)',
-            'Audit Logging & Security Trail',
-            'Unlimited Staff User Accounts',
-            'Priority Onboarding & Support',
-            'Increased System Throughput Limits',
+            'Purchase Order Management',
+            'Full RBAC Role & Permission Schemas',
+            'Audit Logging & Security Controls',
+            'Product Performance & Margin Analytics',
+            'Unlimited Staff Accounts',
+            'Priority Onboarding & Dedicated Support',
         ],
     ],
     [
@@ -201,18 +196,16 @@ $pricingPlans = [
         'name'    => 'Enterprise',
         'price'   => 'Custom Pricing',
         'suffix'  => '',
-        'tagline' => 'For multi-branch restaurant chains',
+        'tagline' => 'For multi-branch restaurant chains and franchise networks.',
         'cta'     => 'Contact Sales',
         'popular' => false,
-        'base'    => 'Tailored multi-location deployment:',
         'features'=> [
-            'Multi-branch Central Workspace',
-            'Centralized Franchise Reporting',
-            'Custom Role & Permission Schemas',
-            'Custom Payment Gateway Integrations',
+            'Tailored multi-location workspace',
+            'Centralized Franchise Analytics',
+            'Custom Payment Gateway Connectors',
+            'Custom SLA & Automated Backups',
             'Dedicated Account Manager',
-            'Custom SLA & Backup Options',
-            'On-Site Staff Training',
+            'On-Site Staff Training & Setup',
             'Direct API & Export Access',
         ],
     ],
@@ -227,18 +220,18 @@ $csrfField = CSRF::getField();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#090909">
     <title>RMS SaaS — Restaurant Management System</title>
-    <meta name="description" content="Run your restaurant with one connected platform for POS, QR ordering, kitchen operations, inventory, payments and analytics.">
+    <meta name="description" content="Run your entire restaurant with one connected platform for RPOS, QR ordering, kitchen display, table management, billing, inventory, staff, and analytics.">
     <link rel="canonical" href="<?= rmsCanonicalUrl() ?>">
 
     <!-- Open Graph / Social -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="RMS SaaS">
     <meta property="og:title" content="RMS SaaS — Restaurant Management System">
-    <meta property="og:description" content="Run your restaurant with one connected platform for POS, QR ordering, kitchen operations, inventory, payments and analytics.">
+    <meta property="og:description" content="Run your entire restaurant from one powerful platform: RPOS, KDS, Table Management, Billing, Inventory, QR Ordering, Staff Management & Analytics.">
     <meta property="og:url" content="<?= rmsCanonicalUrl() ?>">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="RMS SaaS — Restaurant Management System">
-    <meta name="twitter:description" content="POS, QR ordering, KDS, inventory, payments and real-time operations — connected in one restaurant operating system.">
+    <meta name="twitter:description" content="Commercial restaurant operating system for modern venues. POS, QR ordering, KDS, inventory & real-time analytics.">
 
     <!-- Favicon (inline SVG) -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f59e0b'/%3E%3Cpath d='M17.5 4 8 18h6.5L13 28l9.5-14H16l1.5-10z' fill='%2309090b'/%3E%3C/svg%3E">
@@ -276,7 +269,7 @@ $csrfField = CSRF::getField();
         ::selection { background: #f59e0b; color: #090909; }
 
         /* Anchor offset below sticky header */
-        [id] { scroll-margin-top: 88px; }
+        [id] { scroll-margin-top: 96px; }
 
         /* Focus states */
         a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
@@ -288,17 +281,17 @@ $csrfField = CSRF::getField();
         /* Subtle grid background */
         .bg-subtle-grid {
             background-image:
-                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-            background-size: 56px 56px;
+                linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+            background-size: 48px 48px;
         }
 
-        /* Ambient subtle glow */
+        /* Ambient glow for hero screenshot frame */
         .ambient-glow {
-            box-shadow: 0 0 80px -20px rgba(245, 158, 11, 0.15), 0 30px 60px -20px rgba(0, 0, 0, 0.9);
+            box-shadow: 0 0 70px -15px rgba(245, 158, 11, 0.18), 0 25px 50px -12px rgba(0, 0, 0, 0.95);
         }
 
-        /* FAQ chevron rotation */
+        /* FAQ chevron animation */
         .faq-btn[aria-expanded="true"] .faq-icon { transform: rotate(180deg); }
         .faq-icon { transition: transform .25s ease; }
 
@@ -311,33 +304,33 @@ $csrfField = CSRF::getField();
 </head>
 <body class="min-h-screen bg-[#090909] text-white antialiased font-sans">
 
-    <!-- ============ NAVIGATION ============ -->
-    <header class="sticky top-0 z-50 bg-[#090909]/90 backdrop-blur-md border-b border-[#242424]">
+    <!-- ============ STICKY NAVIGATION ============ -->
+    <header class="sticky top-0 z-50 bg-[#090909]/95 backdrop-blur-md border-b border-[#242424]">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-20">
-                <!-- Brand -->
+                <!-- Brand Logo -->
                 <a href="index.php" class="flex items-center gap-3 group" aria-label="RMS SaaS Homepage">
-                    <div class="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-[#090909] font-black group-hover:scale-105 transition-transform">
-                        <?= svg_icon('bolt', 'w-5 h-5 stroke-[2.2]') ?>
+                    <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-[#090909] font-black group-hover:scale-105 transition-transform shadow-md">
+                        <?= svg_icon('bolt', 'w-5 h-5 stroke-[2.4]') ?>
                     </div>
                     <div class="leading-none">
                         <span class="block text-lg font-extrabold tracking-tight text-white">RMS SaaS</span>
-                        <span class="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mt-0.5">Platform</span>
+                        <span class="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mt-0.5">Restaurant Platform</span>
                     </div>
                 </a>
 
                 <!-- Desktop links -->
-                <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400" aria-label="Main Navigation">
-                    <a href="#features" class="hover:text-white transition-colors">Features</a>
-                    <a href="#showcase" class="hover:text-white transition-colors">Platform</a>
-                    <a href="#pricing" class="hover:text-white transition-colors">Pricing</a>
-                    <a href="#how-it-works" class="hover:text-white transition-colors">How It Works</a>
-                    <a href="#faq" class="hover:text-white transition-colors">FAQ</a>
+                <nav class="hidden md:flex items-center gap-8 text-sm font-semibold text-zinc-300" aria-label="Main Navigation">
+                    <a href="#showcase" class="hover:text-amber-400 transition-colors">Product</a>
+                    <a href="#features" class="hover:text-amber-400 transition-colors">Features</a>
+                    <a href="#how-it-works" class="hover:text-amber-400 transition-colors">How It Works</a>
+                    <a href="#pricing" class="hover:text-amber-400 transition-colors">Pricing</a>
+                    <a href="#faq" class="hover:text-amber-400 transition-colors">FAQ</a>
                 </nav>
 
                 <!-- Action CTAs -->
-                <div class="hidden sm:flex items-center gap-4">
-                    <a href="admin/login.php" class="px-4 py-2 rounded-xl border border-[#242424] bg-[#111111] text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 transition-all">
+                <div class="hidden sm:flex items-center gap-3.5">
+                    <a href="admin/login.php" class="px-4 py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-xs font-bold text-zinc-200 hover:text-white hover:border-zinc-600 transition-all">
                         Login
                     </a>
                     <a href="#request-demo" class="px-5 py-2.5 rounded-xl bg-amber-500 text-[#090909] text-xs font-extrabold hover:bg-amber-400 active:scale-95 transition-all shadow-md">
@@ -345,22 +338,22 @@ $csrfField = CSRF::getField();
                     </a>
                 </div>
 
-                <!-- Mobile menu button -->
-                <button id="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="mobile-menu" class="md:hidden p-2 rounded-lg border border-[#242424] bg-[#111111] text-zinc-300 hover:text-white">
+                <!-- Mobile menu toggle button -->
+                <button id="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="mobile-menu" class="md:hidden p-2.5 rounded-xl border border-[#242424] bg-[#111111] text-zinc-300 hover:text-white">
                     <?= svg_icon('menu', 'w-6 h-6') ?>
                 </button>
             </div>
         </div>
 
-        <!-- Mobile menu dropdown -->
+        <!-- Mobile Drawer Navigation -->
         <div id="mobile-menu" class="hidden md:hidden border-t border-[#242424] bg-[#090909] px-4 pt-3 pb-6 space-y-3">
-            <a href="#features" class="mobile-link block py-2 text-sm font-medium text-zinc-300 hover:text-white">Features</a>
-            <a href="#showcase" class="mobile-link block py-2 text-sm font-medium text-zinc-300 hover:text-white">Platform</a>
-            <a href="#pricing" class="mobile-link block py-2 text-sm font-medium text-zinc-300 hover:text-white">Pricing</a>
-            <a href="#how-it-works" class="mobile-link block py-2 text-sm font-medium text-zinc-300 hover:text-white">How It Works</a>
-            <a href="#faq" class="mobile-link block py-2 text-sm font-medium text-zinc-300 hover:text-white">FAQ</a>
+            <a href="#showcase" class="mobile-link block py-2 text-sm font-semibold text-zinc-300 hover:text-amber-400">Product Showcase</a>
+            <a href="#features" class="mobile-link block py-2 text-sm font-semibold text-zinc-300 hover:text-amber-400">Features</a>
+            <a href="#how-it-works" class="mobile-link block py-2 text-sm font-semibold text-zinc-300 hover:text-amber-400">How It Works</a>
+            <a href="#pricing" class="mobile-link block py-2 text-sm font-semibold text-zinc-300 hover:text-amber-400">Pricing</a>
+            <a href="#faq" class="mobile-link block py-2 text-sm font-semibold text-zinc-300 hover:text-amber-400">FAQ</a>
             <div class="pt-3 border-t border-[#242424] flex flex-col gap-2.5">
-                <a href="admin/login.php" class="w-full text-center py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-xs font-semibold text-zinc-200">
+                <a href="admin/login.php" class="w-full text-center py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-xs font-bold text-zinc-200">
                     Restaurant Login
                 </a>
                 <a href="#request-demo" class="w-full text-center py-3 rounded-xl bg-amber-500 text-[#090909] text-xs font-extrabold">
@@ -370,135 +363,136 @@ $csrfField = CSRF::getField();
         </div>
     </header>
 
-    <!-- ============ HERO SECTION ============ -->
-    <section class="relative pt-20 pb-24 md:pt-32 md:pb-36 border-b border-[#242424] overflow-hidden bg-subtle-grid">
+    <!-- ============ 1. HERO SECTION ============ -->
+    <section class="relative pt-16 pb-20 md:pt-28 md:pb-32 border-b border-[#242424] overflow-hidden bg-subtle-grid">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="max-w-4xl mx-auto text-center space-y-8">
-                <!-- Badge -->
-                <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-zinc-900 border border-[#242424] text-amber-400 text-xs font-semibold">
-                    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-                    <span>Restaurant Operating System</span>
+            <div class="max-w-4xl mx-auto text-center space-y-6">
+                <!-- Trust Badge -->
+                <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#111111] border border-[#242424] text-amber-400 text-xs font-extrabold uppercase tracking-wider">
+                    <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span>Built for Modern Restaurants</span>
                 </div>
 
-                <!-- Main Hero Headline -->
-                <h1 class="text-4xl sm:text-6xl lg:text-[76px] font-black text-white tracking-tight leading-[1.05]">
-                    Run Your Entire Restaurant<br class="hidden sm:block"> From One Powerful Platform
+                <!-- Headline -->
+                <h1 class="text-4xl sm:text-6xl lg:text-7xl font-black text-white tracking-tight leading-[1.05]">
+                    Run Your Entire Restaurant From One Powerful Platform
                 </h1>
 
-                <!-- Supporting copy -->
-                <p class="text-base sm:text-xl text-[#A1A1AA] max-w-3xl mx-auto leading-relaxed font-normal">
-                    POS, QR ordering, kitchen operations, inventory, assets, payments and analytics — connected in one restaurant operating system.
+                <!-- Supporting Copy explaining modules -->
+                <p class="text-base sm:text-lg lg:text-xl text-[#A1A1AA] max-w-3xl mx-auto leading-relaxed font-normal">
+                    Connect <strong class="text-white font-semibold">RPOS</strong>, <strong class="text-white font-semibold">Kitchen Display System</strong>, <strong class="text-white font-semibold">Table Management</strong>, <strong class="text-white font-semibold">Billing</strong>, <strong class="text-white font-semibold">Inventory</strong>, <strong class="text-white font-semibold">QR Ordering</strong>, <strong class="text-white font-semibold">Staff Management</strong>, and <strong class="text-white font-semibold">Analytics</strong> into a single unified workspace.
                 </p>
 
-                <!-- CTAs -->
-                <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
-                    <a href="#request-demo" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-sm hover:bg-amber-400 active:scale-95 transition-all shadow-lg">
+                <!-- Action CTAs -->
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-3">
+                    <a href="#request-demo" class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-sm hover:bg-amber-400 active:scale-95 transition-all shadow-lg">
                         Request a Demo
                         <?= svg_icon('arrow', 'w-4 h-4 stroke-[2.4]') ?>
                     </a>
-                    <a href="#features" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#111111] border border-[#242424] text-white font-semibold text-sm hover:border-zinc-700 hover:bg-[#161616] active:scale-95 transition-all">
+                    <a href="#showcase" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#111111] border border-[#242424] text-white font-semibold text-sm hover:border-zinc-600 hover:bg-[#161616] active:scale-95 transition-all">
                         Explore Platform
                     </a>
                 </div>
 
-                <!-- Trust indicators -->
-                <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 pt-4 text-xs font-medium text-zinc-500">
-                    <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Multi-Tenant SaaS Architecture</span>
+                <!-- Clean Trust Statement -->
+                <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 pt-2 text-xs font-semibold text-zinc-400">
+                    <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Multi-Tenant SaaS</span>
                     <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Real-Time KDS &amp; POS</span>
-                    <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Integrated Digital Payments</span>
+                    <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Nepal Digital Payments</span>
+                    <span class="inline-flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Enterprise RBAC</span>
                 </div>
             </div>
 
-            <!-- ============ DOMINANT REAL PRODUCT VISUAL ============ -->
-            <div class="relative max-w-6xl mx-auto mt-16 md:mt-24">
+            <!-- DOMINANT REAL PRODUCT SCREENSHOT PREVIEW -->
+            <div class="relative max-w-5xl mx-auto mt-14 md:mt-20">
                 <div class="rounded-2xl border border-[#242424] bg-[#111111] overflow-hidden ambient-glow">
-                    <!-- Browser Window Header -->
+                    <!-- Frame Header -->
                     <div class="flex items-center justify-between px-5 py-3.5 border-b border-[#242424] bg-[#161616]">
                         <div class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-zinc-700"></span>
-                            <span class="w-3 h-3 rounded-full bg-zinc-700"></span>
-                            <span class="w-3 h-3 rounded-full bg-zinc-700"></span>
+                            <span class="w-3 h-3 rounded-full bg-rose-500/80"></span>
+                            <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+                            <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
                         </div>
-                        <div class="flex items-center gap-2 px-4 py-1 rounded-md bg-[#090909] border border-[#242424] text-xs font-mono text-zinc-400">
+                        <div class="flex items-center gap-2 px-4 py-1 rounded-md bg-[#090909] border border-[#242424] text-xs font-mono text-zinc-300">
                             <?= svg_icon('lock', 'w-3.5 h-3.5 text-emerald-400') ?>
                             app.rms-saas.com/workspace/live
                         </div>
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 text-[11px] font-semibold">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 text-[11px] font-bold">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                             Live System
                         </span>
                     </div>
 
-                    <!-- Inner Product UI Preview -->
-                    <div class="p-6 sm:p-8 space-y-6">
-                        <!-- Top Stats Row -->
+                    <!-- Inner Mockup Display -->
+                    <div class="p-5 sm:p-8 space-y-6">
+                        <!-- Top Operational Metrics -->
                         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                             <div class="p-4 rounded-xl bg-[#090909] border border-[#242424]">
-                                <div class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Today's Revenue</div>
+                                <div class="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Today's Revenue</div>
                                 <div class="text-2xl font-black text-white mt-1">NPR 48,250</div>
-                                <div class="text-xs font-medium text-emerald-400 mt-1">↑ 14% vs yesterday</div>
+                                <div class="text-xs font-semibold text-emerald-400 mt-1">↑ 14% vs yesterday</div>
                             </div>
                             <div class="p-4 rounded-xl bg-[#090909] border border-[#242424]">
-                                <div class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Active Table Orders</div>
-                                <div class="text-2xl font-black text-amber-400 mt-1">18 Sessions</div>
-                                <div class="text-xs text-zinc-500 mt-1">12 QR &bull; 6 Cashier</div>
+                                <div class="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Active Tables</div>
+                                <div class="text-2xl font-black text-amber-400 mt-1">14 / 20 Occupied</div>
+                                <div class="text-xs text-zinc-400 mt-1">70% capacity active</div>
                             </div>
                             <div class="p-4 rounded-xl bg-[#090909] border border-[#242424]">
-                                <div class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Floor Occupancy</div>
-                                <div class="text-2xl font-black text-white mt-1">14 / 20 Tables</div>
-                                <div class="text-xs font-medium text-zinc-400 mt-1">70% capacity occupied</div>
+                                <div class="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Kitchen Queue</div>
+                                <div class="text-2xl font-black text-white mt-1">4 Prep Tickets</div>
+                                <div class="text-xs text-zinc-400 mt-1">Avg prep: 11 mins</div>
                             </div>
                             <div class="p-4 rounded-xl bg-[#090909] border border-[#242424]">
-                                <div class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Kitchen Queue (KDS)</div>
-                                <div class="text-2xl font-black text-emerald-400 mt-1">4 Prep Tickets</div>
-                                <div class="text-xs text-zinc-500 mt-1">Avg prep time: 11 mins</div>
+                                <div class="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">QR Digital Orders</div>
+                                <div class="text-2xl font-black text-emerald-400 mt-1">32 Sessions</div>
+                                <div class="text-xs text-zinc-400 mt-1">Direct guest orders</div>
                             </div>
                         </div>
 
-                        <!-- Mid Operational Layout -->
+                        <!-- Main Split Interface Mock -->
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <!-- Live Orders Stream -->
+                            <!-- Live Orders Feed -->
                             <div class="lg:col-span-2 p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-4">
                                 <div class="flex items-center justify-between border-b border-[#242424] pb-3">
-                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Live Order Monitor</span>
-                                    <span class="text-xs text-zinc-500 font-mono">Updated just now</span>
+                                    <span class="text-xs font-extrabold text-white uppercase tracking-wider">Live Order Monitor</span>
+                                    <span class="text-xs text-zinc-400 font-mono">Updated just now</span>
                                 </div>
                                 <div class="space-y-3">
                                     <div class="p-3.5 rounded-xl bg-[#161616] border border-[#242424] flex items-center justify-between gap-4">
                                         <div class="flex items-center gap-3">
-                                            <span class="px-2 py-1 rounded bg-amber-500 text-[#090909] font-black text-xs">T-04</span>
+                                            <span class="px-2.5 py-1 rounded-lg bg-amber-500 text-[#090909] font-black text-xs">T-04</span>
                                             <div>
-                                                <div class="text-xs font-extrabold text-white">Chicken Biryani ×2, Cold Coffee ×2</div>
-                                                <div class="text-[11px] text-zinc-500 mt-0.5">QR Session #1085 &bull; Starters served</div>
+                                                <div class="text-xs font-bold text-white">2× Royal Chicken Biryani, 2× Cold Coffee</div>
+                                                <div class="text-[11px] text-zinc-400 mt-0.5">QR Session #1085 &bull; Starters served</div>
                                             </div>
                                         </div>
                                         <div class="text-right">
-                                            <span class="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-semibold">PREPARING</span>
-                                            <div class="text-xs font-mono text-zinc-400 mt-1">NPR 1,450</div>
+                                            <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs font-bold">PREPARING</span>
+                                            <div class="text-xs font-mono text-zinc-300 mt-1">NPR 1,450</div>
                                         </div>
                                     </div>
 
                                     <div class="p-3.5 rounded-xl bg-[#161616] border border-[#242424] flex items-center justify-between gap-4">
                                         <div class="flex items-center gap-3">
-                                            <span class="px-2 py-1 rounded bg-zinc-700 text-white font-black text-xs">T-09</span>
+                                            <span class="px-2.5 py-1 rounded-lg bg-zinc-700 text-white font-black text-xs">T-09</span>
                                             <div>
-                                                <div class="text-xs font-extrabold text-white">Paneer Butter Masala, Butter Naan ×4</div>
-                                                <div class="text-[11px] text-zinc-500 mt-0.5">Cashier Order &bull; Bill generated</div>
+                                                <div class="text-xs font-bold text-white">1× Paneer Masala, 4× Butter Naan</div>
+                                                <div class="text-[11px] text-zinc-400 mt-0.5">Cashier Order &bull; Bill generated</div>
                                             </div>
                                         </div>
                                         <div class="text-right">
-                                            <span class="px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">READY</span>
-                                            <div class="text-xs font-mono text-zinc-400 mt-1">NPR 920</div>
+                                            <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold">READY</span>
+                                            <div class="text-xs font-mono text-zinc-300 mt-1">NPR 920</div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Live KDS Ticket View -->
+                            <!-- Live KDS Ticket Frame -->
                             <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-4">
                                 <div class="flex items-center justify-between border-b border-[#242424] pb-3">
-                                    <span class="text-xs font-bold text-white uppercase tracking-wider">Kitchen Ticket</span>
-                                    <span class="text-xs font-mono text-amber-400">Timer: 08:42</span>
+                                    <span class="text-xs font-extrabold text-white uppercase tracking-wider">KDS Prep Ticket</span>
+                                    <span class="text-xs font-mono text-amber-400">08:42</span>
                                 </div>
                                 <div class="space-y-2 text-xs">
                                     <div class="flex justify-between text-zinc-400"><span>Table 05 &bull; 4 Guests</span><span class="text-zinc-500">Ticket #1085</span></div>
@@ -519,333 +513,167 @@ $csrfField = CSRF::getField();
         </div>
     </section>
 
-    <!-- ============ PROBLEM → SOLUTION ============ -->
-    <section class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
-                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                    Stop Managing Your Restaurant With Disconnected Tools
-                </h2>
-                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    POS in one system, kitchen tickets on paper, inventory in spreadsheets, and payments logged manually. Disconnected tools cause order delays, stock leakage, and fragmented reporting.
-                </p>
-            </div>
-
-            <!-- Solution Highlight -->
-            <div class="max-w-4xl mx-auto rounded-2xl border border-[#242424] bg-[#111111] p-8 sm:p-12 space-y-8">
-                <div class="text-center space-y-2">
-                    <span class="text-xs font-extrabold uppercase tracking-widest text-amber-400">The RMS Architecture</span>
-                    <h3 class="text-2xl sm:text-3xl font-extrabold text-white">One Platform. One Source of Truth.</h3>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pt-4">
-                    <!-- Disconnected Old Way -->
-                    <div class="space-y-4 pr-0 md:pr-6 border-b md:border-b-0 md:border-r border-[#242424] pb-6 md:pb-0">
-                        <div class="text-sm font-extrabold text-zinc-400 uppercase tracking-wider">The Disconnected Way</div>
-                        <ul class="space-y-3 text-sm text-zinc-400">
-                            <li class="flex items-start gap-3">
-                                <span class="text-rose-500 font-bold">✕</span>
-                                <span>POS software operating independently from kitchen staff</span>
-                            </li>
-                            <li class="flex items-start gap-3">
-                                <span class="text-rose-500 font-bold">✕</span>
-                                <span>Paper tickets getting lost or misplaced during peak hours</span>
-                            </li>
-                            <li class="flex items-start gap-3">
-                                <span class="text-rose-500 font-bold">✕</span>
-                                <span>Inventory counts drifting with untracked waste &amp; leakage</span>
-                            </li>
-                            <li class="flex items-start gap-3">
-                                <span class="text-rose-500 font-bold">✕</span>
-                                <span>Manual end-of-day calculations across separate ledgers</span>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <!-- The Unified RMS Way -->
-                    <div class="space-y-4 pl-0 md:pl-6">
-                        <div class="text-sm font-extrabold text-emerald-400 uppercase tracking-wider">The RMS SaaS Solution</div>
-                        <ul class="space-y-3 text-sm text-zinc-200 font-medium">
-                            <li class="flex items-start gap-3">
-                                <span class="text-emerald-400 font-bold">✓</span>
-                                <span>QR ordering &amp; POS send tickets straight to the KDS</span>
-                            </li>
-                            <li class="flex items-start gap-3">
-                                <span class="text-emerald-400 font-bold">✓</span>
-                                <span>Live preparation timers keep kitchen staff accountable</span>
-                            </li>
-                            <li class="flex items-start gap-3">
-                                <span class="text-emerald-400 font-bold">✓</span>
-                                <span>Recipe-based automatic stock deduction on every sale</span>
-                            </li>
-                            <li class="flex items-start gap-3">
-                                <span class="text-emerald-400 font-bold">✓</span>
-                                <span>Unified real-time revenue, margins, and staff reports</span>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ============ CORE PRODUCT FEATURES (BENTO LAYOUT) ============ -->
-    <section id="features" class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
-                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                    Everything Your Restaurant Needs
-                </h2>
-                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    Eight connected modules designed specifically for modern restaurant execution.
-                </p>
-            </div>
-
-            <!-- Bento Grid Layout -->
-            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-
-                <!-- 1. Restaurant POS (Large Feature - Spans 2 cols) -->
-                <div class="md:col-span-2 rounded-2xl border border-[#242424] bg-[#111111] p-8 flex flex-col justify-between space-y-6 hover:border-zinc-700 transition-colors">
-                    <div class="space-y-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                            <?= svg_icon('terminal', 'w-5 h-5') ?>
-                        </div>
-                        <h3 class="text-2xl font-extrabold text-white">1. Restaurant POS</h3>
-                        <p class="text-sm text-[#A1A1AA] leading-relaxed">
-                            A high-speed cashier terminal for bill generation, split payments, dining session management, and receipt printing.
-                        </p>
-                    </div>
-
-                    <!-- Mini POS UI Visual -->
-                    <div class="p-4 rounded-xl bg-[#090909] border border-[#242424] space-y-3 font-mono text-xs">
-                        <div class="flex justify-between text-zinc-400 border-b border-[#242424] pb-2">
-                            <span>SESSION T-04</span>
-                            <span class="text-emerald-400">POS BILLING ACTIVE</span>
-                        </div>
-                        <div class="flex justify-between text-white">
-                            <span>2× Royal Chicken Biryani</span>
-                            <span>NPR 900</span>
-                        </div>
-                        <div class="flex justify-between text-white">
-                            <span>2× Cold Coffee</span>
-                            <span>NPR 300</span>
-                        </div>
-                        <div class="flex justify-between text-amber-400 font-extrabold pt-2 border-t border-[#242424]">
-                            <span>TOTAL BILL</span>
-                            <span>NPR 1,200</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 2. QR Table Ordering (Medium Feature) -->
-                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-8 flex flex-col justify-between space-y-6 hover:border-zinc-700 transition-colors">
-                    <div class="space-y-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                            <?= svg_icon('scan', 'w-5 h-5') ?>
-                        </div>
-                        <h3 class="text-xl font-extrabold text-white">2. QR Table Ordering</h3>
-                        <p class="text-sm text-[#A1A1AA] leading-relaxed">
-                            Guests scan table QR codes to browse digital menus and place orders without waiting.
-                        </p>
-                    </div>
-                    <div class="p-3 rounded-xl bg-[#090909] border border-[#242424] text-xs text-zinc-400 space-y-1">
-                        <div class="font-bold text-white">Phone Browser Menu</div>
-                        <div>No app installation required</div>
-                    </div>
-                </div>
-
-                <!-- 3. Kitchen Display System (Medium Feature) -->
-                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-8 flex flex-col justify-between space-y-6 hover:border-zinc-700 transition-colors">
-                    <div class="space-y-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                            <?= svg_icon('chef', 'w-5 h-5') ?>
-                        </div>
-                        <h3 class="text-xl font-extrabold text-white">3. Kitchen Display (KDS)</h3>
-                        <p class="text-sm text-[#A1A1AA] leading-relaxed">
-                            Real-time order screens for kitchen staff with live timers and status management.
-                        </p>
-                    </div>
-                    <div class="p-3 rounded-xl bg-[#090909] border border-[#242424] text-xs text-emerald-400 font-mono">
-                        Ticket #1085 &bull; 06:14 prep timer
-                    </div>
-                </div>
-
-                <!-- 4. Inventory Management (Small Feature) -->
-                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-3 hover:border-zinc-700 transition-colors">
-                    <div class="w-9 h-9 rounded-lg bg-zinc-900 border border-[#242424] text-amber-400 flex items-center justify-center">
-                        <?= svg_icon('box', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-lg font-bold text-white">4. Inventory Control</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Recipe-based ingredient deduction, low-stock alerts, purchase records, and waste tracking.
-                    </p>
-                </div>
-
-                <!-- 5. Asset Management (Small Feature) -->
-                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-3 hover:border-zinc-700 transition-colors">
-                    <div class="w-9 h-9 rounded-lg bg-zinc-900 border border-[#242424] text-amber-400 flex items-center justify-center">
-                        <?= svg_icon('wrench', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-lg font-bold text-white">5. Asset Management</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Track kitchen equipment, warranty dates, maintenance logs, and asset depreciation.
-                    </p>
-                </div>
-
-                <!-- 6. Payment Management (Small Feature) -->
-                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-3 hover:border-zinc-700 transition-colors">
-                    <div class="w-9 h-9 rounded-lg bg-zinc-900 border border-[#242424] text-amber-400 flex items-center justify-center">
-                        <?= svg_icon('card', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-lg font-bold text-white">6. Payment Management</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Configurable Nepal digital wallets (eSewa, Khalti, Fonepay) alongside cash and card settlement.
-                    </p>
-                </div>
-
-                <!-- 7. Staff & RBAC (Small Feature) -->
-                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-3 hover:border-zinc-700 transition-colors">
-                    <div class="w-9 h-9 rounded-lg bg-zinc-900 border border-[#242424] text-amber-400 flex items-center justify-center">
-                        <?= svg_icon('users', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-lg font-bold text-white">7. Staff &amp; RBAC</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Role-based access permissions for Owner, Manager, Cashier, Kitchen, Waiter, and Inventory staff.
-                    </p>
-                </div>
-
-            </div>
-        </div>
-    </section>
-
-    <!-- ============ INTERACTIVE PRODUCT SHOWCASE (TABS) ============ -->
-    <section id="showcase" class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
+    <!-- ============ 4. "EXPERIENCE RMS IN ACTION" (INTERACTIVE SHOWCASE) ============ -->
+    <section id="showcase" class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="max-w-3xl mx-auto text-center space-y-4 mb-12">
                 <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
                     Experience RMS in Action
                 </h2>
                 <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    Explore the specialized module interfaces that power daily restaurant operations.
+                    Select a core restaurant module to view its specialized real-time interface.
                 </p>
             </div>
 
             <!-- Tab Buttons -->
-            <div class="flex flex-wrap justify-center gap-2 mb-10">
-                <button type="button" class="tab-btn active px-5 py-2.5 rounded-xl border border-amber-500 bg-amber-500/10 text-amber-400 text-xs font-bold transition-all" data-tab="pos">
-                    POS Terminal
+            <div class="flex flex-wrap justify-center gap-2.5 mb-10">
+                <button type="button" class="tab-btn active px-5 py-3 rounded-xl border border-amber-500 bg-amber-500/10 text-amber-400 text-xs font-extrabold transition-all" data-tab="rpos">
+                    RPOS Register
                 </button>
-                <button type="button" class="tab-btn px-5 py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-bold transition-all" data-tab="qr">
-                    QR Ordering
+                <button type="button" class="tab-btn px-5 py-3 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-extrabold transition-all" data-tab="kds">
+                    Kitchen Display (KDS)
                 </button>
-                <button type="button" class="tab-btn px-5 py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-bold transition-all" data-tab="kitchen">
-                    Kitchen KDS
+                <button type="button" class="tab-btn px-5 py-3 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-extrabold transition-all" data-tab="floor">
+                    Floor &amp; Tables
                 </button>
-                <button type="button" class="tab-btn px-5 py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-bold transition-all" data-tab="inventory">
+                <button type="button" class="tab-btn px-5 py-3 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-extrabold transition-all" data-tab="billing">
+                    Billing &amp; Payments
+                </button>
+                <button type="button" class="tab-btn px-5 py-3 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-extrabold transition-all" data-tab="inventory">
                     Inventory Control
-                </button>
-                <button type="button" class="tab-btn px-5 py-2.5 rounded-xl border border-[#242424] bg-[#111111] text-zinc-400 hover:text-white text-xs font-bold transition-all" data-tab="assets">
-                    Asset Register
                 </button>
             </div>
 
             <!-- Tab Panels -->
             <div class="max-w-5xl mx-auto">
-                <!-- POS Panel -->
-                <div id="tab-pos" class="tab-panel rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
+                <!-- RPOS Panel -->
+                <div id="tab-rpos" class="tab-panel rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
                         <div>
-                            <h3 class="text-xl font-extrabold text-white">Restaurant POS Terminal</h3>
-                            <p class="text-xs text-zinc-400 mt-1">Rapid cashier billing &amp; instant session totals</p>
+                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">RPOS Register</h3>
+                            <p class="text-xs sm:text-sm text-zinc-400 mt-1">Fast table-based billing and order management.</p>
                         </div>
-                        <span class="px-3 py-1 rounded bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Fast Cashier Mode</span>
+                        <span class="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Cashier POS Module</span>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div class="md:col-span-2 p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-4">
-                            <div class="text-xs font-bold text-zinc-400">QUICK BILLING GRID</div>
-                            <div class="grid grid-cols-3 gap-2">
-                                <div class="p-3 rounded-lg bg-[#161616] text-center"><div class="text-xs font-bold">Biryani</div><div class="text-[10px] text-zinc-500">NPR 450</div></div>
-                                <div class="p-3 rounded-lg bg-[#161616] text-center"><div class="text-xs font-bold">Momo</div><div class="text-[10px] text-zinc-500">NPR 180</div></div>
-                                <div class="p-3 rounded-lg bg-[#161616] text-center"><div class="text-xs font-bold">Chowmein</div><div class="text-[10px] text-zinc-500">NPR 220</div></div>
-                                <div class="p-3 rounded-lg bg-[#161616] text-center"><div class="text-xs font-bold">Tea</div><div class="text-[10px] text-zinc-500">NPR 80</div></div>
-                                <div class="p-3 rounded-lg bg-[#161616] text-center"><div class="text-xs font-bold">Lassi</div><div class="text-[10px] text-zinc-500">NPR 120</div></div>
-                                <div class="p-3 rounded-lg bg-[#161616] text-center"><div class="text-xs font-bold">Naan</div><div class="text-[10px] text-zinc-500">NPR 60</div></div>
+                            <div class="text-xs font-bold text-zinc-400">QUICK MENU SELECTION</div>
+                            <div class="grid grid-cols-3 gap-2.5">
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center"><div class="text-xs font-bold text-white">Chicken Biryani</div><div class="text-[11px] text-amber-400 font-mono mt-0.5">NPR 450</div></div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center"><div class="text-xs font-bold text-white">Steam Momo</div><div class="text-[11px] text-amber-400 font-mono mt-0.5">NPR 200</div></div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center"><div class="text-xs font-bold text-white">Veg Chowmein</div><div class="text-[11px] text-amber-400 font-mono mt-0.5">NPR 180</div></div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center"><div class="text-xs font-bold text-white">Cold Coffee</div><div class="text-[11px] text-amber-400 font-mono mt-0.5">NPR 150</div></div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center"><div class="text-xs font-bold text-white">Mango Lassi</div><div class="text-[11px] text-amber-400 font-mono mt-0.5">NPR 120</div></div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center"><div class="text-xs font-bold text-white">Butter Naan</div><div class="text-[11px] text-amber-400 font-mono mt-0.5">NPR 60</div></div>
                             </div>
                         </div>
                         <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3 text-xs">
-                            <div class="font-bold text-white">BILL SUMMARY</div>
+                            <div class="font-bold text-white uppercase tracking-wider">ACTIVE REGISTER CART</div>
                             <div class="flex justify-between text-zinc-400"><span>Table 04 Session</span><span>#1085</span></div>
-                            <div class="flex justify-between text-zinc-400"><span>Items Total</span><span>NPR 1,200</span></div>
-                            <div class="flex justify-between text-zinc-400"><span>VAT (13%)</span><span>NPR 156</span></div>
-                            <div class="flex justify-between font-extrabold text-white text-sm pt-2 border-t border-[#242424]"><span>NET TOTAL</span><span>NPR 1,356</span></div>
-                            <div class="pt-2"><button type="button" class="w-full py-2 bg-amber-500 text-[#090909] font-black rounded text-xs">PRINT RECEIPT &amp; SETTLE</button></div>
+                            <div class="flex justify-between text-zinc-300"><span>2× Biryani</span><span>NPR 900</span></div>
+                            <div class="flex justify-between text-zinc-300"><span>2× Cold Coffee</span><span>NPR 300</span></div>
+                            <div class="flex justify-between text-zinc-400 pt-2 border-t border-[#242424]"><span>VAT (13%)</span><span>NPR 156</span></div>
+                            <div class="flex justify-between font-extrabold text-white text-sm pt-2 border-t border-[#242424]"><span>TOTAL BILL</span><span>NPR 1,356</span></div>
+                            <div class="pt-2"><button type="button" class="w-full py-2.5 bg-amber-500 text-[#090909] font-black rounded-lg text-xs">PRINT RECEIPT &amp; SETTLE</button></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- QR Panel -->
-                <div id="tab-qr" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
+                <!-- KDS Panel -->
+                <div id="tab-kds" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
                         <div>
-                            <h3 class="text-xl font-extrabold text-white">QR Table Ordering Interface</h3>
-                            <p class="text-xs text-zinc-400 mt-1">Direct guest ordering from table QR codes</p>
+                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">Kitchen Display System</h3>
+                            <p class="text-xs sm:text-sm text-zinc-400 mt-1">Send orders directly to kitchen workflows with audio alerts &amp; live timers.</p>
                         </div>
-                        <span class="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs font-mono font-bold">Zero App Download</span>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3">
-                            <div class="text-xs font-bold text-white">DIGITAL MENU VIEW</div>
-                            <div class="p-3 rounded bg-[#161616] flex justify-between items-center text-xs">
-                                <div><div class="font-bold">Steam Chicken Momo</div><div class="text-[10px] text-zinc-500">10 pcs with special chutney</div></div>
-                                <span class="text-amber-400 font-bold">NPR 220</span>
-                            </div>
-                            <div class="p-3 rounded bg-[#161616] flex justify-between items-center text-xs">
-                                <div><div class="font-bold">Paneer Butter Masala</div><div class="text-[10px] text-zinc-500">Rich gravy with butter</div></div>
-                                <span class="text-amber-400 font-bold">NPR 380</span>
-                            </div>
-                        </div>
-                        <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3 text-xs">
-                            <div class="font-bold text-white">LIVE SESSION ORDERING</div>
-                            <p class="text-zinc-400 leading-relaxed">Guests can order initial items, wait for food delivery, and add extra drinks or desserts to the exact same table bill at any time during their visit.</p>
-                            <div class="p-3 rounded bg-emerald-500/10 text-emerald-400 font-semibold text-[11px]">
-                                Instant Kitchen Dispatch Upon Order Confirmation
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Kitchen Panel -->
-                <div id="tab-kitchen" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
-                        <div>
-                            <h3 class="text-xl font-extrabold text-white">Kitchen Display System (KDS)</h3>
-                            <p class="text-xs text-zinc-400 mt-1">Live order tickets with prep timers and audio notifications</p>
-                        </div>
-                        <span class="px-3 py-1 rounded bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Station 1 Screen</span>
+                        <span class="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Kitchen Screen</span>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="p-4 rounded-xl bg-[#090909] border border-amber-500/30 space-y-3 text-xs">
-                            <div class="flex justify-between font-bold"><span class="text-amber-400">#1085 &bull; Table 04</span><span class="text-zinc-500">08:12</span></div>
+                            <div class="flex justify-between font-bold"><span class="text-amber-400">Ticket #1085 &bull; Table 04</span><span class="text-zinc-400 font-mono">08:12</span></div>
                             <div class="space-y-1 font-semibold text-white">
                                 <div>2× Royal Chicken Biryani</div>
                                 <div>2× Cold Coffee</div>
                             </div>
-                            <button type="button" class="w-full py-1.5 bg-amber-500 text-[#090909] font-black rounded">MARK AS PREPARING</button>
+                            <button type="button" class="w-full py-2 bg-amber-500 text-[#090909] font-black rounded-lg">MARK PREPARING</button>
                         </div>
                         <div class="p-4 rounded-xl bg-[#090909] border border-emerald-500/30 space-y-3 text-xs">
-                            <div class="flex justify-between font-bold"><span class="text-emerald-400">#1084 &bull; Table 09</span><span class="text-zinc-500">14:05</span></div>
+                            <div class="flex justify-between font-bold"><span class="text-emerald-400">Ticket #1084 &bull; Table 09</span><span class="text-zinc-400 font-mono">14:05</span></div>
                             <div class="space-y-1 font-semibold text-white">
                                 <div>1× Paneer Butter Masala</div>
                                 <div>4× Butter Naan</div>
                             </div>
-                            <button type="button" class="w-full py-1.5 bg-emerald-500 text-[#090909] font-black rounded">MARK AS READY</button>
+                            <button type="button" class="w-full py-2 bg-emerald-500 text-[#090909] font-black rounded-lg">MARK READY</button>
                         </div>
                         <div class="p-4 rounded-xl bg-[#090909] border border-[#242424] space-y-3 text-xs opacity-60">
-                            <div class="flex justify-between font-bold"><span class="text-zinc-400">#1083 &bull; Table 12</span><span class="text-zinc-500">Served</span></div>
+                            <div class="flex justify-between font-bold"><span class="text-zinc-400">Ticket #1083 &bull; Table 12</span><span class="text-zinc-500">Served</span></div>
                             <div class="space-y-1 text-zinc-400">
                                 <div>2× Veg Chowmein</div>
                             </div>
-                            <div class="text-[10px] text-zinc-500 font-bold text-center">COMPLETED</div>
+                            <div class="text-[10px] text-zinc-400 font-bold text-center pt-2">COMPLETED</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Floor & Tables Panel -->
+                <div id="tab-floor" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
+                        <div>
+                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">Floor &amp; Tables Management</h3>
+                            <p class="text-xs sm:text-sm text-zinc-400 mt-1">See table status and active orders in real time across floor layouts.</p>
+                        </div>
+                        <span class="px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-mono font-bold">Floor Map</span>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div class="p-4 rounded-xl bg-[#090909] border border-amber-500/40 text-center space-y-1">
+                            <div class="font-extrabold text-amber-400 text-base">Table 01</div>
+                            <div class="text-white font-semibold">Occupied (4 Guests)</div>
+                            <div class="text-[11px] text-zinc-400">NPR 2,400 &bull; Active</div>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[#090909] border border-emerald-500/40 text-center space-y-1">
+                            <div class="font-extrabold text-emerald-400 text-base">Table 02</div>
+                            <div class="text-white font-semibold">Vacant</div>
+                            <div class="text-[11px] text-zinc-400">Ready for guests</div>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[#090909] border border-amber-500/40 text-center space-y-1">
+                            <div class="font-extrabold text-amber-400 text-base">Table 03</div>
+                            <div class="text-white font-semibold">Occupied (2 Guests)</div>
+                            <div class="text-[11px] text-zinc-400">NPR 1,150 &bull; Active</div>
+                        </div>
+                        <div class="p-4 rounded-xl bg-[#090909] border border-[#242424] text-center space-y-1">
+                            <div class="font-extrabold text-zinc-400 text-base">Table 04</div>
+                            <div class="text-white font-semibold">Reserved</div>
+                            <div class="text-[11px] text-zinc-400">Arrival at 7:30 PM</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Billing Panel -->
+                <div id="tab-billing" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
+                        <div>
+                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">Billing &amp; Payments</h3>
+                            <p class="text-xs sm:text-sm text-zinc-400 mt-1">Complete customer payments directly from the counter with split &amp; NCR options.</p>
+                        </div>
+                        <span class="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Counter Billing</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                        <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3">
+                            <div class="font-bold text-white">SUPPORTED PAYMENT MODES</div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center font-bold text-emerald-400">eSewa QR</div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center font-bold text-purple-400">Khalti Pay</div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center font-bold text-amber-400">Cash Settlement</div>
+                                <div class="p-3 rounded-lg bg-[#161616] border border-[#242424] text-center font-bold text-blue-400">POS Card Swipe</div>
+                            </div>
+                        </div>
+                        <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3">
+                            <div class="font-bold text-white">ADVANCED FINANCIAL ACTIONS</div>
+                            <div class="space-y-2 text-zinc-300">
+                                <div class="p-2.5 rounded bg-[#161616] flex justify-between"><span>Equal &amp; Item Split Bill</span><span class="text-amber-400 font-bold">Active</span></div>
+                                <div class="p-2.5 rounded bg-[#161616] flex justify-between"><span>NCR / Complimentary Waiver</span><span class="text-emerald-400 font-bold">Manager Guarded</span></div>
+                                <div class="p-2.5 rounded bg-[#161616] flex justify-between"><span>Refund &amp; Restock Engine</span><span class="text-emerald-400 font-bold">Audit Logged</span></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -854,110 +682,230 @@ $csrfField = CSRF::getField();
                 <div id="tab-inventory" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
                         <div>
-                            <h3 class="text-xl font-extrabold text-white">Inventory &amp; Recipe Deductions</h3>
-                            <p class="text-xs text-zinc-400 mt-1">Automatic stock management tied to dish sales</p>
+                            <h3 class="text-xl sm:text-2xl font-extrabold text-white">Inventory Control</h3>
+                            <p class="text-xs sm:text-sm text-zinc-400 mt-1">Track stock, consumption and critical inventory with recipe deductions.</p>
                         </div>
-                        <span class="px-3 py-1 rounded bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Live Stock Ledger</span>
+                        <span class="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Stock Ledger</span>
                     </div>
                     <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3 text-xs">
                         <div class="grid grid-cols-4 font-bold text-zinc-400 border-b border-[#242424] pb-2">
-                            <span>INGREDIENT</span><span>CURRENT STOCK</span><span>REORDER LEVEL</span><span>AUTO DEDUCTION</span>
+                            <span>INGREDIENT</span><span>STOCK</span><span>REORDER LEVEL</span><span>AUTO DEDUCTION</span>
                         </div>
                         <div class="grid grid-cols-4 text-white"><span>Chicken Breast</span><span>14.5 kg</span><span>5.0 kg</span><span class="text-emerald-400">−0.40 kg / sale</span></div>
                         <div class="grid grid-cols-4 text-white"><span>Basmati Rice</span><span>42.0 kg</span><span>10.0 kg</span><span class="text-emerald-400">−0.30 kg / sale</span></div>
                         <div class="grid grid-cols-4 text-white"><span>Paneer Block</span><span>2.8 kg</span><span class="text-amber-400 font-bold">3.0 kg (LOW)</span><span class="text-emerald-400">−0.25 kg / sale</span></div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
 
-                <!-- Assets Panel -->
-                <div id="tab-assets" class="tab-panel hidden rounded-2xl border border-[#242424] bg-[#111111] p-6 sm:p-10 space-y-6">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#242424] pb-6">
+    <!-- ============ 5. CATEGORIZED FEATURES SECTION ============ -->
+    <section id="features" class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
+                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+                    Comprehensive Feature Architecture
+                </h2>
+                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
+                    Organized into 5 specialized operational domains built for restaurant execution.
+                </p>
+            </div>
+
+            <!-- Feature Categories Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+
+                <!-- Category 1: CORE POS -->
+                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-5 hover:border-zinc-600 transition-all flex flex-col justify-between">
+                    <div class="space-y-4">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                            <?= svg_icon('terminal', 'w-5 h-5') ?>
+                        </div>
                         <div>
-                            <h3 class="text-xl font-extrabold text-white">Kitchen Asset Management</h3>
-                            <p class="text-xs text-zinc-400 mt-1">Equipment warranty, maintenance, and valuation tracking</p>
+                            <h3 class="text-lg font-extrabold text-white">CORE POS</h3>
+                            <p class="text-xs text-zinc-400 mt-1">Counter &amp; cashier billing register</p>
                         </div>
-                        <span class="px-3 py-1 rounded bg-amber-500/10 text-amber-400 text-xs font-mono font-bold">Asset Register</span>
+                        <ul class="space-y-2 text-xs text-zinc-300 border-t border-[#242424] pt-4">
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> RPOS Terminal</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Counter Billing</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Split Bill Engine</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Order Refunds</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Order Voids</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> NCR Complimentary</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Multi-Payment Support</li>
+                        </ul>
                     </div>
-                    <div class="p-5 rounded-xl bg-[#090909] border border-[#242424] space-y-3 text-xs">
-                        <div class="grid grid-cols-4 font-bold text-zinc-400 border-b border-[#242424] pb-2">
-                            <span>EQUIPMENT</span><span>PURCHASE COST</span><span>WARRANTY STATUS</span><span>MAINTENANCE</span>
+                </div>
+
+                <!-- Category 2: RESTAURANT OPERATIONS -->
+                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-5 hover:border-zinc-600 transition-all flex flex-col justify-between">
+                    <div class="space-y-4">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                            <?= svg_icon('utensils', 'w-5 h-5') ?>
                         </div>
-                        <div class="grid grid-cols-4 text-white"><span>Commercial Espresso Machine</span><span>NPR 180,000</span><span class="text-emerald-400">Active (2027)</span><span>Serviced July 2026</span></div>
-                        <div class="grid grid-cols-4 text-white"><span>Deep Fryer (Double Tank)</span><span>NPR 65,000</span><span class="text-amber-400">Expires Oct 2026</span><span>Check Scheduled</span></div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-white">OPERATIONS</h3>
+                            <p class="text-xs text-zinc-400 mt-1">Floor &amp; kitchen workflows</p>
+                        </div>
+                        <ul class="space-y-2 text-xs text-zinc-300 border-t border-[#242424] pt-4">
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Floor &amp; Table Map</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Table Reservations</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Kitchen Display (KDS)</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Live Order Queue</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Staff Management</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Waiter Call Alerts</li>
+                        </ul>
                     </div>
+                </div>
+
+                <!-- Category 3: INVENTORY -->
+                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-5 hover:border-zinc-600 transition-all flex flex-col justify-between">
+                    <div class="space-y-4">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                            <?= svg_icon('box', 'w-5 h-5') ?>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-white">INVENTORY</h3>
+                            <p class="text-xs text-zinc-400 mt-1">Stock &amp; recipe tracking</p>
+                        </div>
+                        <ul class="space-y-2 text-xs text-zinc-300 border-t border-[#242424] pt-4">
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Product Catalog</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Categories &amp; Addons</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Recipe Deductions</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Unit Stock Counts</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Supplier Purchases</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Wastage Logging</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Category 4: CUSTOMER -->
+                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-5 hover:border-zinc-600 transition-all flex flex-col justify-between">
+                    <div class="space-y-4">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                            <?= svg_icon('users', 'w-5 h-5') ?>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-white">CUSTOMER</h3>
+                            <p class="text-xs text-zinc-400 mt-1">Guest engagement &amp; QR</p>
+                        </div>
+                        <ul class="space-y-2 text-xs text-zinc-300 border-t border-[#242424] pt-4">
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Customer Profiles</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Loyalty Points System</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Phone Number Lookup</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Table QR Code Menu</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Guest Order History</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Category 5: ANALYTICS -->
+                <div class="rounded-2xl border border-[#242424] bg-[#111111] p-6 space-y-5 hover:border-zinc-600 transition-all flex flex-col justify-between">
+                    <div class="space-y-4">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                            <?= svg_icon('chart', 'w-5 h-5') ?>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-extrabold text-white">ANALYTICS</h3>
+                            <p class="text-xs text-zinc-400 mt-1">Reporting &amp; margins</p>
+                        </div>
+                        <ul class="space-y-2 text-xs text-zinc-300 border-t border-[#242424] pt-4">
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Daily Revenue Reports</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Sales Breakdown</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Item Performance</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Inventory Valuation</li>
+                            <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Executive Reports</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ 8. TRUST & ARCHITECTURE ============ -->
+    <section class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
+                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+                    Everything You Need to Run a Modern Restaurant
+                </h2>
+                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
+                    Tested multi-tenant architecture engineered for continuous uptime and strict data protection.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <?= svg_icon('shield', 'w-5 h-5') ?>
+                    </div>
+                    <h3 class="text-lg font-extrabold text-white">Secure Multi-Tenant Architecture</h3>
+                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Database and session isolation ensures absolute logical separation between restaurant accounts.</p>
+                </div>
+
+                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <?= svg_icon('users', 'w-5 h-5') ?>
+                    </div>
+                    <h3 class="text-lg font-extrabold text-white">Role-Based Access (RBAC)</h3>
+                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Strict role control for Owner, Manager, Cashier, Chef, Waiter, and Inventory staff accounts.</p>
+                </div>
+
+                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <?= svg_icon('activity', 'w-5 h-5') ?>
+                    </div>
+                    <h3 class="text-lg font-extrabold text-white">Real-Time Restaurant Operations</h3>
+                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Live socket/polling synchronization between table QR scans, cashiers, and kitchen displays.</p>
+                </div>
+
+                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <?= svg_icon('card', 'w-5 h-5') ?>
+                    </div>
+                    <h3 class="text-lg font-extrabold text-white">Secure Payments</h3>
+                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Integrates eSewa, Khalti, Cash, and Card settlements with server-side DECIMAL calculation.</p>
+                </div>
+
+                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <?= svg_icon('box', 'w-5 h-5') ?>
+                    </div>
+                    <h3 class="text-lg font-extrabold text-white">Inventory Control</h3>
+                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Automatic recipe stock deductions, waste recording, supplier orders, and reorder threshold alerts.</p>
+                </div>
+
+                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <?= svg_icon('chart', 'w-5 h-5') ?>
+                    </div>
+                    <h3 class="text-lg font-extrabold text-white">Automated Reporting</h3>
+                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Real-time daily revenue, item margins, staff activity, and audit logs exported on demand.</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- ============ HOW IT WORKS ============ -->
-    <section id="how-it-works" class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
+    <!-- ============ 7. PRICING SECTION ============ -->
+    <section id="pricing" class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
                 <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                    Go Live in 4 Simple Steps
+                    Simple NPR Subscription Plans
                 </h2>
                 <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    A streamlined onboarding process guided by the RMS platform team.
+                    Transparent pricing tailored to your restaurant's volume and staffing needs.
                 </p>
             </div>
 
-            <!-- Steps Grid -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                <div class="space-y-3">
-                    <div class="text-4xl font-black text-amber-400">01</div>
-                    <h3 class="text-lg font-extrabold text-white">Request Demo</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Fill in your restaurant details and preferred subscription plan using our online form.
-                    </p>
-                </div>
-
-                <div class="space-y-3">
-                    <div class="text-4xl font-black text-zinc-600">02</div>
-                    <h3 class="text-lg font-extrabold text-white">Super Admin Reviews</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Our platform administration team reviews your application and validates your requirements.
-                    </p>
-                </div>
-
-                <div class="space-y-3">
-                    <div class="text-4xl font-black text-zinc-600">03</div>
-                    <h3 class="text-lg font-extrabold text-white">Receive Credentials</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Get isolated tenant access credentials for your restaurant owner account.
-                    </p>
-                </div>
-
-                <div class="space-y-3">
-                    <div class="text-4xl font-black text-zinc-600">04</div>
-                    <h3 class="text-lg font-extrabold text-white">Start Operating</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">
-                        Configure table QR codes, input menu items, setup staff roles, and launch sales.
-                    </p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ============ PRICING SECTION ============ -->
-    <section id="pricing" class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
-                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                    Simple NPR Pricing for Every Restaurant
-                </h2>
-                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    Transparent plans that scale with your restaurant's volume.
-                </p>
-            </div>
-
-            <!-- Pricing Cards -->
+            <!-- Pricing Cards Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 items-stretch">
                 <?php foreach ($pricingPlans as $p): ?>
-                    <div class="<?= $p['popular'] ? 'border-2 border-amber-500 bg-[#161616]' : 'border border-[#242424] bg-[#111111]' ?> rounded-2xl p-7 flex flex-col justify-between space-y-6 relative">
+                    <div class="<?= $p['popular'] ? 'border-2 border-amber-500 bg-[#161616]' : 'border border-[#242424] bg-[#111111]' ?> rounded-2xl p-7 flex flex-col justify-between space-y-6 relative hover:border-amber-500/50 transition-all">
 
                         <?php if ($p['popular']): ?>
-                            <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3.5 py-0.5 rounded-full bg-amber-500 text-[#090909] text-[10px] font-black uppercase tracking-wider">
+                            <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-amber-500 text-[#090909] text-[10px] font-black uppercase tracking-wider shadow-md">
                                 Most Popular
                             </div>
                         <?php endif; ?>
@@ -966,12 +914,11 @@ $csrfField = CSRF::getField();
                             <div>
                                 <div class="text-xs font-bold uppercase tracking-wider text-amber-400"><?= $p['name'] ?></div>
                                 <div class="text-3xl font-black text-white mt-1"><?= $p['price'] ?></div>
-                                <div class="text-xs text-zinc-500 mt-0.5"><?= $p['suffix'] ?: 'Custom setup' ?></div>
+                                <div class="text-xs text-zinc-400 mt-0.5"><?= $p['suffix'] ?: 'Custom contract' ?></div>
                             </div>
                             <p class="text-xs text-[#A1A1AA] leading-relaxed"><?= $p['tagline'] ?></p>
 
                             <div class="pt-4 border-t border-[#242424] space-y-2 text-xs text-zinc-300">
-                                <?php if ($p['base']): ?><div class="font-bold text-zinc-400 mb-2"><?= $p['base'] ?></div><?php endif; ?>
                                 <?php foreach ($p['features'] as $f): ?>
                                     <div class="flex items-start gap-2">
                                         <span class="text-emerald-400 font-bold">✓</span>
@@ -981,7 +928,7 @@ $csrfField = CSRF::getField();
                             </div>
                         </div>
 
-                        <a href="#request-demo" data-plan-code="<?= $p['code'] ?>" class="<?= $p['popular'] ? 'bg-amber-500 text-[#090909] hover:bg-amber-400' : 'bg-[#161616] text-white border border-[#242424] hover:border-zinc-600' ?> w-full text-center py-3 rounded-xl text-xs font-extrabold transition-all">
+                        <a href="#request-demo" data-plan-code="<?= $p['code'] ?>" class="<?= $p['popular'] ? 'bg-amber-500 text-[#090909] hover:bg-amber-400' : 'bg-[#161616] text-white border border-[#242424] hover:border-zinc-500' ?> w-full text-center py-3 rounded-xl text-xs font-extrabold transition-all">
                             <?= $p['cta'] ?>
                         </a>
                     </div>
@@ -990,63 +937,15 @@ $csrfField = CSRF::getField();
         </div>
     </section>
 
-    <!-- ============ TRUST & SECURITY ============ -->
-    <section class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="max-w-3xl mx-auto text-center space-y-4 mb-16">
-                <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                    Built for Secure Enterprise Operations
-                </h2>
-                <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    Proven multi-tenant isolation and data protection safeguards.
-                </p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-2">
-                    <div class="w-8 h-8 rounded-lg bg-zinc-900 text-emerald-400 flex items-center justify-center mb-3">
-                        <?= svg_icon('shield', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-base font-bold text-white">Tenant Isolation</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Database and session isolation ensures complete separation between restaurant accounts.</p>
-                </div>
-
-                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-2">
-                    <div class="w-8 h-8 rounded-lg bg-zinc-900 text-emerald-400 flex items-center justify-center mb-3">
-                        <?= svg_icon('users', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-base font-bold text-white">Role-Based Access</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Strict role permissions for owners, managers, cashiers, chefs, waiters, and inventory staff.</p>
-                </div>
-
-                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-2">
-                    <div class="w-8 h-8 rounded-lg bg-zinc-900 text-emerald-400 flex items-center justify-center mb-3">
-                        <?= svg_icon('lock', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-base font-bold text-white">Secure Auth</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">BCRYPT password hashing, CSRF token verification, and session timeout controls.</p>
-                </div>
-
-                <div class="p-6 rounded-2xl border border-[#242424] bg-[#111111] space-y-2">
-                    <div class="w-8 h-8 rounded-lg bg-zinc-900 text-emerald-400 flex items-center justify-center mb-3">
-                        <?= svg_icon('receipt', 'w-4 h-4') ?>
-                    </div>
-                    <h3 class="text-base font-bold text-white">Audit Logging</h3>
-                    <p class="text-xs text-[#A1A1AA] leading-relaxed">Full audit logging for sensitive administrative and financial transactions.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ============ RESTAURANT REQUEST FORM ============ -->
-    <section id="request-demo" class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
+    <!-- ============ 9. REQUEST DEMO FORM ============ -->
+    <section id="request-demo" class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="text-center space-y-4 mb-12">
                 <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                    Request Your Restaurant Account
+                    Request a Demo &amp; Setup
                 </h2>
                 <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    Fill out your restaurant details below to request a demonstration and tenant workspace setup.
+                    Provide your restaurant details to request a demonstration and tenant workspace setup.
                 </p>
             </div>
 
@@ -1055,11 +954,11 @@ $csrfField = CSRF::getField();
                     <div class="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
                         <?= svg_icon('check', 'w-6 h-6 stroke-[3]') ?>
                     </div>
-                    <h3 class="text-xl font-extrabold text-white">Demo Request Received</h3>
-                    <p class="text-xs text-zinc-300 max-w-md mx-auto leading-relaxed">
+                    <h3 class="text-2xl font-extrabold text-white">Demo Request Received</h3>
+                    <p class="text-xs sm:text-sm text-zinc-300 max-w-md mx-auto leading-relaxed">
                         Thank you! Your request code is <span class="font-mono text-amber-400 font-bold"><?= htmlspecialchars($lastRequestCode) ?></span>. Our team will review your application and contact you shortly.
                     </p>
-                    <a href="index.php" class="inline-block mt-4 px-6 py-2.5 rounded-xl bg-[#111111] border border-[#242424] text-xs font-bold text-white">Return to Home</a>
+                    <a href="index.php" class="inline-block mt-4 px-6 py-2.5 rounded-xl bg-[#111111] border border-[#242424] text-xs font-bold text-white hover:border-zinc-600">Return to Home</a>
                 </div>
             <?php else: ?>
 
@@ -1076,43 +975,48 @@ $csrfField = CSRF::getField();
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
                         <div>
-                            <label for="restaurant_name" class="block font-bold text-zinc-300 mb-1.5">Restaurant Name <span class="text-amber-400">*</span></label>
+                            <label for="restaurant_name" class="block font-bold text-zinc-200 mb-1.5">Restaurant Name <span class="text-amber-400">*</span></label>
                             <input type="text" id="restaurant_name" name="restaurant_name" required placeholder="e.g. Himalayan Kitchen" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white placeholder-zinc-600 outline-none focus:border-amber-500">
                         </div>
 
                         <div>
-                            <label for="owner_name" class="block font-bold text-zinc-300 mb-1.5">Owner Full Name <span class="text-amber-400">*</span></label>
+                            <label for="owner_name" class="block font-bold text-zinc-200 mb-1.5">Owner Full Name <span class="text-amber-400">*</span></label>
                             <input type="text" id="owner_name" name="owner_name" required placeholder="e.g. Ramesh Sharma" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white placeholder-zinc-600 outline-none focus:border-amber-500">
                         </div>
 
                         <div>
-                            <label for="email" class="block font-bold text-zinc-300 mb-1.5">Email Address <span class="text-amber-400">*</span></label>
+                            <label for="email" class="block font-bold text-zinc-200 mb-1.5">Email Address <span class="text-amber-400">*</span></label>
                             <input type="email" id="email" name="email" required placeholder="owner@restaurant.com" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white placeholder-zinc-600 outline-none focus:border-amber-500">
                         </div>
 
                         <div>
-                            <label for="phone" class="block font-bold text-zinc-300 mb-1.5">Contact Phone <span class="text-amber-400">*</span></label>
+                            <label for="phone" class="block font-bold text-zinc-200 mb-1.5">Contact Phone <span class="text-amber-400">*</span></label>
                             <input type="tel" id="phone" name="phone" required placeholder="98XXXXXXXX" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white placeholder-zinc-600 outline-none focus:border-amber-500">
                         </div>
 
                         <div>
-                            <label for="restaurant_type" class="block font-bold text-zinc-300 mb-1.5">Restaurant Type</label>
+                            <label for="restaurant_type" class="block font-bold text-zinc-200 mb-1.5">Restaurant Type</label>
                             <select id="restaurant_type" name="restaurant_type" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white outline-none focus:border-amber-500">
                                 <option value="Casual Dining" selected>Casual Dining</option>
                                 <option value="Fine Dining">Fine Dining</option>
                                 <option value="Fast Food / QSR">Fast Food / QSR</option>
-                                <option value="Cafe & Bakery">Cafe & Bakery</option>
-                                <option value="Bar & Lounge">Bar & Lounge</option>
+                                <option value="Cafe & Bakery">Cafe &amp; Bakery</option>
+                                <option value="Bar & Lounge">Bar &amp; Lounge</option>
                             </select>
                         </div>
 
                         <div>
-                            <label for="table_count" class="block font-bold text-zinc-300 mb-1.5">Number of Tables <span class="text-amber-400">*</span></label>
+                            <label for="table_count" class="block font-bold text-zinc-200 mb-1.5">Number of Tables <span class="text-amber-400">*</span></label>
                             <input type="number" id="table_count" name="table_count" min="1" max="1000" value="10" required class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white outline-none focus:border-amber-500">
                         </div>
 
-                        <div class="sm:col-span-2">
-                            <label for="preferred_plan" class="block font-bold text-zinc-300 mb-1.5">Preferred Plan</label>
+                        <div>
+                            <label for="current_system" class="block font-bold text-zinc-200 mb-1.5">Current POS / System (Optional)</label>
+                            <input type="text" id="current_system" name="current_system" placeholder="e.g. Manual paper bills, legacy POS" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white placeholder-zinc-600 outline-none focus:border-amber-500">
+                        </div>
+
+                        <div>
+                            <label for="preferred_plan" class="block font-bold text-zinc-200 mb-1.5">Preferred Plan</label>
                             <select id="preferred_plan" name="preferred_plan" class="w-full h-11 bg-[#090909] border border-[#242424] rounded-xl px-3.5 text-white outline-none focus:border-amber-500">
                                 <option value="ESSENTIAL">Essential — NPR 1,500/month</option>
                                 <option value="BUSINESS" selected>Business — NPR 2,500/month</option>
@@ -1122,58 +1026,60 @@ $csrfField = CSRF::getField();
                         </div>
 
                         <div class="sm:col-span-2">
-                            <label for="message" class="block font-bold text-zinc-300 mb-1.5">Additional Requirements (Optional)</label>
-                            <textarea id="message" name="message" rows="3" placeholder="Tell us about your restaurant..." class="w-full bg-[#090909] border border-[#242424] rounded-xl p-3 text-white placeholder-zinc-600 outline-none focus:border-amber-500"></textarea>
+                            <label for="message" class="block font-bold text-zinc-200 mb-1.5">Additional Requirements (Optional)</label>
+                            <textarea id="message" name="message" rows="3" placeholder="Tell us about your restaurant setup..." class="w-full bg-[#090909] border border-[#242424] rounded-xl p-3 text-white placeholder-zinc-600 outline-none focus:border-amber-500"></textarea>
                         </div>
                     </div>
 
                     <div class="pt-2 flex flex-col sm:flex-row items-center gap-4">
-                        <button type="submit" class="btn-submit w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-xs hover:bg-amber-400 active:scale-95 transition-all">
+                        <button type="submit" class="btn-submit w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-xs hover:bg-amber-400 active:scale-95 transition-all">
                             <span class="btn-label">Request a Demo</span>
                             <?= svg_icon('arrow', 'w-4 h-4 stroke-[2.4]') ?>
                         </button>
-                        <span class="text-[11px] text-zinc-500 font-medium">No payment is collected during demo request.</span>
+                        <span class="text-[11px] text-zinc-400 font-medium">No payment required for demo setup.</span>
                     </div>
                 </form>
             <?php endif; ?>
         </div>
     </section>
 
-    <!-- ============ FAQ SECTION ============ -->
-    <section id="faq" class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
+    <!-- ============ 10. FAQ SECTION ============ -->
+    <section id="faq" class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="text-center space-y-4 mb-14">
                 <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
                     Frequently Asked Questions
                 </h2>
                 <p class="text-base sm:text-lg text-[#A1A1AA] font-normal leading-relaxed">
-                    Common answers for restaurant operators evaluating RMS SaaS.
+                    Clear answers regarding RMS SaaS implementation, features, and billing.
                 </p>
             </div>
 
             <div class="space-y-3">
                 <?php
                 $faqs = [
-                    ['What is RMS SaaS?', 'RMS is an all-in-one restaurant management platform for Nepal that connects POS billing, QR table ordering, Kitchen Display System (KDS), floor & table management, inventory, payments and analytics in a single cloud workspace.'],
-                    ['How does restaurant onboarding work?', 'You submit the request form. The Super Admin reviews it, contacts you, provisions your restaurant tenant workspace, and sends secure owner credentials.'],
-                    ['Can I manage multiple restaurants?', 'Yes. RMS supports multi-tenant SaaS architecture where each restaurant operates inside its own logically isolated workspace.'],
-                    ['Does RMS support QR table ordering?', 'Yes. Guests scan table QR codes using smartphone cameras, browse live digital menus, and place orders directly to the kitchen without app downloads.'],
-                    ['Does RMS include inventory management?', 'Yes. RMS includes recipe-based stock deduction, item stock counts, reorder alerts, supplier purchase tracking, and waste logging.'],
-                    ['Can I create staff accounts?', 'Yes. You can provision staff accounts for Manager, Cashier, Chef, Waiter, and Inventory roles with strict role-based access control.'],
-                    ['What happens after requesting a demo?', 'Our team reviews your submission, contacts you via phone/email, and provides a walkthrough of your tenant workspace setup.'],
-                    ['Can I upgrade my subscription plan?', 'Yes. You can upgrade between Essential, Business, and Business Pro plans as your restaurant volume expands.'],
-                    ['How does pricing work?', 'Pricing is billed in simple monthly NPR tiers (NPR 1,500 / NPR 2,500 / NPR 4,500) based on module features and staff role needs.'],
+                    ['What is RMS SaaS?', 'RMS SaaS is a multi-restaurant management platform engineered for Nepal restaurants. It unifies RPOS cashier billing, QR code table ordering, Kitchen Display System (KDS), floor & table management, inventory, digital payments, loyalty, and analytics in a single cloud workspace.'],
+                    ['What features are included?', 'RMS includes RPOS billing, digital QR menus, live KDS screens, floor maps, split/merge billing, NCR complimentary waivers, ingredient recipe stock deductions, customer loyalty points, staff RBAC permissions, and automated revenue reporting.'],
+                    ['Can I manage multiple restaurants?', 'Yes. RMS operates on a multi-tenant SaaS architecture where each restaurant runs inside its own logically isolated workspace with dedicated table, staff, and financial data.'],
+                    ['Does it support table-based billing?', 'Yes. Cashiers and waiters can create, update, split, merge, and settle table-based bills in real time with instant physical or digital receipt generation.'],
+                    ['Does it support QR ordering?', 'Yes. Guests scan unique table QR codes using standard smartphone cameras, browse digital menus, and place orders directly to kitchen displays without downloading any application.'],
+                    ['Does it have a Kitchen Display System?', 'Yes. The Kitchen Display System (KDS) renders incoming orders on kitchen screens with prep timers, status buttons (Preparing/Ready), and audio alerts.'],
+                    ['Can I manage staff permissions?', 'Yes. RMS provides granular Role-Based Access Control (RBAC) across Owner, Manager, Cashier, Chef, Waiter, and Inventory staff roles.'],
+                    ['Can customers earn loyalty points?', 'Yes. Customers can earn and redeem loyalty points associated with their phone numbers during checkout, with automatic reversals on order refunds.'],
+                    ['Can I split bills?', 'Yes. RMS supports equal split, custom amount split, item-based split, and quantity-based split payments with automatic table clearing upon full payment.'],
+                    ['Can I use different payment methods?', 'Yes. RMS supports eSewa, Khalti, Cash, and Card payments alongside Non-Chargeable (NCR) complimentary waivers.'],
+                    ['What happens when my subscription expires?', 'Super Admins can grant grace periods or update plans. System data and historical audit logs remain securely preserved in isolated database storage.'],
                 ];
                 foreach ($faqs as $i => $faq): ?>
-                    <div class="rounded-xl border border-[#242424] bg-[#111111] overflow-hidden">
+                    <div class="rounded-xl border border-[#242424] bg-[#111111] overflow-hidden hover:border-zinc-600 transition-colors">
                         <h3>
                             <button type="button" class="faq-btn w-full flex items-center justify-between gap-4 p-5 text-left" aria-expanded="false" aria-controls="faq-<?= $i + 1 ?>" id="faq-btn-<?= $i + 1 ?>">
-                                <span class="text-sm font-bold text-white"><?= $faq[0] ?></span>
-                                <span class="faq-icon w-6 h-6 shrink-0 rounded bg-zinc-900 border border-[#242424] text-amber-400 flex items-center justify-center"><?= svg_icon('plus', 'w-3.5 h-3.5') ?></span>
+                                <span class="text-sm font-extrabold text-white"><?= $faq[0] ?></span>
+                                <span class="faq-icon w-6 h-6 shrink-0 rounded-lg bg-[#161616] border border-[#242424] text-amber-400 flex items-center justify-center"><?= svg_icon('plus', 'w-3.5 h-3.5') ?></span>
                             </button>
                         </h3>
                         <div id="faq-<?= $i + 1 ?>" class="faq-panel hidden px-5 pb-5" role="region" aria-labelledby="faq-btn-<?= $i + 1 ?>">
-                            <div class="text-xs text-[#A1A1AA] leading-relaxed border-t border-[#242424] pt-3"><?= $faq[1] ?></div>
+                            <div class="text-xs sm:text-sm text-[#A1A1AA] leading-relaxed border-t border-[#242424] pt-3"><?= $faq[1] ?></div>
                         </div>
                     </div>
                 <?php endforeach; ?>
@@ -1181,22 +1087,22 @@ $csrfField = CSRF::getField();
         </div>
     </section>
 
-    <!-- ============ FINAL CTA ============ -->
-    <section class="py-24 md:py-32 border-b border-[#242424] bg-[#090909]">
+    <!-- ============ 11. FINAL CTA ============ -->
+    <section class="py-20 md:py-28 border-b border-[#242424] bg-[#090909]">
         <div class="max-w-4xl mx-auto px-4 text-center space-y-6">
             <h2 class="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
                 Ready to Run Your Restaurant Smarter?
             </h2>
-            <p class="text-base sm:text-lg text-[#A1A1AA] max-w-xl mx-auto font-normal leading-relaxed">
-                Bring your restaurant operations, kitchen, inventory and payments into one connected platform.
+            <p class="text-base sm:text-lg text-[#A1A1AA] max-w-2xl mx-auto font-normal leading-relaxed">
+                Manage orders, tables, billing, kitchen operations, inventory and customers from one platform.
             </p>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
-                <a href="#request-demo" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-sm hover:bg-amber-400 active:scale-95 transition-all shadow-lg">
+                <a href="#request-demo" class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-xl bg-amber-500 text-[#090909] font-extrabold text-sm hover:bg-amber-400 active:scale-95 transition-all shadow-lg">
                     Request a Demo
                     <?= svg_icon('arrow', 'w-4 h-4 stroke-[2.4]') ?>
                 </a>
-                <a href="#pricing" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#111111] border border-[#242424] text-white font-semibold text-sm hover:border-zinc-700 active:scale-95 transition-all">
-                    View Pricing
+                <a href="#showcase" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-[#111111] border border-[#242424] text-white font-semibold text-sm hover:border-zinc-600 active:scale-95 transition-all">
+                    Explore RMS
                 </a>
             </div>
         </div>
@@ -1207,24 +1113,24 @@ $csrfField = CSRF::getField();
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div class="flex flex-col md:flex-row justify-between items-center gap-6">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-[#090909] font-black">
-                        <?= svg_icon('bolt', 'w-4 h-4 stroke-[2.2]') ?>
+                    <div class="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center text-[#090909] font-black">
+                        <?= svg_icon('bolt', 'w-5 h-5 stroke-[2.4]') ?>
                     </div>
-                    <span class="font-extrabold text-white text-sm">RMS SaaS Platform</span>
+                    <span class="font-extrabold text-white text-base">RMS SaaS Platform</span>
                 </div>
 
-                <div class="flex flex-wrap justify-center gap-6 text-xs text-[#A1A1AA]">
-                    <a href="#features" class="hover:text-white transition-colors">Features</a>
-                    <a href="#showcase" class="hover:text-white transition-colors">Platform</a>
-                    <a href="#pricing" class="hover:text-white transition-colors">Pricing</a>
-                    <a href="#faq" class="hover:text-white transition-colors">FAQ</a>
+                <div class="flex flex-wrap justify-center gap-6 text-xs font-semibold text-[#A1A1AA]">
+                    <a href="#showcase" class="hover:text-amber-400 transition-colors">Product</a>
+                    <a href="#features" class="hover:text-amber-400 transition-colors">Features</a>
+                    <a href="#pricing" class="hover:text-amber-400 transition-colors">Pricing</a>
+                    <a href="#faq" class="hover:text-amber-400 transition-colors">FAQ</a>
                     <a href="admin/login.php" class="hover:text-white transition-colors text-amber-400 font-bold">Restaurant Login</a>
                     <a href="super-admin/login.php" class="hover:text-white transition-colors">Super Admin</a>
                     <a href="privacy-policy.php" class="hover:text-white transition-colors">Privacy Policy</a>
                     <a href="terms-of-service.php" class="hover:text-white transition-colors">Terms of Service</a>
                 </div>
 
-                <div class="text-xs text-zinc-500 font-medium">
+                <div class="text-xs text-zinc-400 font-medium">
                     © <?= date('Y') ?> RMS SaaS Platform. All rights reserved.
                 </div>
             </div>
@@ -1244,7 +1150,7 @@ $csrfField = CSRF::getField();
                 var open = mobileMenu.classList.toggle('hidden') === false;
                 menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
             });
-            mobileMenu.querySelectorAll('a').forEach(function (link) {
+            mobileMenu.querySelectorAll('.mobile-link').forEach(function (link) {
                 link.addEventListener('click', function () {
                     mobileMenu.classList.add('hidden');
                     menuBtn.setAttribute('aria-expanded', 'false');
@@ -1294,7 +1200,7 @@ $csrfField = CSRF::getField();
             });
         });
 
-        /* Form Double-Submit Protection */
+        /* Form Double-Submit Protection & Validation */
         var form = document.getElementById('restaurantRequestForm');
         if (form) {
             form.addEventListener('submit', function (e) {

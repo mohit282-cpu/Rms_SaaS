@@ -416,6 +416,9 @@ function ensureDatabaseSchema($conn) {
     if (!in_array('batch_number', $order_cols)) {
         try { $conn->query("ALTER TABLE orders ADD COLUMN batch_number INT DEFAULT 1"); } catch (Throwable $e) {}
     }
+    try { $conn->query("ALTER TABLE orders MODIFY COLUMN payment_status VARCHAR(50) DEFAULT 'pending'"); } catch (Throwable $e) {}
+    try { $conn->query("ALTER TABLE payment_transactions MODIFY COLUMN status VARCHAR(50) DEFAULT 'pending'"); } catch (Throwable $e) {}
+    try { $conn->query("ALTER TABLE loyalty_transactions MODIFY COLUMN type VARCHAR(50) NOT NULL"); } catch (Throwable $e) {}
 
     // 5. Order Items table check
     @$conn->query("CREATE TABLE IF NOT EXISTS order_items (
@@ -495,7 +498,36 @@ function ensureDatabaseSchema($conn) {
         @$conn->query("INSERT INTO payment_settings (restaurant_name, payment_note) VALUES ('QR Restaurant', 'Scan QR to pay via Esewa/Khalti')");
     }
 
-    // 7. Waiter Calls table check
+    // 7. Customers & Loyalty Transactions tables check
+    @$conn->query("CREATE TABLE IF NOT EXISTS customers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        restaurant_id INT NOT NULL DEFAULT 1,
+        name VARCHAR(100) NOT NULL,
+        phone VARCHAR(30) NOT NULL,
+        email VARCHAR(100) DEFAULT '',
+        total_visits INT DEFAULT 0,
+        total_spent DECIMAL(10, 2) DEFAULT 0.00,
+        loyalty_points INT DEFAULT 0,
+        tier VARCHAR(30) DEFAULT 'Bronze',
+        last_visit_at TIMESTAMP NULL DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cust_tenant_phone (restaurant_id, phone)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    @$conn->query("CREATE TABLE IF NOT EXISTS loyalty_transactions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        restaurant_id INT NOT NULL DEFAULT 1,
+        customer_id INT NOT NULL,
+        order_id INT DEFAULT NULL,
+        type VARCHAR(50) NOT NULL,
+        points INT NOT NULL,
+        amount_equivalent DECIMAL(10, 2) DEFAULT 0.00,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_loyalty_cust (restaurant_id, customer_id, order_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // 8. Waiter Calls table check
     @$conn->query("CREATE TABLE IF NOT EXISTS waiter_calls (
         id INT AUTO_INCREMENT PRIMARY KEY,
         table_number VARCHAR(10) NOT NULL,

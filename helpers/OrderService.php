@@ -100,6 +100,9 @@ class OrderService {
                 self::processOrderInventoryDeduction($conn, $orderId, $tenantId);
             } elseif ($nextState === 'refunded' && $currentState === 'refund_requested') {
                 self::processOrderInventoryRestock($conn, $orderId, $tenantId);
+                self::processOrderLoyaltyReversal($conn, $orderId, $tenantId);
+            } elseif ($nextState === 'cancelled' && in_array($currentState, ['new', 'preparing', 'ready'], true)) {
+                self::processOrderLoyaltyReversal($conn, $orderId, $tenantId);
             }
 
             $conn->commit();
@@ -207,6 +210,63 @@ class OrderService {
                 $logStmt->bind_param("iidiss", $tenantId, $invItemId, $restockQty, $orderId, $note, $creator);
                 $logStmt->execute();
                 $logStmt->close();
+            }
+        }
+    }
+
+    /**
+     * Process Loyalty Point Reversal on Order Refund or Cancellation
+     */
+    public static function processOrderLoyaltyReversal($conn, $orderId, $tenantId) {
+        $stmt = $conn->prepare("SELECT id, customer_id, type, points, amount_equivalent FROM loyalty_transactions WHERE order_id = ? AND restaurant_id = ?");
+        if (!$stmt) return;
+        $stmt->bind_param("ii", $orderId, $tenantId);
+        $stmt->execute();
+        $transactions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+
+        foreach ($transactions as $tx) {
+            $customerId = (int)$tx['customer_id'];
+            $type = $tx['type'];
+            $points = (int)$tx['points'];
+
+            if ($type === 'earn' && $points > 0) {
+                // Reverse earned points (deduct from customer)
+                $uStmt = $conn->prepare("UPDATE customers SET loyalty_points = GREATEST(0, loyalty_points - ?) WHERE id = ? AND restaurant_id = ?");
+                if ($uStmt) {
+                    $uStmt->bind_param("iii", $points, $customerId, $tenantId);
+                    $uStmt->execute();
+                    $uStmt->close();
+                }
+
+                $logStmt = $conn->prepare("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES (?, ?, ?, 'refund_reversal', ?, ?, ?, NOW())");
+                if ($logStmt) {
+                    $revPoints = -intval($points);
+                    $revEq = -floatval($tx['amount_equivalent']);
+                    $note = "Earned points reversed due to order #$orderId refund";
+                    $logStmt->bind_param("iiiids", $tenantId, $customerId, $orderId, $revPoints, $revEq, $note);
+                    $logStmt->execute();
+                    $logStmt->close();
+                }
+
+            } elseif ($type === 'redeem' && $points < 0) {
+                // Restore redeemed points (add back to customer)
+                $restorePoints = abs(intval($points));
+                $uStmt = $conn->prepare("UPDATE customers SET loyalty_points = loyalty_points + ? WHERE id = ? AND restaurant_id = ?");
+                if ($uStmt) {
+                    $uStmt->bind_param("iii", $restorePoints, $customerId, $tenantId);
+                    $uStmt->execute();
+                    $uStmt->close();
+                }
+
+                $logStmt = $conn->prepare("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES (?, ?, ?, 'refund_reversal', ?, ?, ?, NOW())");
+                if ($logStmt) {
+                    $revEq = abs(floatval($tx['amount_equivalent']));
+                    $note = "Redeemed points restored due to order #$orderId refund";
+                    $logStmt->bind_param("iiiids", $tenantId, $customerId, $orderId, $restorePoints, $revEq, $note);
+                    $logStmt->execute();
+                    $logStmt->close();
+                }
             }
         }
     }

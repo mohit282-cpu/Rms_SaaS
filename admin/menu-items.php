@@ -73,13 +73,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $id = intval($_POST['id'] ?? 0);
         $new_status = Security::sanitize($_POST['status'] ?? 'active');
         if ($id > 0) {
-            $conn->query("UPDATE menu_items SET status = '$new_status' WHERE id = $id AND restaurant_id = $tenantId");
+            $stmt = $conn->prepare("UPDATE menu_items SET status = ? WHERE id = ? AND restaurant_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("sii", $new_status, $id, $tenantId);
+                $stmt->execute();
+                $stmt->close();
+            }
             $_SESSION['success'] = "Item status updated to " . strtoupper($new_status);
         }
     } elseif ($action === 'delete') {
         $id = intval($_POST['id'] ?? 0);
         if ($id > 0) {
-            $conn->query("DELETE FROM menu_items WHERE id = $id AND restaurant_id = $tenantId");
+            $stmt = $conn->prepare("DELETE FROM menu_items WHERE id = ? AND restaurant_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("ii", $id, $tenantId);
+                $stmt->execute();
+                $stmt->close();
+            }
             $_SESSION['success'] = "Menu item deleted successfully";
         }
     }

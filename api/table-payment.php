@@ -355,6 +355,335 @@ try {
             ]);
             break;
 
+        case 'split_bill':
+            // Split Bill Processing (Equal, Item-based, Quantity, or Custom amount)
+            $orderId = intval($_POST['order_id'] ?? 0);
+            $tableNumber = Security::sanitize(trim($_POST['table_number'] ?? ''));
+            $splitType = Security::sanitize(trim($_POST['split_type'] ?? 'custom'));
+            $paymentMethod = Security::sanitize($_POST['payment_method'] ?? 'cash');
+            $splitAmount = floatval($_POST['split_amount'] ?? 0);
+            $customerId = intval($_POST['customer_id'] ?? 0);
+
+            if (!$orderId || !$tableNumber || $splitAmount <= 0) {
+                Response::error('Order ID, table number, and valid positive split amount required', 400);
+            }
+
+            $allowedMethods = ['cash', 'card', 'digital'];
+            if (!in_array($paymentMethod, $allowedMethods)) {
+                Response::error('Invalid payment method', 400);
+            }
+
+            $conn->begin_transaction();
+
+            try {
+                // Lock order row
+                $stmt = $conn->prepare("SELECT id, total_amount, payment_status, status FROM orders WHERE id = ? AND restaurant_id = ? AND table_number = ? FOR UPDATE");
+                $stmt->bind_param("iis", $orderId, $tenantId, $tableNumber);
+                $stmt->execute();
+                $order = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+
+                if (!$order) {
+                    throw new Exception('Order not found or does not belong to this table');
+                }
+
+                if ($order['payment_status'] === 'paid') {
+                    throw new Exception('This bill is already fully settled');
+                }
+
+                if ($order['status'] === 'cancelled') {
+                    throw new Exception('Cannot split payment on a cancelled order');
+                }
+
+                $grandTotal = floatval($order['total_amount']);
+
+                // Calculate existing settled amount from payment_transactions
+                $paidStmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) as paid_sum FROM payment_transactions WHERE order_id = ? AND restaurant_id = ? AND status = 'paid'");
+                $paidStmt->bind_param("ii", $orderId, $tenantId);
+                $paidStmt->execute();
+                $alreadyPaid = floatval($paidStmt->get_result()->fetch_assoc()['paid_sum'] ?? 0);
+                $paidStmt->close();
+
+                $remainingBalance = max(0, round($grandTotal - $alreadyPaid, 2));
+
+                if ($splitAmount > $remainingBalance + 0.01) {
+                    throw new Exception("Split amount (" . formatPrice($splitAmount) . ") exceeds remaining balance (" . formatPrice($remainingBalance) . ")");
+                }
+
+                // Create partial payment transaction
+                $txnId = 'SPLIT-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+                $gatewayName = ($paymentMethod === 'digital') ? 'digital_qr' : $paymentMethod;
+                $refId = strtoupper($paymentMethod) . '-' . $txnId;
+
+                $paymentStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, 'paid', ?, NOW())");
+                $paymentStmt->bind_param("iisdss", $tenantId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
+                $paymentStmt->execute();
+                $paymentStmt->close();
+
+                $newTotalPaid = round($alreadyPaid + $splitAmount, 2);
+                $newRemaining = max(0, round($grandTotal - $newTotalPaid, 2));
+
+                if ($newRemaining <= 0.01) {
+                    // Fully settled!
+                    $uStmt = $conn->prepare("UPDATE orders SET payment_status = 'paid', payment_method = ?, status = 'completed', updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
+                    $uStmt->bind_param("sii", $paymentMethod, $orderId, $tenantId);
+                    $uStmt->execute();
+                    $uStmt->close();
+
+                    // Free table
+                    $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
+
+                    // Handle customer loyalty points earn if customer attached
+                    if ($customerId > 0) {
+                        $pointsEarned = (int)($grandTotal / 10);
+                        if ($pointsEarned > 0) {
+                            $conn->query("UPDATE customers SET loyalty_points = loyalty_points + $pointsEarned, total_spent = total_spent + $grandTotal, total_visits = total_visits + 1 WHERE id = $customerId AND restaurant_id = $tenantId");
+                            $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES ($tenantId, $customerId, $orderId, 'earn', $pointsEarned, round($pointsEarned * 0.10, 2), 'Points earned from split-settled order #$orderId', NOW())");
+                        }
+                    }
+
+                    Security::logAudit('SPLIT_BILL_COMPLETED', "Order #$orderId fully settled via split payments. Final payment: " . formatPrice($splitAmount));
+                    $conn->commit();
+
+                    Response::success('Split payment successful - Bill fully settled!', [
+                        'order_id' => $orderId,
+                        'split_amount' => $splitAmount,
+                        'total_paid' => $grandTotal,
+                        'remaining_balance' => 0.00,
+                        'is_fully_paid' => true,
+                        'status' => 'paid'
+                    ]);
+                } else {
+                    // Partially paid
+                    $uStmt = $conn->prepare("UPDATE orders SET payment_status = 'partially_paid', updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
+                    $uStmt->bind_param("ii", $orderId, $tenantId);
+                    $uStmt->execute();
+                    $uStmt->close();
+
+                    Security::logAudit('SPLIT_BILL_PARTIAL', "Partial payment of " . formatPrice($splitAmount) . " received for Order #$orderId. Remaining: " . formatPrice($newRemaining));
+                    $conn->commit();
+
+                    Response::success('Partial split payment recorded', [
+                        'order_id' => $orderId,
+                        'split_amount' => $splitAmount,
+                        'total_paid' => $newTotalPaid,
+                        'remaining_balance' => $newRemaining,
+                        'is_fully_paid' => false,
+                        'status' => 'partially_paid'
+                    ]);
+                }
+            } catch (Exception $e) {
+                $conn->rollback();
+                throw $e;
+            }
+            break;
+
+        case 'merge_bills':
+            // Merge Source Table Order into Target Table Order
+            $sourceOrderId = intval($_POST['source_order_id'] ?? 0);
+            $targetOrderId = intval($_POST['target_order_id'] ?? 0);
+            $sourceTableNum = Security::sanitize(trim($_POST['source_table_number'] ?? ''));
+            $targetTableNum = Security::sanitize(trim($_POST['target_table_number'] ?? ''));
+
+            if ((!$sourceOrderId && !$sourceTableNum) || (!$targetOrderId && !$targetTableNum)) {
+                Response::error('Source and Target order details required for merging', 400);
+            }
+
+            $conn->begin_transaction();
+
+            try {
+                // Find source order
+                if ($sourceOrderId > 0) {
+                    $sStmt = $conn->prepare("SELECT id, table_number, total_amount, status, payment_status FROM orders WHERE id = ? AND restaurant_id = ? FOR UPDATE");
+                    $sStmt->bind_param("ii", $sourceOrderId, $tenantId);
+                } else {
+                    $sStmt = $conn->prepare("SELECT id, table_number, total_amount, status, payment_status FROM orders WHERE table_number = ? AND restaurant_id = ? AND payment_status != 'paid' AND status != 'cancelled' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                    $sStmt->bind_param("si", $sourceTableNum, $tenantId);
+                }
+                $sStmt->execute();
+                $sourceOrder = $sStmt->get_result()->fetch_assoc();
+                $sStmt->close();
+
+                // Find target order
+                if ($targetOrderId > 0) {
+                    $tStmt = $conn->prepare("SELECT id, table_number, total_amount, status, payment_status FROM orders WHERE id = ? AND restaurant_id = ? FOR UPDATE");
+                    $tStmt->bind_param("ii", $targetOrderId, $tenantId);
+                } else {
+                    $tStmt = $conn->prepare("SELECT id, table_number, total_amount, status, payment_status FROM orders WHERE table_number = ? AND restaurant_id = ? AND payment_status != 'paid' AND status != 'cancelled' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+                    $tStmt->bind_param("si", $targetTableNum, $tenantId);
+                }
+                $tStmt->execute();
+                $targetOrder = $tStmt->get_result()->fetch_assoc();
+                $tStmt->close();
+
+                if (!$sourceOrder || !$targetOrder) {
+                    throw new Exception('Source or target order not found for merge operation');
+                }
+
+                if ($sourceOrder['id'] === $targetOrder['id']) {
+                    throw new Exception('Cannot merge an order into itself');
+                }
+
+                if ($sourceOrder['payment_status'] === 'paid' || $targetOrder['payment_status'] === 'paid') {
+                    throw new Exception('Cannot merge orders that have already been fully paid');
+                }
+
+                $sId = $sourceOrder['id'];
+                $tId = $targetOrder['id'];
+                $sTable = $sourceOrder['table_number'];
+
+                // Transfer order_items from source to target order
+                $moveStmt = $conn->prepare("UPDATE order_items SET order_id = ? WHERE order_id = ? AND restaurant_id = ?");
+                $moveStmt->bind_param("iii", $tId, $sId, $tenantId);
+                $moveStmt->execute();
+                $moveStmt->close();
+
+                // Recalculate subtotal for target order
+                $recalcStmt = $conn->prepare("SELECT COALESCE(SUM(quantity * price), 0) as new_subtotal FROM order_items WHERE order_id = ? AND restaurant_id = ?");
+                $recalcStmt->bind_param("ii", $tId, $tenantId);
+                $recalcStmt->execute();
+                $newSubtotal = floatval($recalcStmt->get_result()->fetch_assoc()['new_subtotal'] ?? 0);
+                $recalcStmt->close();
+
+                // Recalculate target order total_amount
+                $updTargetStmt = $conn->prepare("UPDATE orders SET total_amount = ?, updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
+                $updTargetStmt->bind_param("dii", $newSubtotal, $tId, $tenantId);
+                $updTargetStmt->execute();
+                $updTargetStmt->close();
+
+                // Mark source order as cancelled / merged
+                $note = "Merged into Order #$tId";
+                $updSourceStmt = $conn->prepare("UPDATE orders SET status = 'cancelled', payment_status = 'merged', notes = ?, updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
+                $updSourceStmt->bind_param("sii", $note, $sId, $tenantId);
+                $updSourceStmt->execute();
+                $updSourceStmt->close();
+
+                // Free source table
+                $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$sTable' AND restaurant_id = $tenantId");
+
+                Security::logAudit('MERGE_BILLS', "Merged Order #$sId (Table $sTable) into Order #$tId (Table {$targetOrder['table_number']}). New total: " . formatPrice($newSubtotal));
+                $conn->commit();
+
+                Response::success("Orders merged successfully! Order #$sId items consolidated into Order #$tId.", [
+                    'source_order_id' => $sId,
+                    'target_order_id' => $tId,
+                    'merged_total' => $newSubtotal
+                ]);
+
+            } catch (Exception $e) {
+                $conn->rollback();
+                throw $e;
+            }
+            break;
+
+        case 'apply_ncr':
+            // Non-Chargeable / Complimentary Billing (RBAC Protected)
+            $userRole = strtolower($_SESSION['user_role'] ?? $_SESSION['role'] ?? 'cashier');
+            $hasNcrPerm = PermissionService::hasPermission($userRole, 'payments.ncr') || in_array($userRole, ['owner', 'manager', 'admin'], true);
+
+            if (!$hasNcrPerm) {
+                Response::error('Permission denied: Non-Chargeable / Complimentary billing requires Manager authorization.', 403);
+            }
+
+            $orderId = intval($_POST['order_id'] ?? 0);
+            $tableNumber = Security::sanitize(trim($_POST['table_number'] ?? ''));
+            $reason = Security::sanitize(trim($_POST['reason'] ?? 'manager_approval'));
+            $notes = Security::sanitize(trim($_POST['notes'] ?? ''));
+
+            if (!$orderId || !$tableNumber || !$reason) {
+                Response::error('Order ID, table number, and approval reason required for NCR billing', 400);
+            }
+
+            $conn->begin_transaction();
+
+            try {
+                $stmt = $conn->prepare("SELECT id, total_amount, payment_status, status FROM orders WHERE id = ? AND restaurant_id = ? AND table_number = ? FOR UPDATE");
+                $stmt->bind_param("iis", $orderId, $tenantId, $tableNumber);
+                $stmt->execute();
+                $order = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+
+                if (!$order) {
+                    throw new Exception('Order not found or does not belong to this table');
+                }
+
+                if ($order['payment_status'] === 'paid') {
+                    throw new Exception('Cannot apply NCR to an order that is already paid');
+                }
+
+                $waivedAmount = floatval($order['total_amount']);
+
+                // Record NCR transaction in payment_transactions (amount = 0.00 so non-revenue)
+                $txnId = 'NCR-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+                $refId = "NCR-REASON:" . strtoupper($reason) . "-" . $txnId;
+
+                $paymentStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, 'ncr', 0.00, 'ncr', ?, NOW())");
+                $paymentStmt->bind_param("iisss", $tenantId, $txnId, $orderId, $refId);
+                $paymentStmt->execute();
+                $paymentStmt->close();
+
+                // Update order to ncr status & completed
+                $ncrNote = "NCR Complimetary Waiver (" . strtoupper($reason) . "): " . $notes;
+                $updStmt = $conn->prepare("UPDATE orders SET payment_status = 'ncr', total_amount = 0.00, status = 'completed', notes = ?, updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
+                $updStmt->bind_param("sii", $ncrNote, $orderId, $tenantId);
+                $updStmt->execute();
+                $updStmt->close();
+
+                // Free table
+                $conn->query("UPDATE tables SET status = 'vacant', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
+
+                Security::logAudit('NCR_BILL_APPLIED', "NCR Complimentary waiver applied to Order #$orderId (Table $tableNumber). Waived amount: " . formatPrice($waivedAmount) . ". Reason: $reason. Authorizer: " . ($_SESSION['username'] ?? 'admin'));
+                $conn->commit();
+
+                Response::success("NCR Complimentary billing applied successfully. Order #$orderId cleared.", [
+                    'order_id' => $orderId,
+                    'waived_amount' => $waivedAmount,
+                    'reason' => $reason,
+                    'status' => 'ncr'
+                ]);
+
+            } catch (Exception $e) {
+                $conn->rollback();
+                throw $e;
+            }
+            break;
+
+        case 'process_refund':
+            // Process Order Refund with inventory restock and loyalty reversal (RBAC Protected)
+            $userRole = strtolower($_SESSION['user_role'] ?? $_SESSION['role'] ?? 'cashier');
+            $hasRefundPerm = PermissionService::hasPermission($userRole, 'payments.refund') || in_array($userRole, ['owner', 'manager', 'admin'], true);
+
+            if (!$hasRefundPerm) {
+                Response::error('Permission denied: Refunding orders requires Manager authorization.', 403);
+            }
+
+            $orderId = intval($_POST['order_id'] ?? 0);
+            $reason = Security::sanitize(trim($_POST['reason'] ?? 'customer_request'));
+
+            if (!$orderId || !$reason) {
+                Response::error('Order ID and refund reason required', 400);
+            }
+
+            // Perform transition through OrderService
+            $resReq = OrderService::transitionStatus($conn, $orderId, 'refund_requested', $userRole, $reason);
+            if (!$resReq['success']) {
+                Response::error($resReq['message'], 400);
+            }
+
+            $resRef = OrderService::transitionStatus($conn, $orderId, 'refunded', $userRole, $reason);
+            if (!$resRef['success']) {
+                Response::error($resRef['message'], 400);
+            }
+
+            Security::logAudit('ORDER_REFUNDED', "Order #$orderId refunded. Reason: $reason. Authorizer: " . ($_SESSION['username'] ?? 'admin'));
+
+            Response::success("Order #$orderId successfully refunded and inventory/loyalty restored.", [
+                'order_id' => $orderId,
+                'status' => 'refunded',
+                'reason' => $reason
+            ]);
+            break;
+
         default:
             Response::error('Invalid action', 400);
     }

@@ -6,7 +6,7 @@ class PermissionService {
     // Group => list of action-level permissions. '*' = all actions in group.
     private static $groupActions = [
         'orders'    => ['view', 'create', 'update', 'cancel', 'delete', 'settle'],
-        'payments'  => ['view', 'create', 'settle', 'refund'],
+        'payments'  => ['view', 'create', 'settle', 'refund', 'ncr'],
         'inventory' => ['view', 'create', 'update', 'delete', 'adjust'],
         'suppliers' => ['view', 'create', 'update', 'delete'],
         'purchase_orders' => ['view', 'create', 'update', 'delete', 'receive'],
