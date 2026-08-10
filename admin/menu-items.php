@@ -44,11 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         // Handle Image Upload
         $image_path = Security::sanitize($_POST['existing_image'] ?? '');
         if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-            $upload_res = Security::uploadFile($_FILES['image'], '../uploads');
-            if ($upload_res['success']) {
-                $image_path = 'uploads/' . $upload_res['filename'];
-            } else {
-                $_SESSION['error'] = $upload_res['message'];
+            try {
+                $uploaded_filename = Security::uploadFile($_FILES['image'], '../uploads');
+                if ($uploaded_filename) {
+                    $image_path = 'uploads/' . $uploaded_filename;
+                }
+            } catch (Exception $e) {
+                $_SESSION['error'] = $e->getMessage();
             }
         }
 

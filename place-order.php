@@ -27,22 +27,14 @@ $is_ajax = (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'a
            (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) ||
            isset($_POST['ajax']);
 
-// ENFORCE SESSION LOCKING FOR TABLE NUMBER (IDOR & Spoofing Fix)
-if (!isset($_SESSION['customer_table_id']) || empty($_SESSION['customer_table_id'])) {
-    if ($is_ajax) {
-        Response::error('Session expired. Please scan table QR code again.', 403);
-    }
-    http_response_code(403);
-    die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><title>403 Session Expired</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center"><div class="max-w-md bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4"><div class="text-5xl">🔒</div><h1 class="text-xl font-black text-white">Session Expired</h1><p class="text-xs text-zinc-400">Please scan the table QR code again to place an order.</p></div></body></html>');
-}
+$sessionCheck = CustomerSessionService::validateSession($conn);
 
-// Tenant context is mandatory (fail closed): never place an order for restaurant_id 0
-if ($tenantId <= 0) {
+if (!$sessionCheck['valid']) {
     if ($is_ajax) {
-        Response::error('Session expired. Please scan table QR code again.', 403);
+        Response::error($sessionCheck['message'], $sessionCheck['code']);
     }
-    http_response_code(403);
-    die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><title>403 Session Expired</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center"><div class="max-w-md bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4"><div class="text-5xl">🔒</div><h1 class="text-xl font-black text-white">Session Expired</h1><p class="text-xs text-zinc-400">Please scan the table QR code again to place an order.</p></div></body></html>');
+    http_response_code($sessionCheck['code']);
+    die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>' . htmlspecialchars($sessionCheck['title']) . '</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center selection:bg-amber-500 selection:text-zinc-950"><div class="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4 shadow-2xl"><div class="text-5xl mb-2">🔒</div><h1 class="text-xl font-black text-white">' . htmlspecialchars($sessionCheck['title']) . '</h1><p class="text-xs text-zinc-400 leading-relaxed">' . htmlspecialchars($sessionCheck['message']) . '</p><div class="pt-4"><a href="index.php" class="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">🏠 Return to Home</a></div></div></body></html>');
 }
 
 $table_number = strval($_SESSION['customer_table_id']);

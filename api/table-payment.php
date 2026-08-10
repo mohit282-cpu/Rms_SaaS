@@ -75,7 +75,7 @@ try {
             }
             
             // Verify customer belongs to tenant
-            $stmt = $conn->prepare("SELECT loyalty_points, name FROM customers WHERE id = ? AND restaurant_id = ? LIMIT 1");
+            $stmt = $conn->prepare("SELECT loyalty_points, name, lifetime_points_earned, lifetime_points_redeemed FROM customers WHERE id = ? AND restaurant_id = ? LIMIT 1");
             $stmt->bind_param("ii", $customerId, $tenantId);
             $stmt->execute();
             $customer = $stmt->get_result()->fetch_assoc();
@@ -85,15 +85,20 @@ try {
                 Response::error('Customer not found', 404);
             }
             
-            // 1 point = Rs.0.10 (configurable)
-            $pointsValue = round($customer['loyalty_points'] * 0.10, 2);
+            // Get loyalty settings for point value
+            $loyaltySettings = BillingService::getLoyaltySettings($conn, $tenantId);
+            $pointValue = $loyaltySettings['point_value'];
+            $pointsValue = round($customer['loyalty_points'] * $pointValue, 2);
             
             Response::success('Loyalty info', [
                 'customer_id' => $customerId,
                 'customer_name' => $customer['name'],
                 'loyalty_points' => (int)$customer['loyalty_points'],
+                'lifetime_points_earned' => (int)$customer['lifetime_points_earned'],
+                'lifetime_points_redeemed' => (int)$customer['lifetime_points_redeemed'],
                 'points_value' => $pointsValue,
-                'conversion_rate' => 0.10
+                'point_value' => $pointValue,
+                'conversion_rate' => $pointValue
             ]);
             break;
 
@@ -106,6 +111,13 @@ try {
             if (!$customerId || !$pointsToRedeem) {
                 Response::error('Customer ID and points required', 400);
             }
+            
+            // Get loyalty settings
+            $loyaltySettings = BillingService::getLoyaltySettings($conn, $tenantId);
+            $pointValue = $loyaltySettings['point_value'];
+            $minRedemption = $loyaltySettings['min_redemption_points'];
+            $maxRedemption = $loyaltySettings['max_redemption_points'];
+            $maxDiscountPercent = $loyaltySettings['max_discount_percent'];
             
             $stmt = $conn->prepare("SELECT loyalty_points FROM customers WHERE id = ? AND restaurant_id = ? LIMIT 1");
             $stmt->bind_param("ii", $customerId, $tenantId);
@@ -122,16 +134,36 @@ try {
                 Response::error("Insufficient points. Available: $availablePoints", 400);
             }
             
-            $discountValue = round($pointsToRedeem * 0.10, 2);
+            if ($pointsToRedeem < $minRedemption) {
+                Response::error("Minimum $minRedemption points required for redemption", 400);
+            }
+            
+            if ($maxRedemption > 0 && $pointsToRedeem > $maxRedemption) {
+                Response::error("Maximum $maxRedemption points can be redeemed per bill", 400);
+            }
+            
+            $discountValue = round($pointsToRedeem * $pointValue, 2);
+            
+            // Check max discount percentage
+            $maxDiscountAmount = round($billTotal * $maxDiscountPercent / 100.0, 2);
+            if ($discountValue > $maxDiscountAmount) {
+                $discountValue = $maxDiscountAmount;
+                $pointsToRedeem = (int)($maxDiscountAmount / $pointValue);
+            }
+            
             if ($discountValue > $billTotal) {
                 $discountValue = $billTotal;
-                $pointsToRedeem = (int)($billTotal / 0.10);
+                $pointsToRedeem = (int)($billTotal / $pointValue);
             }
             
             Response::success('Loyalty applied', [
                 'points_redeemed' => $pointsToRedeem,
                 'discount_value' => $discountValue,
-                'remaining_points' => $availablePoints - $pointsToRedeem
+                'remaining_points' => $availablePoints - $pointsToRedeem,
+                'point_value' => $pointValue,
+                'max_discount_percent' => $maxDiscountPercent,
+                'min_redemption_points' => $minRedemption,
+                'max_redemption_points' => $maxRedemption
             ]);
             break;
 
@@ -245,21 +277,35 @@ try {
                     $custStmt->close();
                 }
                 
-                if ($effectiveCustomerId > 0) {
+                // Get loyalty settings for earning calculation
+                $loyaltySettings = BillingService::getLoyaltySettings($conn, $tenantId);
+                $isLoyaltyEnabled = $loyaltySettings['is_enabled'];
+                $earnSpendAmount = $loyaltySettings['earn_spend_amount'];
+                $pointValue = $loyaltySettings['point_value'];
+                $expirationEnabled = $loyaltySettings['expiration_enabled'];
+                $expirationDays = $loyaltySettings['expiration_days'];
+                
+                if ($effectiveCustomerId > 0 && $isLoyaltyEnabled) {
                     // Update customer stats
                     $conn->query("UPDATE customers SET total_visits = total_visits + 1, total_spent = total_spent + $grandTotal, last_visit_at = NOW() WHERE id = $effectiveCustomerId AND restaurant_id = $tenantId");
                     
-                    // Earn loyalty points (1 point per Rs.10 spent, configurable)
-                    $pointsEarned = (int)($grandTotal / 10);
+                    // Earn loyalty points based on configured earn_spend_amount
+                    // Only calculate on eligible amount (grand_total minus loyalty discount)
+                    $eligibleAmount = max(0, $grandTotal - $loyaltyDiscount);
+                    $pointsEarned = (int)($eligibleAmount / $earnSpendAmount);
+                    $expirationDate = null;
+                    if ($expirationEnabled && $expirationDays > 0) {
+                        $expirationDate = date('Y-m-d', strtotime("+$expirationDays days"));
+                    }
                     if ($pointsEarned > 0) {
-                        $conn->query("UPDATE customers SET loyalty_points = loyalty_points + $pointsEarned WHERE id = $effectiveCustomerId AND restaurant_id = $tenantId");
-                        $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES ($tenantId, $effectiveCustomerId, $orderId, 'earn', $pointsEarned, round($pointsEarned * 0.10, 2), 'Points earned from order #$orderId', NOW())");
+                        $conn->query("UPDATE customers SET loyalty_points = loyalty_points + $pointsEarned, lifetime_points_earned = lifetime_points_earned + $pointsEarned WHERE id = $effectiveCustomerId AND restaurant_id = $tenantId");
+                        $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, expiration_date, created_at) VALUES ($tenantId, $effectiveCustomerId, $orderId, 'earn', $pointsEarned, " . round($pointsEarned * $pointValue, 2) . ", 'Points earned from order #$orderId', " . ($expirationDate ? "'$expirationDate'" : "NULL") . ", NOW())");
                     }
                     
                     // Redeem loyalty points if applied
                     if ($loyaltyPointsRedeemed > 0) {
-                        $conn->query("UPDATE customers SET loyalty_points = loyalty_points - $loyaltyPointsRedeemed WHERE id = $effectiveCustomerId AND restaurant_id = $tenantId");
-                        $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES ($tenantId, $effectiveCustomerId, $orderId, 'redeem', -$loyaltyPointsRedeemed, -round($loyaltyPointsRedeemed * 0.10, 2), 'Points redeemed for order #$orderId', NOW())");
+                        $conn->query("UPDATE customers SET loyalty_points = loyalty_points - $loyaltyPointsRedeemed, lifetime_points_redeemed = lifetime_points_redeemed + $loyaltyPointsRedeemed WHERE id = $effectiveCustomerId AND restaurant_id = $tenantId");
+                        $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES ($tenantId, $effectiveCustomerId, $orderId, 'redeem', -$loyaltyPointsRedeemed, -" . round($loyaltyPointsRedeemed * $pointValue, 2) . ", 'Points redeemed for order #$orderId', NOW())");
                     }
                 }
                 
@@ -414,12 +460,25 @@ try {
                     // Free table
 $conn->query("UPDATE tables SET status = 'cleaning', guest_count = 0, reserved_by = '' WHERE table_number = '$tableNumber' AND restaurant_id = $tenantId");
 
+                    // Get loyalty settings
+                    $loyaltySettings = BillingService::getLoyaltySettings($conn, $tenantId);
+                    $isLoyaltyEnabled = $loyaltySettings['is_enabled'];
+                    $earnSpendAmount = $loyaltySettings['earn_spend_amount'];
+                    $pointValue = $loyaltySettings['point_value'];
+                    $expirationEnabled = $loyaltySettings['expiration_enabled'];
+                    $expirationDays = $loyaltySettings['expiration_days'];
+                    
                     // Handle customer loyalty points earn if customer attached
-                    if ($customerId > 0) {
-                        $pointsEarned = (int)($grandTotal / 10);
+                    if ($customerId > 0 && $isLoyaltyEnabled) {
+                        $eligibleAmount = $grandTotal; // For split bill, use full grand total
+                        $pointsEarned = (int)($eligibleAmount / $earnSpendAmount);
+                        $expirationDate = null;
+                        if ($expirationEnabled && $expirationDays > 0) {
+                            $expirationDate = date('Y-m-d', strtotime("+$expirationDays days"));
+                        }
                         if ($pointsEarned > 0) {
-                            $conn->query("UPDATE customers SET loyalty_points = loyalty_points + $pointsEarned, total_spent = total_spent + $grandTotal, total_visits = total_visits + 1 WHERE id = $customerId AND restaurant_id = $tenantId");
-                            $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, created_at) VALUES ($tenantId, $customerId, $orderId, 'earn', $pointsEarned, round($pointsEarned * 0.10, 2), 'Points earned from split-settled order #$orderId', NOW())");
+                            $conn->query("UPDATE customers SET loyalty_points = loyalty_points + $pointsEarned, total_spent = total_spent + $grandTotal, total_visits = total_visits + 1, lifetime_points_earned = lifetime_points_earned + $pointsEarned WHERE id = $customerId AND restaurant_id = $tenantId");
+                            $conn->query("INSERT INTO loyalty_transactions (restaurant_id, customer_id, order_id, type, points, amount_equivalent, notes, expiration_date, created_at) VALUES ($tenantId, $customerId, $orderId, 'earn', $pointsEarned, " . round($pointsEarned * $pointValue, 2) . ", 'Points earned from split-settled order #$orderId', " . ($expirationDate ? "'$expirationDate'" : "NULL") . ", NOW())");
                         }
                     }
 

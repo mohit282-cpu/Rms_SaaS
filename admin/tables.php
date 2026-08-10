@@ -984,6 +984,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
 
         let currentCustomerId = 0;
         let currentLoyaltyPoints = 0;
+        let currentLoyaltyPointValue = 1.0;
         let currentLoyaltyDiscount = 0;
         let selectedPaymentMethod = null;
         let currentBill = null;
@@ -992,6 +993,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             selectedTableNumber = tableNum;
             currentCustomerId = 0;
             currentLoyaltyPoints = 0;
+            currentLoyaltyPointValue = 1.0;
             currentLoyaltyDiscount = 0;
             selectedPaymentMethod = null;
             currentBill = null;
@@ -1343,6 +1345,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         function unlinkCustomer() {
             currentCustomerId = 0;
             currentLoyaltyPoints = 0;
+            currentLoyaltyPointValue = 1.0;
             currentLoyaltyDiscount = 0;
             
             document.getElementById('customerDetailsBox').classList.add('hidden');
@@ -1377,6 +1380,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             .then(data => {
                 if (data.success) {
                     currentLoyaltyPoints = data.loyalty_points || 0;
+                    currentLoyaltyPointValue = data.point_value || 1.0;
                     updateLoyaltyDisplay();
                 }
             })
@@ -1385,7 +1389,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
 
         function updateLoyaltyDisplay() {
             document.getElementById('loyaltyPointsDisplay').textContent = currentLoyaltyPoints.toLocaleString();
-            document.getElementById('loyaltyValueDisplay').textContent = formatPrice(currentLoyaltyPoints * 0.10);
+            document.getElementById('loyaltyValueDisplay').textContent = formatPrice(currentLoyaltyPoints * currentLoyaltyPointValue);
             document.getElementById('loyaltyPointsToRedeem').max = currentLoyaltyPoints;
             document.getElementById('loyaltyPointsToRedeem').placeholder = 'Max: ' + currentLoyaltyPoints + ' points';
         }

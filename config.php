@@ -35,10 +35,14 @@ if ($__secretFromEnv === '' || $__secretFromEnv === $__weakSecret) {
 define('QR_SECRET_KEY', $__secretKey);
 unset($__secretFromEnv, $__weakSecret, $__secretFile, $__secretKey);
 
+// Set System Timezone to Asia/Kathmandu
+date_default_timezone_set('Asia/Kathmandu');
+
 // Load Helper Classes
 require_once __DIR__ . '/helpers/Security.php';
 require_once __DIR__ . '/helpers/CSRF.php';
 require_once __DIR__ . '/helpers/Auth.php';
+require_once __DIR__ . '/helpers/CustomerSessionService.php';
 require_once __DIR__ . '/helpers/TenantContext.php';
 require_once __DIR__ . '/helpers/SubscriptionService.php';
 require_once __DIR__ . '/helpers/RateLimiter.php';
@@ -48,12 +52,79 @@ require_once __DIR__ . '/helpers/PermissionService.php';
 require_once __DIR__ . '/helpers/AuthorizationService.php';
 require_once __DIR__ . '/helpers/BillingService.php';
 
+// Initialize PHP session automatically for all requests
+Auth::startSession();
+
 // Set Global Production Security Headers
 Security::setSecurityHeaders();
 
 // Global Money Formatter Helper
 function formatPrice($amount) {
     return 'Rs. ' . number_format((float)$amount, 2);
+}
+
+/**
+ * Fetch Tenant-Specific Loyalty Settings with Fallback Defaults
+ */
+function getLoyaltySettings($conn, $tenantId) {
+    static $cache = [];
+    $tenantId = (int)$tenantId;
+    if ($tenantId <= 0) {
+        $tenantId = 1;
+    }
+    if (isset($cache[$tenantId])) {
+        return $cache[$tenantId];
+    }
+
+    $defaults = [
+        'restaurant_id' => $tenantId,
+        'is_enabled' => 1,
+        'earn_spend_amount' => 100.00,
+        'point_value' => 1.00,
+        'min_redemption_points' => 100,
+        'max_redemption_points' => 500,
+        'max_discount_percent' => 20.00,
+        'expiration_enabled' => 0,
+        'expiration_days' => 365,
+        'earning_basis' => 'subtotal_after_discounts'
+    ];
+
+    if (!$conn) {
+        return $defaults;
+    }
+
+    $stmt = $conn->prepare("SELECT * FROM restaurant_loyalty_settings WHERE restaurant_id = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("i", $tenantId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $row = $res->fetch_assoc()) {
+            $defaults = [
+                'restaurant_id' => (int)$row['restaurant_id'],
+                'is_enabled' => (int)$row['is_enabled'],
+                'earn_spend_amount' => max(0.01, floatval($row['earn_spend_amount'])),
+                'point_value' => max(0.01, floatval($row['point_value'])),
+                'min_redemption_points' => max(0, (int)$row['min_redemption_points']),
+                'max_redemption_points' => max(0, (int)$row['max_redemption_points']),
+                'max_discount_percent' => max(0.0, min(100.0, floatval($row['max_discount_percent']))),
+                'expiration_enabled' => (int)$row['expiration_enabled'],
+                'expiration_days' => max(1, (int)$row['expiration_days']),
+                'earning_basis' => $row['earning_basis'] ?: 'subtotal_after_discounts'
+            ];
+        } else {
+            // Provision default row for tenant if missing
+            $iStmt = $conn->prepare("INSERT IGNORE INTO restaurant_loyalty_settings (restaurant_id, is_enabled, earn_spend_amount, point_value, min_redemption_points, max_redemption_points, max_discount_percent, expiration_enabled, expiration_days, earning_basis) VALUES (?, 1, 100.00, 1.00, 100, 500, 20.00, 0, 365, 'subtotal_after_discounts')");
+            if ($iStmt) {
+                $iStmt->bind_param("i", $tenantId);
+                $iStmt->execute();
+                $iStmt->close();
+            }
+        }
+        $stmt->close();
+    }
+
+    $cache[$tenantId] = $defaults;
+    return $defaults;
 }
 
 // Cryptographic Token Helpers
@@ -517,11 +588,28 @@ function ensureDatabaseSchema($conn) {
         total_visits INT DEFAULT 0,
         total_spent DECIMAL(10, 2) DEFAULT 0.00,
         loyalty_points INT DEFAULT 0,
+        lifetime_points_earned INT DEFAULT 0,
+        lifetime_points_redeemed INT DEFAULT 0,
         tier VARCHAR(30) DEFAULT 'Bronze',
         last_visit_at TIMESTAMP NULL DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_cust_tenant_phone (restaurant_id, phone)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Safely add missing columns to existing customers table
+    $cust_cols = [];
+    $c_res = $conn->query("SHOW COLUMNS FROM customers");
+    if ($c_res) {
+        while ($c_row = $c_res->fetch_assoc()) {
+            $cust_cols[] = strtolower($c_row['Field']);
+        }
+    }
+    if (!in_array('lifetime_points_earned', $cust_cols)) {
+        try { $conn->query("ALTER TABLE customers ADD COLUMN lifetime_points_earned INT DEFAULT 0"); } catch (Throwable $e) {}
+    }
+    if (!in_array('lifetime_points_redeemed', $cust_cols)) {
+        try { $conn->query("ALTER TABLE customers ADD COLUMN lifetime_points_redeemed INT DEFAULT 0"); } catch (Throwable $e) {}
+    }
 
     @$conn->query("CREATE TABLE IF NOT EXISTS loyalty_transactions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -532,9 +620,76 @@ function ensureDatabaseSchema($conn) {
         points INT NOT NULL,
         amount_equivalent DECIMAL(10, 2) DEFAULT 0.00,
         notes TEXT,
+        expiration_date DATE DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_loyalty_cust (restaurant_id, customer_id, order_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Safely add missing columns to existing loyalty_transactions table
+    $lt_cols = [];
+    $lt_res = $conn->query("SHOW COLUMNS FROM loyalty_transactions");
+    if ($lt_res) {
+        while ($lt_row = $lt_res->fetch_assoc()) {
+            $lt_cols[] = strtolower($lt_row['Field']);
+        }
+    }
+    if (!in_array('expiration_date', $lt_cols)) {
+        try { $conn->query("ALTER TABLE loyalty_transactions ADD COLUMN expiration_date DATE DEFAULT NULL"); } catch (Throwable $e) {}
+    }
+
+    // 7.1 Tenant Loyalty Program Settings table check
+    @$conn->query("CREATE TABLE IF NOT EXISTS restaurant_loyalty_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        restaurant_id INT NOT NULL UNIQUE,
+        is_enabled TINYINT(1) DEFAULT 1,
+        earn_spend_amount DECIMAL(10,2) DEFAULT 100.00,
+        point_value DECIMAL(10,2) DEFAULT 1.00,
+        min_redemption_points INT DEFAULT 100,
+        max_redemption_points INT DEFAULT 500,
+        max_discount_percent DECIMAL(5,2) DEFAULT 20.00,
+        expiration_enabled TINYINT(1) DEFAULT 0,
+        expiration_days INT DEFAULT 365,
+        earning_basis VARCHAR(50) DEFAULT 'subtotal_after_discounts',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_loyalty_tenant (restaurant_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Safely add missing columns to existing restaurant_loyalty_settings table
+    $loyalty_cols = [];
+    $l_res = $conn->query("SHOW COLUMNS FROM restaurant_loyalty_settings");
+    if ($l_res) {
+        while ($l_row = $l_res->fetch_assoc()) {
+            $loyalty_cols[] = strtolower($l_row['Field']);
+        }
+    }
+    if (!in_array('is_enabled', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN is_enabled TINYINT(1) DEFAULT 1"); } catch (Throwable $e) {}
+    }
+    if (!in_array('earn_spend_amount', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN earn_spend_amount DECIMAL(10,2) DEFAULT 100.00"); } catch (Throwable $e) {}
+    }
+    if (!in_array('point_value', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN point_value DECIMAL(10,2) DEFAULT 1.00"); } catch (Throwable $e) {}
+    }
+    if (!in_array('min_redemption_points', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN min_redemption_points INT DEFAULT 100"); } catch (Throwable $e) {}
+    }
+    if (!in_array('max_redemption_points', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN max_redemption_points INT DEFAULT 500"); } catch (Throwable $e) {}
+    }
+    if (!in_array('max_discount_percent', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN max_discount_percent DECIMAL(5,2) DEFAULT 20.00"); } catch (Throwable $e) {}
+    }
+    if (!in_array('expiration_enabled', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN expiration_enabled TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
+    }
+    if (!in_array('expiration_days', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN expiration_days INT DEFAULT 365"); } catch (Throwable $e) {}
+    }
+    if (!in_array('earning_basis', $loyalty_cols)) {
+        try { $conn->query("ALTER TABLE restaurant_loyalty_settings ADD COLUMN earning_basis VARCHAR(50) DEFAULT 'subtotal_after_discounts'"); } catch (Throwable $e) {}
+    }
 
     // 8. Waiter Calls table check
     @$conn->query("CREATE TABLE IF NOT EXISTS waiter_calls (

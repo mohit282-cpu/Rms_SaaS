@@ -28,10 +28,7 @@ if ($requested_token !== null && $requested_token !== '') {
                     $access_error_msg = "Table " . htmlspecialchars($row['table_number']) . " is currently disabled or undergoing maintenance. Please request assistance from staff.";
                 } else {
                     $is_access_valid = true;
-                    $_SESSION['customer_table_id'] = $row['table_number'];
-                    $_SESSION['customer_table_token'] = $row['qr_token'];
-                    $_SESSION['customer_restaurant_id'] = (int)($row['restaurant_id'] ?? 0);
-                    $_SESSION['restaurant_id'] = (int)($row['restaurant_id'] ?? 0);
+                    CustomerSessionService::establishSession($row['table_number'], $row['qr_token'], $row['restaurant_id']);
                 }
             } else {
                 // Invalid or fake token attempt -> Log Audit Event
@@ -77,10 +74,7 @@ elseif ($requested_table !== null && $requested_table !== '') {
             } else {
                 if ($requested_sig !== null && verifyTableSignature($requested_table, $requested_sig)) {
                     $is_access_valid = true;
-                    $_SESSION['customer_table_id'] = $table_data['table_number'];
-                    $_SESSION['customer_table_token'] = $table_data['qr_token'];
-                    $_SESSION['customer_restaurant_id'] = (int)($table_data['restaurant_id'] ?? 0);
-                    $_SESSION['restaurant_id'] = (int)($table_data['restaurant_id'] ?? 0);
+                    CustomerSessionService::establishSession($table_data['table_number'], $table_data['qr_token'], $table_data['restaurant_id']);
                 } else {
                     // IDOR Protection: Rejection of direct table URL parameter without valid token/signature
                     $access_error_code = 403;
@@ -93,24 +87,13 @@ elseif ($requested_table !== null && $requested_table !== '') {
 }
 // 3. Existing Valid Customer Session Check (Once session is pinned, never trust URL query overrides!)
 elseif (isset($_SESSION['customer_table_id']) && !empty($_SESSION['customer_table_id'])) {
-    $sess_table = trim($_SESSION['customer_table_id']);
-    if ($conn) {
-        $tbl_safe = $conn->real_escape_string($sess_table);
-        $sess_rest_id = (int)($_SESSION['customer_restaurant_id'] ?? 0);
-        $t_res = $conn->query("SELECT status FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $sess_rest_id LIMIT 1");
-        if ($t_res && $t_row = $t_res->fetch_assoc()) {
-            if ($t_row['status'] !== 'disabled') {
-                $is_access_valid = true;
-            } else {
-                $access_error_code = 403;
-                $access_error_title = "❌ Table Deactivated";
-                $access_error_msg = "Your table session has ended because the table was disabled by management.";
-            }
-        } else {
-            $is_access_valid = true;
-        }
-    } else {
+    $sessionCheck = CustomerSessionService::validateSession($conn);
+    if ($sessionCheck['valid']) {
         $is_access_valid = true;
+    } else {
+        $access_error_code = $sessionCheck['code'];
+        $access_error_title = $sessionCheck['title'];
+        $access_error_msg = $sessionCheck['message'];
     }
 } else {
     $access_error_code = 400;

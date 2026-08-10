@@ -4,6 +4,58 @@
 class BillingService {
     
     /**
+     * Get tenant-specific loyalty settings
+     */
+    private static function getLoyaltySettings($conn, int $tenantId): array {
+        if (!$conn || $tenantId <= 0) {
+            return [
+                'is_enabled' => 1,
+                'earn_spend_amount' => 100.00,
+                'point_value' => 1.00,
+                'min_redemption_points' => 100,
+                'max_redemption_points' => 500,
+                'max_discount_percent' => 20.00,
+                'expiration_enabled' => 0,
+                'expiration_days' => 365,
+                'earning_basis' => 'subtotal_after_discounts'
+            ];
+        }
+        
+        $stmt = $conn->prepare("SELECT * FROM restaurant_loyalty_settings WHERE restaurant_id = ? LIMIT 1");
+        $stmt->bind_param("i", $tenantId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        
+        if ($row) {
+            return [
+                'is_enabled' => (int)$row['is_enabled'],
+                'earn_spend_amount' => max(0.01, floatval($row['earn_spend_amount'])),
+                'point_value' => max(0.01, floatval($row['point_value'])),
+                'min_redemption_points' => max(0, (int)$row['min_redemption_points']),
+                'max_redemption_points' => max(0, (int)$row['max_redemption_points']),
+                'max_discount_percent' => max(0.0, min(100.0, floatval($row['max_discount_percent']))),
+                'expiration_enabled' => (int)$row['expiration_enabled'],
+                'expiration_days' => max(1, (int)$row['expiration_days']),
+                'earning_basis' => $row['earning_basis'] ?: 'subtotal_after_discounts'
+            ];
+        }
+        
+        // Return defaults if no settings found
+        return [
+            'is_enabled' => 1,
+            'earn_spend_amount' => 100.00,
+            'point_value' => 1.00,
+            'min_redemption_points' => 100,
+            'max_redemption_points' => 500,
+            'max_discount_percent' => 20.00,
+            'expiration_enabled' => 0,
+            'expiration_days' => 365,
+            'earning_basis' => 'subtotal_after_discounts'
+        ];
+    }
+    
+    /**
      * Calculate authoritative bill totals for an order or table within tenant context.
      * 
      * Calculation sequence:
@@ -11,7 +63,7 @@ class BillingService {
      * 2. Service Charge = (Subtotal * ServiceChargePercent) / 100
      * 3. Tax Base = Subtotal + Service Charge
      * 4. VAT = (Tax Base * VATPercent) / 100
-     * 5. Loyalty Discount = LoyaltyPoints * 0.10
+     * 5. Loyalty Discount = LoyaltyPoints * point_value (from settings)
      * 6. NCR Waiver = If NCR, set grand total to 0.00
      * 7. Grand Total = Subtotal + Service Charge + VAT - Discounts - Loyalty
      * 
@@ -27,6 +79,9 @@ class BillingService {
             return self::emptyBill();
         }
 
+        // Get loyalty settings
+        $loyaltySettings = self::getLoyaltySettings($conn, $tenantId);
+        
         // 1. Fetch order items by joining orders table to enforce tenant isolation
         $itemsStmt = $conn->prepare("
             SELECT oi.quantity, oi.price, mi.name 
@@ -75,14 +130,15 @@ class BillingService {
             $tax = round(($taxableBase * $vatPercent) / 100.0, 2);
         }
 
-        // 5. Loyalty discount (1 point = Rs. 0.10)
+        // 5. Loyalty discount (using configured point_value)
         $loyaltyDiscount = 0.0;
+        $pointsValue = $loyaltySettings['point_value'];
         if ($loyaltyPointsRedeemed > 0) {
             $maxDiscount = $subtotal + $serviceCharge + $tax;
-            $loyaltyDiscount = round($loyaltyPointsRedeemed * 0.10, 2);
+            $loyaltyDiscount = round($loyaltyPointsRedeemed * $pointsValue, 2);
             if ($loyaltyDiscount > $maxDiscount) {
                 $loyaltyDiscount = $maxDiscount;
-                $loyaltyPointsRedeemed = (int)ceil($maxDiscount / 0.10);
+                $loyaltyPointsRedeemed = (int)ceil($maxDiscount / $pointsValue);
             }
         }
 
@@ -110,6 +166,12 @@ class BillingService {
             'currency' => 'NPR',
             'sc_percent' => $scPercent,
             'vat_percent' => $vatPercent,
+            'loyalty_settings' => [
+                'point_value' => $pointsValue,
+                'max_discount_percent' => $loyaltySettings['max_discount_percent'],
+                'max_redemption_points' => $loyaltySettings['max_redemption_points'],
+                'min_redemption_points' => $loyaltySettings['min_redemption_points']
+            ],
             'formatted' => [
                 'subtotal' => self::formatMoney($subtotal),
                 'service_charge' => self::formatMoney($serviceCharge),
@@ -139,6 +201,12 @@ class BillingService {
             'currency' => 'NPR',
             'sc_percent' => 10.0,
             'vat_percent' => 13.0,
+            'loyalty_settings' => [
+                'point_value' => 1.00,
+                'max_discount_percent' => 20.00,
+                'max_redemption_points' => 500,
+                'min_redemption_points' => 100
+            ],
             'formatted' => [
                 'subtotal' => 'Rs. 0.00',
                 'service_charge' => 'Rs. 0.00',

@@ -1,3 +1,15 @@
+<?php
+require_once 'config.php';
+$conn = getDBConnection();
+$sessionCheck = CustomerSessionService::validateSession($conn);
+
+if (!$sessionCheck['valid']) {
+    http_response_code($sessionCheck['code']);
+    die('<!DOCTYPE html><html lang="en" class="h-full bg-zinc-950 text-white"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>' . htmlspecialchars($sessionCheck['title']) . '</title><script src="https://cdn.tailwindcss.com"></script></head><body class="h-full flex items-center justify-center p-4 text-center selection:bg-amber-500 selection:text-zinc-950"><div class="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-3xl space-y-4 shadow-2xl"><div class="text-5xl mb-2">🔒</div><h1 class="text-xl font-black text-white">' . htmlspecialchars($sessionCheck['title']) . '</h1><p class="text-xs text-zinc-400 leading-relaxed">' . htmlspecialchars($sessionCheck['message']) . '</p><div class="pt-4"><a href="index.php" class="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">🏠 Return to Home</a></div></div></body></html>');
+}
+
+$table_num = htmlspecialchars($_SESSION['customer_table_id']);
+?>
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-zinc-950 text-zinc-100">
 <head>
@@ -26,10 +38,6 @@
     </style>
 </head>
 <body class="min-h-full pb-24 font-sans antialiased selection:bg-amber-500 selection:text-zinc-950">
-
-    <?php
-    $table_num = isset($_GET['table']) ? htmlspecialchars($_GET['table']) : '1';
-    ?>
 
     <!-- Sticky Mobile Header -->
     <header class="sticky top-0 z-40 bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-800/80 px-4 py-3.5">
