@@ -59,9 +59,9 @@ $stmt->close();
 
 // Fetch customer info if linked
 $customer = null;
-if (!empty($order['customer_name'])) {
+if (!empty($order['customer_id'])) {
     $stmt = $conn->prepare("SELECT * FROM customers WHERE id = ? AND restaurant_id = ? LIMIT 1");
-    $stmt->bind_param("ii", $order['customer_name'], $tenantId);
+    $stmt->bind_param("ii", $order['customer_id'], $tenantId);
     $stmt->execute();
     $customer = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -89,7 +89,29 @@ if ($taxEnabled && $subtotal > 0) {
     $tax = round(($taxableBase * $vatPercent) / 100.0, 2);
 }
 
-$grandTotal = round($subtotal + $serviceCharge + $tax, 2);
+// Loyalty discount: re-derive from the redeemed points ledger + any manual order discount
+$loyaltyDiscount = 0.0;
+$redeemedPoints = 0;
+if (!empty($order['customer_id'])) {
+    $stmt = $conn->prepare("SELECT points FROM loyalty_transactions WHERE order_id = ? AND restaurant_id = ? AND type = 'redeem' LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("ii", $orderId, $tenantId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $redeemedPoints = (int)abs((int)($row['points'] ?? 0));
+        $stmt->close();
+    }
+}
+if ($redeemedPoints > 0) {
+    $loyaltyBill = BillingService::calculateOrderBill($conn, $tenantId, $orderId, $redeemedPoints, false);
+    if ($loyaltyBill) {
+        $loyaltyDiscount = (float)$loyaltyBill['loyalty_discount'];
+    }
+}
+$manualDiscount = (float)($order['discount_amount'] ?? 0);
+$totalDiscount = round($loyaltyDiscount + $manualDiscount, 2);
+
+$grandTotal = round($subtotal + $serviceCharge + $tax - $totalDiscount, 2);
 $paidAmount = (float)($order['paid_amount'] ?? $order['total_amount'] ?? $grandTotal);
 $cashReceived = (float)($_GET['cash_received'] ?? $paidAmount);
 $change = max(0, $cashReceived - $paidAmount);
@@ -207,6 +229,12 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
                 <span><?php echo fmt($tax); ?></span>
             </div>
             <?php endif; ?>
+            <?php if ($totalDiscount > 0): ?>
+            <div class="flex-between" style="color:#059669;">
+                <span>Discount<?php if ($loyaltyDiscount > 0 && $manualDiscount > 0): ?> (Loyalty + Other)<?php elseif ($loyaltyDiscount > 0): ?> (Loyalty)<?php endif; ?></span>
+                <span>-<?php echo fmt($totalDiscount); ?></span>
+            </div>
+            <?php endif; ?>
             <div class="thick-divider"></div>
             <div class="flex-between text-lg bold">
                 <span>Grand Total</span>
@@ -292,6 +320,12 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
         <div class="flex-between small">
             <span>VAT (<?php echo $vatPercent; ?>%)</span>
             <span><?php echo fmt($tax); ?></span>
+        </div>
+        <?php endif; ?>
+        <?php if ($totalDiscount > 0): ?>
+        <div class="flex-between small" style="color:#059669;">
+            <span>Discount</span>
+            <span>-<?php echo fmt($totalDiscount); ?></span>
         </div>
         <?php endif; ?>
         <div class="thick-divider"></div>

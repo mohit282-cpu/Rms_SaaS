@@ -2,33 +2,42 @@
 // helpers/BillingService.php - Centralized Authoritative Billing & Calculation Engine
 
 class BillingService {
-    
+
+    // Default tenant loyalty settings used only as a safety fallback. The real
+    // configuration always comes from the restaurant_loyalty_settings table.
+    private const DEFAULT_LOYALTY = [
+        'is_enabled' => 1,
+        'earn_spend_amount' => 100.00,
+        'point_value' => 1.00,
+        'min_redemption_points' => 10,
+        'max_redemption_points' => 500,
+        'max_discount_percent' => 20.00,
+        'expiration_enabled' => 0,
+        'expiration_days' => 365,
+        'earning_basis' => 'subtotal_after_discounts'
+    ];
+
     /**
-     * Get tenant-specific loyalty settings
+     * Get tenant-specific loyalty settings (single authoritative source used by
+     * the billing engine, the table-payment API and the loyalty service).
      */
-    private static function getLoyaltySettings($conn, int $tenantId): array {
+    public static function getLoyaltySettings($conn, int $tenantId): array {
         if (!$conn || $tenantId <= 0) {
-            return [
-                'is_enabled' => 1,
-                'earn_spend_amount' => 100.00,
-                'point_value' => 1.00,
-                'min_redemption_points' => 100,
-                'max_redemption_points' => 500,
-                'max_discount_percent' => 20.00,
-                'expiration_enabled' => 0,
-                'expiration_days' => 365,
-                'earning_basis' => 'subtotal_after_discounts'
-            ];
+            return array_merge(self::DEFAULT_LOYALTY, ['restaurant_id' => max(1, $tenantId)]);
         }
-        
+
         $stmt = $conn->prepare("SELECT * FROM restaurant_loyalty_settings WHERE restaurant_id = ? LIMIT 1");
+        if (!$stmt) {
+            return array_merge(self::DEFAULT_LOYALTY, ['restaurant_id' => max(1, $tenantId)]);
+        }
         $stmt->bind_param("i", $tenantId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        
+
         if ($row) {
             return [
+                'restaurant_id' => (int)$tenantId,
                 'is_enabled' => (int)$row['is_enabled'],
                 'earn_spend_amount' => max(0.01, floatval($row['earn_spend_amount'])),
                 'point_value' => max(0.01, floatval($row['point_value'])),
@@ -40,19 +49,18 @@ class BillingService {
                 'earning_basis' => $row['earning_basis'] ?: 'subtotal_after_discounts'
             ];
         }
-        
-        // Return defaults if no settings found
-        return [
-            'is_enabled' => 1,
-            'earn_spend_amount' => 100.00,
-            'point_value' => 1.00,
-            'min_redemption_points' => 100,
-            'max_redemption_points' => 500,
-            'max_discount_percent' => 20.00,
-            'expiration_enabled' => 0,
-            'expiration_days' => 365,
-            'earning_basis' => 'subtotal_after_discounts'
-        ];
+
+        // Provision a default row for the tenant so settings persist going forward
+        try {
+            $iStmt = $conn->prepare("INSERT IGNORE INTO restaurant_loyalty_settings (restaurant_id, is_enabled, earn_spend_amount, point_value, min_redemption_points, max_redemption_points, max_discount_percent, expiration_enabled, expiration_days, earning_basis) VALUES (?, 1, 100.00, 1.00, 10, 500, 20.00, 0, 365, 'subtotal_after_discounts')");
+            if ($iStmt) {
+                $iStmt->bind_param("i", $tenantId);
+                $iStmt->execute();
+                $iStmt->close();
+            }
+        } catch (Throwable $e) {}
+
+        return array_merge(self::DEFAULT_LOYALTY, ['restaurant_id' => (int)$tenantId]);
     }
     
     /**
@@ -167,10 +175,15 @@ class BillingService {
             'sc_percent' => $scPercent,
             'vat_percent' => $vatPercent,
             'loyalty_settings' => [
+                'is_enabled' => $loyaltySettings['is_enabled'],
                 'point_value' => $pointsValue,
+                'earn_spend_amount' => $loyaltySettings['earn_spend_amount'],
                 'max_discount_percent' => $loyaltySettings['max_discount_percent'],
                 'max_redemption_points' => $loyaltySettings['max_redemption_points'],
-                'min_redemption_points' => $loyaltySettings['min_redemption_points']
+                'min_redemption_points' => $loyaltySettings['min_redemption_points'],
+                'expiration_enabled' => $loyaltySettings['expiration_enabled'],
+                'expiration_days' => $loyaltySettings['expiration_days'],
+                'earning_basis' => $loyaltySettings['earning_basis']
             ],
             'formatted' => [
                 'subtotal' => self::formatMoney($subtotal),
@@ -202,10 +215,15 @@ class BillingService {
             'sc_percent' => 10.0,
             'vat_percent' => 13.0,
             'loyalty_settings' => [
+                'is_enabled' => 1,
                 'point_value' => 1.00,
+                'earn_spend_amount' => 100.00,
                 'max_discount_percent' => 20.00,
                 'max_redemption_points' => 500,
-                'min_redemption_points' => 100
+                'min_redemption_points' => 10,
+                'expiration_enabled' => 0,
+                'expiration_days' => 365,
+                'earning_basis' => 'subtotal_after_discounts'
             ],
             'formatted' => [
                 'subtotal' => 'Rs. 0.00',

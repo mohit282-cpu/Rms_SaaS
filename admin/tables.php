@@ -405,9 +405,10 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                         <span id="loyaltyValueDisplay" class="font-bold text-white">Rs.0</span>
                     </div>
                     <div class="flex gap-2">
-                        <input type="number" id="loyaltyPointsToRedeem" placeholder="Points to redeem" min="1" class="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500">
+                        <input type="number" id="loyaltyPointsToRedeem" placeholder="Points to redeem" min="1" oninput="updateLoyaltyHint()" class="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500">
                         <button onclick="applyLoyaltyPoints()" class="h-10 px-4 rounded-xl bg-emerald-500 text-zinc-950 font-black text-xs active:scale-95 shadow-md">Apply</button>
                     </div>
+                    <div id="loyaltyMaxHint" class="hidden text-[10px] text-amber-400/80"></div>
                     <div id="loyaltyDiscountRow" class="hidden flex justify-between text-xs text-zinc-400 bg-zinc-900/50 rounded-xl p-2 border border-zinc-800/40">
                         <span>Loyalty Discount</span>
                         <span id="loyaltyDiscountAmount" class="font-bold text-emerald-400">Rs.0</span>
@@ -986,6 +987,8 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         let currentLoyaltyPoints = 0;
         let currentLoyaltyPointValue = 1.0;
         let currentLoyaltyDiscount = 0;
+        let currentMaxAllowedPoints = 0;
+        let isProcessingPayment = false;
         let selectedPaymentMethod = null;
         let currentBill = null;
 
@@ -1045,6 +1048,13 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('loyaltyDiscountRow').classList.add('hidden');
             document.getElementById('drawerLoyaltyRow').style.display = 'none';
             document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+            document.getElementById('loyaltyPointsToRedeem').value = '';
+            document.getElementById('loyaltyMaxHint').classList.add('hidden');
+            currentCustomerId = 0;
+            currentLoyaltyPoints = 0;
+            currentLoyaltyPointValue = 1.0;
+            currentLoyaltyDiscount = 0;
+            currentMaxAllowedPoints = 0;
 
             // Fetch authoritative bill calculations from backend if active order exists
             const orderId = t.active_order ? t.active_order.id : null;
@@ -1125,6 +1135,16 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('drawerServiceChargeRow').style.display = currentBill.service_charge > 0 ? 'flex' : 'none';
             document.getElementById('drawerTaxRow').style.display = currentBill.vat > 0 ? 'flex' : 'none';
             document.getElementById('drawerLoyaltyRow').style.display = currentBill.loyalty_discount > 0 ? 'flex' : 'none';
+
+            const loyaltyRow = document.getElementById('loyaltyDiscountRow');
+            if (loyaltyRow) {
+                if (currentBill.loyalty_discount > 0) {
+                    document.getElementById('loyaltyDiscountAmount').textContent = formatPrice(currentBill.loyalty_discount);
+                    loyaltyRow.classList.remove('hidden');
+                } else {
+                    loyaltyRow.classList.add('hidden');
+                }
+            }
 
             if (selectedPaymentMethod) {
                 updatePaymentAmountDisplays();
@@ -1324,6 +1344,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         function linkCustomer(customer) {
             currentCustomerId = customer.id;
             currentLoyaltyPoints = customer.loyalty_points || 0;
+            currentMaxAllowedPoints = 0;
             
             document.getElementById('customerSection').querySelector('.bg-zinc-950').classList.add('hidden');
             document.getElementById('customerDetailsBox').classList.remove('hidden');
@@ -1347,6 +1368,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             currentLoyaltyPoints = 0;
             currentLoyaltyPointValue = 1.0;
             currentLoyaltyDiscount = 0;
+            currentMaxAllowedPoints = 0;
             
             document.getElementById('customerDetailsBox').classList.add('hidden');
             document.getElementById('customerSection').querySelector('.bg-zinc-950').classList.remove('hidden');
@@ -1354,11 +1376,13 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('loyaltySection').style.display = 'none';
             document.getElementById('loyaltyDiscountRow').classList.add('hidden');
             document.getElementById('drawerLoyaltyRow').style.display = 'none';
+            document.getElementById('loyaltyPointsToRedeem').value = '';
+            document.getElementById('loyaltyMaxHint').classList.add('hidden');
             
             const t = allTablesData.find(x => x.table_number.toString() === selectedTableNumber.toString());
             const orderId = t && t.active_order ? t.active_order.id : null;
             if (orderId) {
-                fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId, { credentials: 'same-origin' })
+                fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId + '&loyalty_points=0&customer_id=0', { credentials: 'same-origin' })
                     .then(r => r.json())
                     .then(data => {
                         if (data.success && data.bill) {
@@ -1392,6 +1416,24 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             document.getElementById('loyaltyValueDisplay').textContent = formatPrice(currentLoyaltyPoints * currentLoyaltyPointValue);
             document.getElementById('loyaltyPointsToRedeem').max = currentLoyaltyPoints;
             document.getElementById('loyaltyPointsToRedeem').placeholder = 'Max: ' + currentLoyaltyPoints + ' points';
+            updateLoyaltyHint();
+        }
+
+        function updateLoyaltyHint() {
+            const input = document.getElementById('loyaltyPointsToRedeem');
+            const hint = document.getElementById('loyaltyMaxHint');
+            const entered = parseInt(input.value) || 0;
+            if (!hint) return;
+            const maxPoints = currentMaxAllowedPoints > 0 ? currentMaxAllowedPoints : (currentLoyaltyPoints || 0);
+            if (entered > 0 && currentMaxAllowedPoints > 0 && entered > currentMaxAllowedPoints) {
+                hint.textContent = 'Maximum allowed: ' + currentMaxAllowedPoints + ' points (loyalty rules)';
+                hint.classList.remove('hidden');
+            } else if (entered > 0 && currentMaxAllowedPoints > 0 && entered < currentMaxAllowedPoints && entered > 0) {
+                hint.textContent = 'Max allowed: ' + currentMaxAllowedPoints + ' points';
+                hint.classList.remove('hidden');
+            } else {
+                hint.classList.add('hidden');
+            }
         }
 
         function applyLoyaltyPoints() {
@@ -1413,21 +1455,57 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 return;
             }
 
-            showToast('Applying loyalty points...', 'info');
+            showToast('Validating loyalty points...', 'info');
 
-            fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId + '&loyalty_points=' + points, { credentials: 'same-origin' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success && data.bill) {
-                        currentBill = data.bill;
-                        currentLoyaltyDiscount = data.bill.loyalty_discount;
-                        renderBillSummary();
-                        showToast('Applied points! Loyalty discount: ' + data.bill.formatted.loyalty_discount, 'success');
-                    } else {
-                        showToast(data.message || 'Failed to apply loyalty', 'error');
+            // 1. Ask the server to authoritatively validate + cap the redemption
+            fetch('../api/table-payment.php?action=apply_loyalty', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'customer_id=' + currentCustomerId + '&points=' + points + '&order_id=' + orderId,
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.valid) {
+                    currentMaxAllowedPoints = data.max_allowed_points || 0;
+                    document.getElementById('loyaltyPointsToRedeem').value = data.points_redeemed;
+                    document.getElementById('loyaltyPointsToRedeem').max = data.max_allowed_points || data.available_points || currentLoyaltyPoints;
+                    document.getElementById('loyaltyPointsToRedeem').placeholder = 'Max: ' + (data.max_allowed_points || currentLoyaltyPoints) + ' points';
+                    if (data.points_redeemed < points) {
+                        showToast('Redemption capped to ' + data.points_redeemed + ' points by loyalty rules', 'info');
                     }
-                })
-                .catch(() => showToast('Connection error', 'error'));
+                    // 2. Recalculate the authoritative bill with the validated points
+                    return fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId + '&loyalty_points=' + data.points_redeemed + '&customer_id=' + currentCustomerId, { credentials: 'same-origin' })
+                        .then(r => r.json())
+                        .then(billData => {
+                            if (billData.success && billData.bill) {
+                                currentBill = billData.bill;
+                                currentLoyaltyDiscount = billData.bill.loyalty_discount;
+                                renderBillSummary();
+                                showToast('Loyalty discount applied: ' + billData.bill.formatted.loyalty_discount, 'success');
+                            } else {
+                                showToast(billData.message || 'Failed to apply loyalty', 'error');
+                            }
+                        });
+                } else {
+                    currentLoyaltyDiscount = 0;
+                    currentMaxAllowedPoints = data.max_allowed_points || 0;
+                    document.getElementById('loyaltyDiscountRow').classList.add('hidden');
+                    document.getElementById('drawerLoyaltyRow').style.display = 'none';
+                    document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
+                    showToast(data.message || 'Redemption rejected by loyalty rules', 'error');
+                    // Reset the bill to no-loyalty so the shown total stays authoritative
+                    return fetch('../api/table-payment.php?action=calculate_bill&order_id=' + orderId + '&loyalty_points=0&customer_id=' + currentCustomerId, { credentials: 'same-origin' })
+                        .then(r => r.json())
+                        .then(billData => {
+                            if (billData.success && billData.bill) {
+                                currentBill = billData.bill;
+                                renderBillSummary();
+                            }
+                        });
+                }
+            })
+            .catch(() => showToast('Connection error', 'error'));
         }
 
         function selectPaymentMethod(method) {
@@ -1560,6 +1638,10 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
         }
 
         function processPayment() {
+            if (isProcessingPayment) {
+                showToast('Payment already processing...', 'warning');
+                return;
+            }
             if (!selectedTableNumber || !selectedPaymentMethod) {
                 showToast('No payment method selected', 'warning');
                 return;
@@ -1587,6 +1669,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
 
             hidePaymentConfirmation();
             showToast('Processing payment...', 'info');
+            isProcessingPayment = true;
 
             const formData = new FormData();
             formData.append('action', 'process_payment');
@@ -1605,10 +1688,14 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
+                    isProcessingPayment = false;
                     displayPaymentSuccess(data, tableNum, orderId, grandTotal, cashReceived);
                     
                     currentLoyaltyDiscount = 0;
                     currentLoyaltyPoints = 0;
+                    currentMaxAllowedPoints = 0;
+                    document.getElementById('loyaltyPointsToRedeem').value = '';
+                    document.getElementById('loyaltyMaxHint').classList.add('hidden');
                     document.getElementById('loyaltyDiscountRow').classList.add('hidden');
                     document.getElementById('drawerLoyaltyRow').style.display = 'none';
                     document.getElementById('drawerLoyaltyDiscount').textContent = formatPrice(0);
@@ -1616,6 +1703,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                     showToast('Payment successful!', 'success');
                     refreshDashboardStream();
                 } else {
+                    isProcessingPayment = false;
                     showToast(data.message || 'Payment failed', 'error');
                     document.getElementById('paymentConfirmationSection').classList.add('hidden');
                     document.getElementById('paymentSection').style.display = 'block';
@@ -1629,6 +1717,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 }
             })
             .catch(err => {
+                isProcessingPayment = false;
                 showToast('Connection error during payment', 'error');
                 document.getElementById('paymentConfirmationSection').classList.add('hidden');
                 document.getElementById('paymentSection').style.display = 'block';

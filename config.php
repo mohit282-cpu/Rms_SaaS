@@ -211,7 +211,50 @@ function getDBConnection() {
     // Run schema migration once per process (idempotent)
     ensureDatabaseSchema($conn);
 
+    // Ensure critical tenant-scoped loyalty columns exist (idempotent, cached)
+    ensureCriticalTenantColumns($conn);
+
     return $conn;
+}
+
+// Lightweight per-request (static-cached) guard that guarantees the loyalty
+// schema columns the billing/loyalty services rely on are present. This runs
+// even after the full schema has been provisioned so existing installs do not
+// break when the loyalty feature is used for the first time.
+function ensureCriticalTenantColumns($conn) {
+    static $checked = false;
+    if ($checked || !$conn) return;
+    $checked = true;
+
+    // customers: lifetime point counters
+    $cust_cols = [];
+    $c_res = $conn->query("SHOW COLUMNS FROM customers");
+    if ($c_res) {
+        while ($c_row = $c_res->fetch_assoc()) {
+            $cust_cols[] = strtolower($c_row['Field']);
+        }
+    }
+    if (!in_array('lifetime_points_earned', $cust_cols, true)) {
+        try { $conn->query("ALTER TABLE customers ADD COLUMN lifetime_points_earned INT DEFAULT 0 AFTER loyalty_points"); } catch (Throwable $e) {}
+    }
+    if (!in_array('lifetime_points_redeemed', $cust_cols, true)) {
+        try { $conn->query("ALTER TABLE customers ADD COLUMN lifetime_points_redeemed INT DEFAULT 0 AFTER lifetime_points_earned"); } catch (Throwable $e) {}
+    }
+
+    // loyalty_transactions: expiration window
+    $lt_cols = [];
+    $lt_res = $conn->query("SHOW COLUMNS FROM loyalty_transactions");
+    if ($lt_res) {
+        while ($lt_row = $lt_res->fetch_assoc()) {
+            $lt_cols[] = strtolower($lt_row['Field']);
+        }
+    }
+    if (!in_array('expiration_date', $lt_cols, true)) {
+        try { $conn->query("ALTER TABLE loyalty_transactions ADD COLUMN expiration_date DATE DEFAULT NULL AFTER amount_equivalent"); } catch (Throwable $e) {}
+    }
+    if (!in_array('idempotency_key', $lt_cols, true)) {
+        try { $conn->query("ALTER TABLE loyalty_transactions ADD COLUMN idempotency_key VARCHAR(64) NULL DEFAULT NULL, ADD UNIQUE KEY uq_lt_idem (idempotency_key)"); } catch (Throwable $e) {}
+    }
 }
 
 // Auto Schema Migration & Performance Indexing Helper
