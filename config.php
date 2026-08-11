@@ -474,7 +474,7 @@ function ensureDatabaseSchema($conn) {
         qr_code VARCHAR(255),
         zone VARCHAR(50) DEFAULT 'Ground Floor',
         capacity INT DEFAULT 4,
-        status ENUM('vacant', 'occupied', 'reserved', 'cleaning', 'disabled') DEFAULT 'vacant',
+        status ENUM('vacant', 'occupied', 'reserved', 'cleaning', 'disabled', 'waiting_bill', 'payment_pending') DEFAULT 'vacant',
         assigned_waiter VARCHAR(100) DEFAULT 'Unassigned',
         reserved_by VARCHAR(100) DEFAULT '',
         guest_count INT DEFAULT 0,
@@ -496,9 +496,7 @@ function ensureDatabaseSchema($conn) {
     if (!in_array('capacity', $existing_cols)) {
         try { $conn->query("ALTER TABLE tables ADD COLUMN capacity INT DEFAULT 4"); } catch (Throwable $e) {}
     }
-    if (!in_array('status', $existing_cols)) {
-        try { $conn->query("ALTER TABLE tables ADD COLUMN status ENUM('vacant', 'occupied', 'reserved', 'cleaning', 'disabled') DEFAULT 'vacant'"); } catch (Throwable $e) {}
-    }
+    try { $conn->query("ALTER TABLE tables MODIFY COLUMN status ENUM('vacant', 'occupied', 'reserved', 'cleaning', 'disabled', 'waiting_bill', 'payment_pending') DEFAULT 'vacant'"); } catch (Throwable $e) {}
     if (!in_array('assigned_waiter', $existing_cols)) {
         try { $conn->query("ALTER TABLE tables ADD COLUMN assigned_waiter VARCHAR(100) DEFAULT 'Unassigned'"); } catch (Throwable $e) {}
     }

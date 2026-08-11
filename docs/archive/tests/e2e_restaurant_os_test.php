@@ -185,7 +185,8 @@ OrderService::transitionStatus($conn, $orderId1, 'completed', 'Waiter Staff');
 OrderService::transitionStatus($conn, $orderId2, 'preparing', 'Kitchen Staff');
 OrderService::transitionStatus($conn, $orderId2, 'ready', 'Kitchen Staff');
 OrderService::transitionStatus($conn, $orderId2, 'completed', 'Waiter Staff');
-assertOsTest(true, "Kitchen state machine transitioned: new -> preparing -> ready -> served");
+$tblStCheck = $conn->query("SELECT status FROM tables WHERE table_number = '3' AND restaurant_id = $tenantId")->fetch_assoc();
+assertOsTest($tblStCheck['status'] === 'waiting_bill' || $tblStCheck['status'] === 'occupied', "Kitchen completion set table status to 'waiting_bill' (NOT vacant)");
 
 // --- STEP 20 & 21: CASHIER OPENS TABLE & LOADS COMBINED BILL ---
 echo "\n--- STEP 20 & 21: TABLE BILL AGGREGATION & CALCULATION ---\n";

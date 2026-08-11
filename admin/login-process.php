@@ -52,13 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Regenerate session ID to prevent Session Fixation Attacks
                     Auth::regenerateSession();
 
+                    $userRestId = (int)($user['restaurant_id'] ?? 0);
+                    if (!$user['is_super_admin'] && $userRestId <= 0) {
+                        RateLimiter::hit($login_rl_key, 5, 300);
+                        Security::logAudit("LOGIN_BLOCKED_NO_TENANT", "Login blocked for account with no assigned restaurant: {$username}");
+                        $_SESSION['error'] = 'Your account has no assigned restaurant. Please contact support.';
+                        header('Location: login.php');
+                        exit;
+                    }
+
                     $_SESSION['admin_logged_in'] = true;
                     $_SESSION['admin_id'] = $user['id'];
                     $_SESSION['admin_username'] = $user['username'];
                     $_SESSION['admin_full_name'] = $user['full_name'];
                     $_SESSION['role'] = strtoupper($user['role'] ?? 'OWNER');
                     $_SESSION['is_super_admin'] = (bool)($user['is_super_admin'] ?? false);
-                    $_SESSION['restaurant_id'] = (int)($user['restaurant_id'] ?? 1);
+                    $_SESSION['restaurant_id'] = $userRestId > 0 ? $userRestId : 1;
                     $_SESSION['force_password_change'] = (bool)($user['force_password_change'] ?? false);
 
                     Security::logAudit("STAFF_LOGIN", "Staff logged in: {$username} (Tenant ID: {$_SESSION['restaurant_id']})");

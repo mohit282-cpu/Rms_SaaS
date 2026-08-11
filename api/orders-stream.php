@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $conn->begin_transaction();
         try {
-            // If order completed, update table status if no other active orders remain on table
+            // If order completed, update table status to waiting_bill if no other active kitchen orders remain on table
             if ($new_status === 'completed') {
                 $t_stmt = $conn->prepare("SELECT table_number FROM orders WHERE id = ? AND restaurant_id = ? LIMIT 1");
                 $t_stmt->bind_param("ii", $order_id, $tenantId);
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $active_check = $active_stmt->get_result();
                     if (!$active_check || $active_check->num_rows == 0) {
                         $active_stmt->close();
-                        $upd_stmt = $conn->prepare("UPDATE tables SET status = 'vacant' WHERE table_number = ? AND restaurant_id = ?");
+                        $upd_stmt = $conn->prepare("UPDATE tables SET status = 'waiting_bill' WHERE table_number = ? AND restaurant_id = ? AND status != 'disabled'");
                         $upd_stmt->bind_param("si", $tbl_num, $tenantId);
                         $upd_stmt->execute();
                         $upd_stmt->close();
@@ -87,6 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle POST Table Status Updates (Vacant, Cleaning, Reserved, etc.)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_table_status') {
+    if (!Auth::checkPermission('tables.manage') && !Auth::checkPermission('tables.view')) {
+        Response::error('Access Denied: Role permission required to update table status', 403);
+    }
     $table_id = intval($_POST['id'] ?? 0);
     $table_number = Security::sanitize($_POST['table_number'] ?? '');
     $status = Security::sanitize($_POST['status'] ?? 'vacant');
