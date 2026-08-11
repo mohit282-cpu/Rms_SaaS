@@ -244,13 +244,13 @@ Admin console → **Floor & Tables** → generate/print QR codes and place them 
 
 ---
 
-## Default Credentials (change immediately)
+## First-Run Admin Setup & Credentials
 
-| Surface | Username | Password |
-| --- | --- | --- |
-| Super Admin | `superadmin` (or seeded `admin_users` with `is_super_admin = 1`) | `SuperAdmin@2026` |
-| Restaurant admin | `admin` (seed data) | `admin123` |
-| Kitchen (KDS) | — | `kitchen123` (fallback in `landing_page_settings`) |
+In accordance with security best practices, static default passwords are not embedded in production source code.
+
+- **Restaurant Admin**: Initial bootstrap password is derived from `APP_ADMIN_PASSWORD` in `.env` (or cryptographically generated on first boot via `bin2hex(random_bytes(8))`). Change password immediately after first login in **Settings → Change Password**.
+- **Super Admin**: Provisioned securely via `super-admin/create-restaurant.php` or `database/migrate.php` with explicit password hashing.
+- **Kitchen (KDS)**: Configurable in **Settings → KDS Password**. Change default prior to kitchen deployment.
 
 ---
 
