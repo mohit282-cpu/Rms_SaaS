@@ -232,6 +232,158 @@ class BillingService {
     }
 
     /**
+     * Calculate authoritative bill totals for ALL active unsettled orders belonging to a table.
+     */
+    public static function calculateTableBill($conn, int $tenantId, string $tableNumber, int $loyaltyPointsRedeemed = 0, bool $isNCR = false): array {
+        if (!$conn || $tenantId <= 0 || empty($tableNumber)) {
+            return self::emptyBill();
+        }
+
+        // Fetch active order IDs for this table
+        $tEsc = $conn->real_escape_string($tableNumber);
+        $res = $conn->query("SELECT id FROM orders WHERE restaurant_id = $tenantId AND table_number = '$tEsc' AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+        if (!$res || $res->num_rows === 0) {
+            return self::emptyBill();
+        }
+
+        $orderIds = [];
+        while ($r = $res->fetch_assoc()) {
+            $orderIds[] = (int)$r['id'];
+        }
+
+        if (count($orderIds) === 1) {
+            return self::calculateOrderBill($conn, $tenantId, $orderIds[0], $loyaltyPointsRedeemed, $isNCR);
+        }
+
+        // Aggregate across multiple active orders for the table
+        $loyalty = RestaurantSettingsService::getLoyaltySettings($conn, $tenantId);
+        $pay = RestaurantSettingsService::getPaymentSettings($conn, $tenantId);
+        $pointValue = max(0.01, (float)$loyalty['point_value']);
+        $loyaltyEnabled = (int)$loyalty['is_enabled'] === 1;
+
+        $oList = implode(',', $orderIds);
+        $itemsStmt = $conn->query("
+            SELECT oi.quantity, oi.price, oi.ncr_amount
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            WHERE oi.order_id IN ($oList) AND o.restaurant_id = $tenantId
+        ");
+        $subtotal = 0.0;
+        if ($itemsStmt) {
+            while ($itm = $itemsStmt->fetch_assoc()) {
+                if ((float)($itm['ncr_amount'] ?? 0) > 0) continue;
+                $subtotal += round((float)$itm['price'] * (int)$itm['quantity'], 2);
+            }
+        }
+        $subtotal = round($subtotal, 2);
+
+        $discount = 0.0;
+        $ordStmt = $conn->query("SELECT discount_amount, ncr_amount FROM orders WHERE id IN ($oList) AND restaurant_id = $tenantId");
+        if ($ordStmt) {
+            while ($orow = $ordStmt->fetch_assoc()) {
+                $discount += round(max(0, (float)($orow['discount_amount'] ?? 0)), 2);
+                if ((float)($orow['ncr_amount'] ?? 0) > 0) $isNCR = true;
+            }
+        }
+
+        $scEnabled = (int)$pay['service_charge_enabled'] === 1;
+        $scType = $pay['service_charge_type'] ?? 'percent';
+        $scAmount = (float)$pay['service_charge_amount'];
+        $taxEnabled = (int)$pay['tax_enabled'] === 1;
+        $vatPercent = (float)$pay['tax_percentage'];
+        $vatMode = $pay['vat_mode'] ?? 'exclusive';
+
+        $computeAddOns = function (float $netBase) use ($scEnabled, $scType, $scAmount, $taxEnabled, $vatPercent, $vatMode): array {
+            $serviceCharge = 0.0;
+            $tax = 0.0;
+            if ($netBase > 0) {
+                if ($scEnabled) {
+                    $serviceCharge = $scType === 'fixed' ? round($scAmount, 2) : round(($netBase * $scAmount) / 100.0, 2);
+                }
+                if ($taxEnabled) {
+                    if ($vatMode === 'inclusive') {
+                        $tax = round((($netBase + $serviceCharge) * $vatPercent) / (100.0 + $vatPercent), 2);
+                        return [$serviceCharge, $tax, false];
+                    }
+                    $tax = round((($netBase + $serviceCharge) * $vatPercent) / 100.0, 2);
+                }
+            }
+            return [$serviceCharge, $tax, true];
+        };
+
+        $base0 = max(0.0, $subtotal - $discount);
+        list($sc0, $vat0, $vatAdds0) = $computeAddOns($base0);
+        $preLoyaltyTotal = round($base0 + $sc0 + ($vatAdds0 ? $vat0 : 0.0), 2);
+
+        $pointsUsed = (int)max(0, $loyaltyPointsRedeemed);
+        $loyaltyDiscount = 0.0;
+        if ($loyaltyEnabled && $pointsUsed > 0 && $preLoyaltyTotal > 0) {
+            $maxDiscountPercent = min(100.0, (float)$loyalty['max_discount_percent']);
+            $maxByPercent = ($maxDiscountPercent >= 100.0) ? $preLoyaltyTotal : round($preLoyaltyTotal * $maxDiscountPercent / 100.0, 2);
+            $loyaltyDiscount = min(round($pointsUsed * $pointValue, 2), $maxByPercent, $preLoyaltyTotal);
+            if ($loyaltyDiscount <= 0) $pointsUsed = 0;
+        } elseif (!$loyaltyEnabled) {
+            $pointsUsed = 0;
+        }
+
+        $base1 = max(0.0, $base0 - $loyaltyDiscount);
+        list($serviceCharge, $tax, $taxAddsToTotal) = $computeAddOns($base1);
+        $grandTotal = round($base1 + $serviceCharge + ($taxAddsToTotal ? $tax : 0.0), 2);
+        $eligible = self::earningEligible($loyalty, $base1, $serviceCharge, $taxAddsToTotal ? $tax : 0.0);
+
+        $ncrAmount = 0.0;
+        if ($isNCR) {
+            $ncrAmount = round($preLoyaltyTotal, 2);
+            $grandTotal = 0.0;
+        }
+
+        $symbol = $pay['currency_symbol'] ?? 'Rs.';
+        $position = $pay['currency_position'] ?? 'left';
+
+        return [
+            'subtotal' => $subtotal,
+            'service_charge' => $serviceCharge,
+            'vat' => $tax,
+            'discount' => $discount,
+            'loyalty_discount' => $loyaltyDiscount,
+            'ncr_amount' => $ncrAmount,
+            'grand_total' => $grandTotal,
+            'pre_loyalty_total' => $preLoyaltyTotal,
+            'earning_eligible' => $eligible,
+            'vat_mode' => $vatMode,
+            'loyalty_points_redeemed' => $pointsUsed,
+            'currency' => $pay['currency'] ?? 'NPR',
+            'currency_symbol' => $symbol,
+            'currency_position' => $position,
+            'sc_percent' => $scAmount,
+            'sc_type' => $scType,
+            'vat_percent' => $vatPercent,
+            'loyalty_settings' => [
+                'is_enabled' => (int)$loyalty['is_enabled'],
+                'point_value' => $pointValue,
+                'earning_points' => (int)$loyalty['earning_points'],
+                'earn_spend_amount' => (float)$loyalty['earn_spend_amount'],
+                'max_discount_percent' => (float)$loyalty['max_discount_percent'],
+                'max_redemption_points' => (int)$loyalty['max_redemption_points'],
+                'min_redemption_points' => (int)$loyalty['min_redemption_points'],
+                'min_bill_amount' => (float)$loyalty['min_bill_amount'],
+                'expiration_enabled' => (int)$loyalty['expiration_enabled'],
+                'expiration_days' => (int)$loyalty['expiration_days'],
+                'earning_basis' => $loyalty['earning_basis']
+            ],
+            'formatted' => [
+                'subtotal' => self::formatMoney($subtotal, $symbol, $position),
+                'service_charge' => self::formatMoney($serviceCharge, $symbol, $position),
+                'vat' => self::formatMoney($tax, $symbol, $position),
+                'discount' => self::formatMoney($discount, $symbol, $position),
+                'loyalty_discount' => self::formatMoney($loyaltyDiscount, $symbol, $position),
+                'ncr_amount' => self::formatMoney($ncrAmount, $symbol, $position),
+                'grand_total' => self::formatMoney($grandTotal, $symbol, $position),
+            ]
+        ];
+    }
+
+    /**
      * Eligible spend amount that generates new loyalty points, per the configured
      * earning basis and after every applicable discount.
      */

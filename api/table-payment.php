@@ -636,6 +636,65 @@ try {
             }
             break;
 
+        case 'transfer_table':
+            // Transfer active order(s) from source_table to target_table
+            $sourceTable = Security::sanitize(trim($_POST['source_table'] ?? $_GET['source_table'] ?? ''));
+            $targetTable = Security::sanitize(trim($_POST['target_table'] ?? $_GET['target_table'] ?? ''));
+
+            if (empty($sourceTable) || empty($targetTable) || $sourceTable === $targetTable) {
+                Response::error('Valid distinct source and target table numbers required', 400);
+            }
+
+            $conn->begin_transaction();
+            $inTx = true;
+            try {
+                // Verify source table has active orders
+                $sCheck = $conn->prepare("SELECT id FROM orders WHERE restaurant_id = ? AND table_number = ? AND payment_status = 'pending' AND status != 'cancelled' FOR UPDATE");
+                $sCheck->bind_param("is", $tenantId, $sourceTable);
+                $sCheck->execute();
+                $sRes = $sCheck->get_result();
+                if ($sRes->num_rows === 0) {
+                    $sCheck->close();
+                    throw new Exception("No active pending orders found on Table $sourceTable to transfer");
+                }
+                $sCheck->close();
+
+                // Reassign orders
+                $uOrders = $conn->prepare("UPDATE orders SET table_number = ?, updated_at = NOW() WHERE restaurant_id = ? AND table_number = ? AND payment_status = 'pending' AND status != 'cancelled'");
+                $uOrders->bind_param("sis", $targetTable, $tenantId, $sourceTable);
+                $uOrders->execute();
+                $transferredCount = $uOrders->affected_rows;
+                $uOrders->close();
+
+                // Update source table to vacant
+                $uSrc = $conn->prepare("UPDATE tables SET status = 'vacant', reserved_by = NULL, guest_count = 0 WHERE restaurant_id = ? AND table_number = ?");
+                $uSrc->bind_param("is", $tenantId, $sourceTable);
+                $uSrc->execute();
+                $uSrc->close();
+
+                // Update target table to occupied
+                $uTgt = $conn->prepare("UPDATE tables SET status = 'occupied' WHERE restaurant_id = ? AND table_number = ?");
+                $uTgt->bind_param("is", $tenantId, $targetTable);
+                $uTgt->execute();
+                $uTgt->close();
+
+                Security::logAudit('TABLE_TRANSFERRED', "Transferred $transferredCount active order(s) from Table $sourceTable to Table $targetTable");
+                $conn->commit();
+                $inTx = false;
+
+                Response::success("Table $sourceTable orders transferred to Table $targetTable successfully", [
+                    'source_table' => $sourceTable,
+                    'target_table' => $targetTable,
+                    'transferred_orders_count' => $transferredCount
+                ]);
+            } catch (Throwable $e) {
+                if ($inTx) {
+                    $conn->rollback();
+                }
+                Response::error($e->getMessage(), 400);
+            }
+            break;
+
         case 'apply_ncr':
             // Apply NCR (no charge / complimentary) waiver to an order
             $orderId = (int)($_POST['order_id'] ?? 0);

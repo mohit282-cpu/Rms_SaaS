@@ -589,10 +589,16 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 </div>
             </div>
 
-            <!-- QUICK ACTIONS (for non-payment states) -->
+            <!-- QUICK ACTIONS -->
             <div class="grid grid-cols-2 gap-2" id="quickActionsSection">
                 <button onclick="openTableQRModalFromDrawer()" class="h-11 rounded-2xl bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 hover:border-amber-500/40">
                     📱 View Table QR
+                </button>
+                <button onclick="promptTransferTable()" class="h-11 rounded-2xl bg-zinc-900 border border-zinc-800 text-blue-400 font-bold text-xs flex items-center justify-center gap-1.5 hover:border-blue-500/40">
+                    ➡️ Transfer Table
+                </button>
+                <button onclick="promptMergeTables()" class="h-11 rounded-2xl bg-zinc-900 border border-zinc-800 text-purple-400 font-bold text-xs flex items-center justify-center gap-1.5 hover:border-purple-500/40">
+                    🔀 Merge Tables
                 </button>
                 <button onclick="updateSelectedTableStatus('cleaning')" class="h-11 rounded-2xl bg-zinc-950 border border-zinc-800 text-zinc-300 font-bold text-xs hover:border-amber-500/40">
                     🧹 Mark Cleaning
@@ -1739,6 +1745,72 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
                 document.getElementById('paymentConfirmationSection').classList.add('hidden');
                 document.getElementById('paymentSection').style.display = 'block';
             });
+        }
+
+        function promptTransferTable() {
+            const srcTable = selectedTableNumber;
+            if (!srcTable) {
+                showToast('Please select a table first', 'warning');
+                return;
+            }
+            const tgtTable = prompt('Enter target table number to transfer Table ' + srcTable + ' orders to:');
+            if (!tgtTable || !tgtTable.trim() || tgtTable.trim() === srcTable.toString()) {
+                if (tgtTable) showToast('Target table must be different', 'warning');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'transfer_table');
+            formData.append('source_table', srcTable);
+            formData.append('target_table', tgtTable.trim());
+            formData.append('csrf_token', window.csrfToken || '');
+
+            fetch('../api/table-payment.php', { method: 'POST', body: formData, credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message || 'Table transferred!', 'success');
+                        closeTableDrawer();
+                        refreshDashboardStream();
+                    } else {
+                        showToast(data.message || 'Transfer failed', 'error');
+                    }
+                })
+                .catch(() => showToast('Transfer request error', 'error'));
+        }
+
+        function promptMergeTables() {
+            const t = allTablesData.find(x => x.table_number.toString() === selectedTableNumber.toString());
+            const srcOrderId = t && t.active_order ? t.active_order.id : null;
+            if (!srcOrderId) {
+                showToast('No active order on selected table to merge', 'warning');
+                return;
+            }
+            const tgtOrderIdStr = prompt('Enter target Order ID to merge Order #' + srcOrderId + ' into:');
+            const tgtOrderId = parseInt(tgtOrderIdStr);
+            if (!tgtOrderId || tgtOrderId === srcOrderId) {
+                if (tgtOrderIdStr) showToast('Target Order ID must be different', 'warning');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'merge_bills');
+            formData.append('source_order_id', srcOrderId);
+            formData.append('target_order_id', tgtOrderId);
+            formData.append('csrf_token', window.csrfToken || '');
+
+            fetch('../api/table-payment.php', { method: 'POST', body: formData, credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('Orders merged successfully!', 'success');
+                        closeTableDrawer();
+                        refreshDashboardStream();
+                    } else {
+                        showToast(data.message || 'Merge failed', 'error');
+                    }
+                })
+                .catch(() => showToast('Merge request error', 'error'));
         }
 
         function displayPaymentSuccess(data, tableNum, orderId, grandTotal, cashReceived) {

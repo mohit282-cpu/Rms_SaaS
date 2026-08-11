@@ -18,6 +18,8 @@ class TenantDeletionService {
         'payroll_periods',
         'salary_history',
         'salary_advances',
+        'hr_audit_logs',
+        'reservations',
         'employee_shifts',
         'attendance',
         'employees',
@@ -128,7 +130,12 @@ class TenantDeletionService {
             $dRest->execute();
             $dRest->close();
 
+            $conn->query("DELETE FROM audit_logs WHERE restaurant_id = {$restaurantId}");
             $conn->commit();
+
+            if (isset($_SESSION['restaurant_id']) && (int)$_SESSION['restaurant_id'] === $restaurantId) {
+                $_SESSION['restaurant_id'] = 1;
+            }
 
             Security::logAudit("SUPER_ADMIN_DELETE_TENANT", "Super Admin permanently purged tenant #{$restaurantId} ({$restaurantName}) and all associated database records.");
 

@@ -59,6 +59,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param("issssiss", $tenantId, $name, $phone, $date, $time, $guests, $tableNum, $notes);
             if ($stmt->execute()) {
                 $message = "Reservation for '$name' created successfully!";
+                if (!empty($tableNum)) {
+                    $uTbl = $conn->prepare("UPDATE tables SET status = 'reserved', reserved_by = ?, guest_count = ? WHERE restaurant_id = ? AND table_number = ?");
+                    $uTbl->bind_param("siis", $name, $guests, $tenantId, $tableNum);
+                    $uTbl->execute();
+                    $uTbl->close();
+                }
             } else {
                 $error = "Failed to create reservation: " . $conn->error;
             }

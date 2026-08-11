@@ -96,19 +96,28 @@ assertAudit(substr_count($qrSvg, 'fill="#000000"') > 20, "QR code SVG contains f
 
 // --- TEST DOMAIN 10: TENANT DELETION PURGE & ZERO-ORPHAN VERIFICATION ---
 echo "\n--- TEST DOMAIN 10: TENANT DELETION PURGE & ZERO-ORPHAN VERIFICATION ---\n";
-$tempTenantId = 9999;
-$conn->query("DELETE FROM restaurants WHERE id = $tempTenantId");
-$conn->query("INSERT INTO restaurants (id, uuid, restaurant_name, email, phone, created_at) VALUES ($tempTenantId, 'uuid-del-9999', 'Temp Delete Tenant', 'del@temp.com', '9800000000', NOW())");
-$conn->query("INSERT IGNORE INTO tables (restaurant_id, table_number, status) VALUES ($tempTenantId, 'T-DEL', 'vacant')");
-$conn->query("INSERT IGNORE INTO orders (id, restaurant_id, table_number, total_amount, status) VALUES (999901, $tempTenantId, 'T-DEL', 500.00, 'completed')");
-HrService::createEmployee($conn, $tempTenantId, ['first_name' => 'Temp', 'last_name' => 'Employee', 'designation' => 'Chef', 'department' => 'Kitchen'], 1);
+try {
+    $tempTenantId = 9999;
+    $conn->query("DELETE FROM restaurants WHERE id = $tempTenantId");
+    $stmt = $conn->prepare("INSERT INTO restaurants (id, uuid, restaurant_name, restaurant_code, email, phone, status, created_at) VALUES (?, 'uuid-del-9999', 'Temp Delete Tenant', 'DEL9999', 'del@temp.com', '9800000000', 'active', NOW())");
+    $stmt->bind_param("i", $tempTenantId);
+    $stmt->execute();
+    $stmt->close();
+    $conn->query("INSERT IGNORE INTO tables (restaurant_id, table_number, status) VALUES ($tempTenantId, 'T-DEL', 'vacant')");
+    $conn->query("INSERT IGNORE INTO orders (id, restaurant_id, table_number, total_amount, status) VALUES (999901, $tempTenantId, 'T-DEL', 500.00, 'completed')");
+    $_SESSION['restaurant_id'] = $tempTenantId;
+    HrService::createEmployee($conn, $tempTenantId, ['full_name' => 'Temp Employee', 'first_name' => 'Temp', 'last_name' => 'Employee', 'designation' => 'Chef', 'department' => 'Kitchen'], 1);
 
-$delRes = TenantDeletionService::deleteTenant($conn, $tempTenantId);
-if (!$delRes['success']) echo "  DEBUG ERROR: " . ($delRes['error'] ?? 'Unknown') . "\n";
-assertAudit($delRes['success'] === true, "TenantDeletionService purged test tenant #$tempTenantId");
+    $delRes = TenantDeletionService::deleteTenant($conn, $tempTenantId);
+    if (!$delRes['success']) echo "  DEBUG ERROR: " . ($delRes['error'] ?? 'Unknown') . "\n";
+    assertAudit($delRes['success'] === true, "TenantDeletionService purged test tenant #$tempTenantId " . ($delRes['error'] ?? ''));
 
-$orphanCheck = TenantDeletionService::verifyZeroOrphans($conn, $tempTenantId);
-assertAudit($orphanCheck['is_clean'] === true, "Zero orphaned records remain across all tenant tables after deletion");
+    $orphanCheck = TenantDeletionService::verifyZeroOrphans($conn, $tempTenantId);
+    if (!$orphanCheck['is_clean']) echo "  DEBUG ORPHANS: " . json_encode($orphanCheck['orphans']) . "\n";
+    assertAudit($orphanCheck['is_clean'] === true, "Zero orphaned records remain across all tenant tables after deletion " . json_encode($orphanCheck['orphans']));
+} catch (Throwable $ex) {
+    echo "  ❌ DOMAIN 10 EXCEPTION: " . $ex->getMessage() . " in " . $ex->getFile() . ":" . $ex->getLine() . "\n";
+}
 
 // --- TEST DOMAIN 11: CANONICAL USER IDENTITY ---
 echo "\n--- TEST DOMAIN 11: CANONICAL USER IDENTITY ---\n";
