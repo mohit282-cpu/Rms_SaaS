@@ -407,9 +407,9 @@ $currentPage = 'staff';
                                             <div class="text-[11px] text-zinc-500 mt-0.5"><?= htmlspecialchars($emp['employment_type']) ?></div>
                                         </td>
                                         <td class="py-3 px-3">
-                                            <?php if ($emp['system_username']): ?>
+                                            <?php if (!empty($emp['system_email']) || !empty($emp['system_username'])): ?>
                                                 <span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-amber-400 font-bold text-[10px]">
-                                                    👤 @<?= htmlspecialchars($emp['system_username']) ?> (<?= htmlspecialchars($emp['system_role']) ?>)
+                                                    ✉️ <?= htmlspecialchars($emp['system_email'] ?: $emp['system_username']) ?> (<?= htmlspecialchars($emp['system_role']) ?>)
                                                 </span>
                                             <?php else: ?>
                                                 <span class="text-zinc-500 italic text-[11px]">No Login Account</span>
@@ -729,8 +729,8 @@ $currentPage = 'staff';
                     </label>
                     <div id="systemAccFields" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                         <div>
-                            <label class="block font-semibold text-zinc-400">Username</label>
-                            <input type="text" name="username" class="w-full h-9 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 text-white">
+                            <label class="block font-semibold text-zinc-400">Login Email Address</label>
+                            <input type="email" name="account_email" placeholder="staff@restaurant.com" class="w-full h-9 bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 text-white">
                         </div>
                         <div>
                             <label class="block font-semibold text-zinc-400">Role</label>

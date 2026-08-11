@@ -62,7 +62,7 @@ $empAccountData = [
     'employment_status' => 'Active',
     'base_salary' => 35000.00,
     'create_system_account' => 1,
-    'username' => 'hr_test_chef',
+    'account_email' => 'hr_test_chef@test.com',
     'password' => 'Pass123!',
     'role' => 'KITCHEN'
 ];
@@ -71,7 +71,7 @@ assertHrTest($res2['success'] === true, "Employee with system account created su
 $empIdChef = $res2['employee_id'];
 
 $chef = HrService::getEmployeeById($conn, $tenantA, $empIdChef);
-assertHrTest($chef['system_username'] === 'hr_test_chef', "Linked system account username is 'hr_test_chef'");
+assertHrTest($chef['system_email'] === 'hr_test_chef@test.com', "Linked system account email is 'hr_test_chef@test.com'");
 assertHrTest($chef['system_role'] === 'KITCHEN', "Linked system account role is 'KITCHEN'");
 
 // --- TEST 4: CREATE, UPDATE & DELETE SHIFT TEMPLATE ---

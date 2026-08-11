@@ -17,21 +17,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!CSRF::verifyToken($_POST['csrf_token'] ?? '')) {
         $error = "CSRF security verification failed. Please refresh and try again.";
     } else {
-        $username = Security::sanitize(trim($_POST['username'] ?? ''));
-        $password = trim($_POST['password'] ?? '');
+        $email = strtolower(trim($_POST['email'] ?? ''));
+        $password = $_POST['password'] ?? '';
 
         // Rate Limit check
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         if (!RateLimiter::check("superadmin_login_" . $ip, 5, 300)) {
             $error = "Too many failed login attempts. Please wait 5 minutes.";
+        } elseif (empty($email) || empty($password) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            RateLimiter::hit("superadmin_login_" . $ip, 5, 300);
+            Security::logAudit("SUPER_ADMIN_FAILED_LOGIN", "Invalid email format or empty fields for input: " . Security::sanitize($email));
+            $error = "Invalid email or password.";
         } else {
             $conn = getDBConnection();
             if (!$conn) {
                 $error = "Database connection error.";
             } else {
-                $stmt = $conn->prepare("SELECT id, username, password, full_name, role, is_super_admin, restaurant_id, force_password_change FROM admin_users WHERE username = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
+                $stmt = $conn->prepare("SELECT id, username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change FROM admin_users WHERE LOWER(email) = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
                 if ($stmt) {
-                    $stmt->bind_param("s", $username);
+                    $stmt->bind_param("s", $email);
                     $stmt->execute();
                     $user = $stmt->get_result()->fetch_assoc();
                     $stmt->close();
@@ -44,14 +48,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['admin_logged_in'] = true;
                         $_SESSION['is_super_admin'] = true;
                         $_SESSION['role'] = 'SUPER_ADMIN';
-                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['username'] = $user['username'] ?? $user['email'];
+                        $_SESSION['email'] = $user['email'];
                         $_SESSION['full_name'] = $user['full_name'];
-                        $_SESSION['restaurant_id'] = 1;
+                        $_SESSION['restaurant_id'] = $user['restaurant_id'] ?? 1;
                         $_SESSION['force_password_change'] = (int)($user['force_password_change'] ?? 0);
 
-                        Security::logAudit("SUPER_ADMIN_LOGIN", "Super Admin logged in successfully: " . $user['username']);
+                        Security::logAudit("SUPER_ADMIN_LOGIN", "Super Admin logged in successfully: " . $user['email']);
 
-                        // Enforce mandatory password change for accounts using known/default credentials
+                        // Enforce mandatory password change if required
                         if (!empty($user['force_password_change'])) {
                             header('Location: ../admin/change-password.php');
                             exit;
@@ -60,9 +65,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     } else {
                         RateLimiter::hit("superadmin_login_" . $ip, 5, 300);
-                        Security::logAudit("SUPER_ADMIN_FAILED_LOGIN", "Failed login attempt for username: " . $username);
-                        $error = "Invalid Super Admin credentials.";
+                        Security::logAudit("SUPER_ADMIN_FAILED_LOGIN", "Failed login attempt for email: " . Security::sanitize($email));
+                        $error = "Invalid email or password.";
                     }
+                } else {
+                    $error = "Database query preparation error.";
                 }
             }
         }
@@ -102,8 +109,8 @@ $csrfField = CSRF::getField();
         <form method="POST" class="space-y-4">
             <?= $csrfField ?>
             <div>
-                <label class="block text-xs font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Super Admin Username</label>
-                <input type="text" name="username" required placeholder="e.g. superadmin" class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors font-medium">
+                <label class="block text-xs font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Email Address</label>
+                <input type="email" name="email" required placeholder="sovryxrms29@gmail.com" class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors font-medium" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
             </div>
 
             <div>

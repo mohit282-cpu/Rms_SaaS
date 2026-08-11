@@ -1,22 +1,27 @@
 <?php
-// admin/login-process.php - Hardened Multi-Tenant Authentication Controller
+// admin/login-process.php - Hardened Multi-Tenant Email Authentication Controller
 require_once '../config.php';
 
-// Per-IP + per-username rate limiting (5 attempts per 5 minutes).
-// Global buckets are avoided so one tenant/IP cannot lock out the whole platform.
+Auth::startSession();
+
 $login_ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-$rl_username = Security::sanitize($_POST['username'] ?? '');
-$login_rl_key = 'admin_login_' . ($rl_username !== '' ? $rl_username : 'anon') . '_' . $login_ip;
+$raw_email = trim($_POST['email'] ?? '');
+$email = strtolower($raw_email);
+$login_rl_key = 'admin_login_' . ($email !== '' ? md5($email) : 'anon') . '_' . $login_ip;
+
+// Rate limiting (5 attempts per 5 minutes per email/IP)
 RateLimiter::enforce($login_rl_key, 5, 300);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     CSRF::requireValidToken();
 
-    $username = $rl_username;
     $password = $_POST['password'] ?? '';
-    
-    if (empty($username) || empty($password)) {
-        $_SESSION['error'] = 'Please enter both username and password.';
+
+    // Validate email format and required fields
+    if (empty($email) || empty($password) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        RateLimiter::hit($login_rl_key, 5, 300);
+        Security::logAudit("LOGIN_FAILED_INVALID_INPUT", "Invalid email format or empty fields for input: " . Security::sanitize($email));
+        $_SESSION['error'] = 'Invalid email or password.';
         header('Location: login.php');
         exit;
     }
@@ -25,14 +30,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($conn) {
         $stmt = $conn->prepare("
-            SELECT u.id, u.username, u.password, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.force_password_change, r.status as tenant_status 
+            SELECT u.id, u.username, u.email, u.password, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.force_password_change, r.status as tenant_status 
             FROM admin_users u
             LEFT JOIN restaurants r ON u.restaurant_id = r.id
-            WHERE u.username = ? LIMIT 1
+            WHERE LOWER(u.email) = ? LIMIT 1
         ");
-        
+
         if ($stmt) {
-            $stmt->bind_param("s", $username);
+            $stmt->bind_param("s", $email);
             $stmt->execute();
             $res = $stmt->get_result();
             if ($user = $res->fetch_assoc()) {
@@ -40,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Check if tenant account is ACTIVE
                     if (!$user['is_super_admin'] && !empty($user['tenant_status']) && $user['tenant_status'] !== 'ACTIVE') {
                         RateLimiter::hit($login_rl_key, 5, 300);
-                        Security::logAudit("LOGIN_BLOCKED_SUSPENDED", "Login blocked for inactive/suspended tenant account: {$username}");
+                        Security::logAudit("LOGIN_BLOCKED_SUSPENDED", "Login blocked for inactive/suspended tenant account: {$email}");
                         $_SESSION['error'] = 'Your restaurant account is currently ' . strtolower($user['tenant_status']) . '. Please contact system administrator.';
                         header('Location: login.php');
                         exit;
@@ -55,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $userRestId = (int)($user['restaurant_id'] ?? 0);
                     if (!$user['is_super_admin'] && $userRestId <= 0) {
                         RateLimiter::hit($login_rl_key, 5, 300);
-                        Security::logAudit("LOGIN_BLOCKED_NO_TENANT", "Login blocked for account with no assigned restaurant: {$username}");
+                        Security::logAudit("LOGIN_BLOCKED_NO_TENANT", "Login blocked for account with no assigned restaurant: {$email}");
                         $_SESSION['error'] = 'Your account has no assigned restaurant. Please contact support.';
                         header('Location: login.php');
                         exit;
@@ -63,14 +68,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $_SESSION['admin_logged_in'] = true;
                     $_SESSION['admin_id'] = $user['id'];
-                    $_SESSION['admin_username'] = $user['username'];
+                    $_SESSION['admin_email'] = $user['email'];
+                    $_SESSION['email'] = $user['email'];
+                    $_SESSION['username'] = !empty($user['email']) ? $user['email'] : $user['username'];
+                    $_SESSION['admin_username'] = $_SESSION['username'];
                     $_SESSION['admin_full_name'] = $user['full_name'];
                     $_SESSION['role'] = strtoupper($user['role'] ?? 'OWNER');
                     $_SESSION['is_super_admin'] = (bool)($user['is_super_admin'] ?? false);
                     $_SESSION['restaurant_id'] = $userRestId > 0 ? $userRestId : 1;
                     $_SESSION['force_password_change'] = (bool)($user['force_password_change'] ?? false);
 
-                    Security::logAudit("STAFF_LOGIN", "Staff logged in: {$username} (Tenant ID: {$_SESSION['restaurant_id']})");
+                    Security::logAudit("STAFF_LOGIN", "Staff logged in via email: {$email} (Tenant ID: {$_SESSION['restaurant_id']})");
 
                     // Force password change if temporary credentials issued
                     if ($_SESSION['force_password_change']) {
@@ -99,8 +107,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Record failed attempt
     RateLimiter::hit($login_rl_key, 5, 300);
+    Security::logAudit("LOGIN_FAILED", "Failed authentication attempt for email: " . Security::sanitize($email));
 
-    $_SESSION['error'] = 'Invalid username or password.';
+    $_SESSION['error'] = 'Invalid email or password.';
     header('Location: login.php');
     exit;
 } else {

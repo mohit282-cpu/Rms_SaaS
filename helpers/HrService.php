@@ -295,7 +295,7 @@ class HrService {
     public static function getEmployees(mysqli $conn, int $tenantId, array $filters = []): array {
         self::ensureHrSchema($conn);
 
-        $sql = "SELECT e.*, u.username as system_username, u.role as system_role, u.is_super_admin
+        $sql = "SELECT e.*, u.email as system_email, u.username as system_username, u.role as system_role, u.is_super_admin
                 FROM employees e
                 LEFT JOIN admin_users u ON e.user_id = u.id AND (u.restaurant_id = e.restaurant_id OR u.restaurant_id IS NULL)
                 WHERE e.restaurant_id = ?";
@@ -304,9 +304,9 @@ class HrService {
 
         if (!empty($filters['search'])) {
             $search = '%' . trim($filters['search']) . '%';
-            $sql .= " AND (e.full_name LIKE ? OR e.emp_code LIKE ? OR e.email LIKE ? OR e.phone LIKE ? OR u.username LIKE ?)";
-            $types .= "sssss";
-            $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search;
+            $sql .= " AND (e.full_name LIKE ? OR e.emp_code LIKE ? OR e.email LIKE ? OR e.phone LIKE ? OR u.email LIKE ? OR u.username LIKE ?)";
+            $types .= "ssssss";
+            $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search;
         }
 
         if (!empty($filters['department'])) {
@@ -347,7 +347,7 @@ class HrService {
      */
     public static function getEmployeeById(mysqli $conn, int $tenantId, int $empId): ?array {
         self::ensureHrSchema($conn);
-        $stmt = $conn->prepare("SELECT e.*, u.username as system_username, u.role as system_role, u.created_at as account_created_at
+        $stmt = $conn->prepare("SELECT e.*, u.email as system_email, u.username as system_username, u.role as system_role, u.created_at as account_created_at
                                 FROM employees e
                                 LEFT JOIN admin_users u ON e.user_id = u.id
                                 WHERE e.restaurant_id = ? AND e.id = ? LIMIT 1");
@@ -431,7 +431,7 @@ class HrService {
         $userId = null;
         $createSystemAccount = !empty($data['create_system_account']);
         if ($createSystemAccount) {
-            $username = Security::sanitize(trim($data['username'] ?? ''));
+            $accountEmail = strtolower(trim($data['account_email'] ?? $data['email'] ?? ''));
             $password = $data['password'] ?? '';
             $role = strtoupper(Security::sanitize(trim($data['role'] ?? 'CASHIER')));
 
@@ -440,23 +440,27 @@ class HrService {
                 return ['success' => false, 'error' => "Unauthorized: Restaurant staff accounts cannot be granted SUPER_ADMIN privileges."];
             }
 
-            if (empty($username) || empty($password)) {
-                return ['success' => false, 'error' => "System account username and password are required."];
+            if (empty($accountEmail) || !filter_var($accountEmail, FILTER_VALIDATE_EMAIL)) {
+                return ['success' => false, 'error' => "A valid email address is required for system login account creation."];
+            }
+            if (empty($password)) {
+                return ['success' => false, 'error' => "Password is required for system account creation."];
             }
 
-            // Check duplicate username across system
-            $chk = $conn->prepare("SELECT id FROM admin_users WHERE username = ? LIMIT 1");
-            $chk->bind_param("s", $username);
+            // Check duplicate email across system
+            $chk = $conn->prepare("SELECT id FROM admin_users WHERE LOWER(email) = ? LIMIT 1");
+            $chk->bind_param("s", $accountEmail);
             $chk->execute();
             if ($chk->get_result()->num_rows > 0) {
                 $chk->close();
-                return ['success' => false, 'error' => "Username '$username' is already taken."];
+                return ['success' => false, 'error' => "An account with this email address already exists."];
             }
             $chk->close();
 
             $hashPass = password_hash($password, PASSWORD_DEFAULT);
-            $insUser = $conn->prepare("INSERT INTO admin_users (username, password, full_name, role, restaurant_id, is_super_admin) VALUES (?, ?, ?, ?, ?, 0)");
-            $insUser->bind_param("ssssi", $username, $hashPass, $fullName, $role, $tenantId);
+            $usernameFallback = $accountEmail;
+            $insUser = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, restaurant_id, is_super_admin) VALUES (?, ?, ?, ?, ?, ?, 0)");
+            $insUser->bind_param("sssssi", $usernameFallback, $accountEmail, $hashPass, $fullName, $role, $tenantId);
             if (!$insUser->execute()) {
                 return ['success' => false, 'error' => "Failed to create user account: " . $insUser->error];
             }

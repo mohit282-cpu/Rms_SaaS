@@ -1110,16 +1110,18 @@ This upgrades unique indexes to be tenant-scoped (e.g., `table_number` becomes u
 
 #### 5. Access the Application
 
-| Surface | URL |
-| :--- | :--- |
-| 🌐 Public Site / Landing | `http://localhost/Rms_SaaS/` |
-| 🔑 Admin Login | `http://localhost/Rms_SaaS/admin/login.php` |
-| 👑 Super Admin Login | `http://localhost/Rms_SaaS/super-admin/login.php` |
-| 👨‍🍳 Kitchen Display | `http://localhost/Rms_SaaS/kitchen-dashboard.php` |
+#### 5. Access the Application
+
+| Surface | URL | Authentication Identity |
+| :--- | :--- | :--- |
+| 🌐 Public Site / Landing | `http://localhost/Rms_SaaS/` | Public Access / QR Scanning |
+| 🔑 Restaurant Admin Portal | `http://localhost/Rms_SaaS/admin/login.php` | Email Address + Password |
+| 👑 Super Admin Portal | `http://localhost/Rms_SaaS/super-admin/login.php` | `sovryxrms29@gmail.com` + Password |
+| 👨‍🍳 Kitchen Display (KDS) | `http://localhost/Rms_SaaS/kitchen-dashboard.php` | KDS Security PIN |
 
 #### 6. First-Time Setup
 
-1. Log in to the **Admin Portal** — the initial password is derived from `APP_ADMIN_PASSWORD` in `.env` or auto-generated on first boot (check server logs or `storage/` directory)
+1. Log in to the **Restaurant Admin Portal** (`admin/login.php`) using your **Email Address** and Password (default: `owner@rms-demo.com` or your provisioned email)
 2. Complete the **Setup Wizard** if prompted — configure your restaurant name, create initial tables
 3. Go to **Floor & Tables** → generate and print **QR codes** for your tables
 4. Configure the **KDS password** in Settings (default: `kitchen123` — **change immediately**)

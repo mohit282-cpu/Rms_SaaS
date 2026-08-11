@@ -146,11 +146,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $stmtRest->close();
 
                                             // Insert Admin User (Owner Role)
+                                            $usernameVal = !empty($username) ? $username : $email;
                                             $stmtUser = $conn->prepare("
-                                                INSERT INTO admin_users (username, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
-                                                VALUES (?, ?, ?, 'owner', 0, 0, ?)
+                                                INSERT INTO admin_users (username, email, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
+                                                VALUES (?, ?, ?, ?, 'owner', 0, 0, ?)
                                             ");
-                                            $stmtUser->bind_param("sssi", $username, $hashedPass, $ownerName, $newRestId);
+                                            $stmtUser->bind_param("ssssi", $usernameVal, $email, $hashedPass, $ownerName, $newRestId);
                                             $stmtUser->execute();
                                             $stmtUser->close();
 

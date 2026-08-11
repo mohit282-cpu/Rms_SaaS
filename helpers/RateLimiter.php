@@ -9,7 +9,6 @@ class RateLimiter {
      */
     private static function ensureTable(mysqli $conn): void {
         if (self::$tableReady === true) return;
-        if (self::$tableReady === false) return;
 
         $found = $conn->query("SHOW TABLES LIKE 'rate_limits'");
         $exists = $found && $found->num_rows > 0;
@@ -30,13 +29,14 @@ class RateLimiter {
     /**
      * Record one hit for a rate-limited action.
      */
-    public static function hit(string $key, int $windowSeconds): void {
+    public static function hit(string $key, int $windowOrLimit = 300, ?int $windowSeconds = null): void {
+        $actualWindow = ($windowSeconds !== null) ? $windowSeconds : $windowOrLimit;
         $conn = getDBConnection();
         if ($conn) {
             self::ensureTable($conn);
             if (self::$tableReady === true) {
                 $now = time();
-                $window = (int)floor($now / max(1, $windowSeconds));
+                $window = (int)floor($now / max(1, $actualWindow));
                 $stmt = $conn->prepare("INSERT INTO rate_limits (rate_key, window_start, hits) VALUES (?, ?, 1) ON DUPLICATE KEY UPDATE hits = hits + 1");
                 if ($stmt) {
                     $stmt->bind_param("si", $key, $window);
@@ -44,7 +44,8 @@ class RateLimiter {
                     $stmt->close();
                 }
                 // Opportunistic pruning (best-effort, not on the critical path).
-                $conn->query("DELETE FROM rate_limits WHERE window_start < " . (int)($now - 172800));
+                $pruneWindow = (int)floor(($now - 172800) / max(1, $actualWindow));
+                $conn->query("DELETE FROM rate_limits WHERE window_start < " . $pruneWindow);
                 return;
             }
         }
@@ -52,7 +53,7 @@ class RateLimiter {
         // Best-effort fallback when the DB store is unavailable (never a total bypass).
         Auth::startSession();
         $sk = 'rl_' . md5($key);
-        $w = (int)floor(time() / max(1, $windowSeconds));
+        $w = (int)floor(time() / max(1, $actualWindow));
         if (!isset($_SESSION[$sk]['w']) || $_SESSION[$sk]['w'] !== $w) {
             $_SESSION[$sk] = ['w' => $w, 'h' => 0];
         }

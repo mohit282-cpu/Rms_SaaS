@@ -1,5 +1,5 @@
 <?php
-// admin/change-password.php - Enterprise Security & Access Management Center
+// admin/change-password.php - Enterprise Security & Account Profile Settings Center
 require_once '../config.php';
 requireAdminLogin();
 
@@ -8,13 +8,92 @@ if (!$conn) {
     die("Database connection error");
 }
 
-// Handle Form Submissions (Password Update & KDS PIN Update)
+$admin_id = (int)($_SESSION['admin_id'] ?? 1);
+$tenantId = (int)($_SESSION['restaurant_id'] ?? 1);
+
+// Fetch active user account profile
+$userStmt = $conn->prepare("
+    SELECT u.id, u.username, u.email, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.created_at, r.restaurant_name, r.phone as rest_phone, r.status as tenant_status
+    FROM admin_users u
+    LEFT JOIN restaurants r ON u.restaurant_id = r.id
+    WHERE u.id = ? LIMIT 1
+");
+$userStmt->bind_param("i", $admin_id);
+$userStmt->execute();
+$currentUser = $userStmt->get_result()->fetch_assoc();
+$userStmt->close();
+
+if (!$currentUser) {
+    die("Account record not found.");
+}
+
+// Fetch matching employee record for phone number if available
+$empPhone = '';
+$empStmt = $conn->prepare("SELECT phone FROM employees WHERE user_id = ? AND restaurant_id = ? LIMIT 1");
+if ($empStmt) {
+    $empStmt->bind_param("ii", $admin_id, $tenantId);
+    $empStmt->execute();
+    if ($eRes = $empStmt->get_result()->fetch_assoc()) {
+        $empPhone = $eRes['phone'] ?? '';
+    }
+    $empStmt->close();
+}
+$displayPhone = !empty($empPhone) ? $empPhone : ($currentUser['rest_phone'] ?? 'N/A');
+
+// Handle Form Submissions (Profile Update, Password Update & KDS PIN Update)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     CSRF::requireValidToken();
 
     $action = $_POST['action'];
 
-    if ($action === 'change_password') {
+    if ($action === 'update_profile') {
+        $newName = trim($_POST['full_name'] ?? '');
+        $newEmail = strtolower(trim($_POST['email'] ?? ''));
+        $currentPassword = $_POST['current_password'] ?? '';
+
+        if (empty($newName) || empty($newEmail) || empty($currentPassword)) {
+            $_SESSION['error'] = 'Name, email address, and current password are required.';
+        } elseif (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['error'] = 'Invalid email address format.';
+        } else {
+            // Verify current password first
+            $vStmt = $conn->prepare("SELECT password FROM admin_users WHERE id = ? LIMIT 1");
+            $vStmt->bind_param("i", $admin_id);
+            $vStmt->execute();
+            $vRes = $vStmt->get_result()->fetch_assoc();
+            $vStmt->close();
+
+            if (!$vRes || !password_verify($currentPassword, $vRes['password'])) {
+                $_SESSION['error'] = 'Current password verification failed.';
+            } else {
+                // Check email uniqueness across users
+                $dupStmt = $conn->prepare("SELECT id FROM admin_users WHERE LOWER(email) = ? AND id != ? LIMIT 1");
+                $dupStmt->bind_param("si", $newEmail, $admin_id);
+                $dupStmt->execute();
+                if ($dupStmt->get_result()->num_rows > 0) {
+                    $dupStmt->close();
+                    $_SESSION['error'] = 'An account with this email address already exists.';
+                } else {
+                    $dupStmt->close();
+                    // Update user profile
+                    $upStmt = $conn->prepare("UPDATE admin_users SET full_name = ?, email = ? WHERE id = ?");
+                    $upStmt->bind_param("ssi", $newName, $newEmail, $admin_id);
+                    if ($upStmt->execute()) {
+                        $upStmt->close();
+                        $_SESSION['admin_full_name'] = $newName;
+                        $_SESSION['admin_email'] = $newEmail;
+                        $_SESSION['email'] = $newEmail;
+                        $_SESSION['username'] = $newEmail;
+
+                        Security::logAudit("PROFILE_UPDATED", "User ID {$admin_id} updated profile name to '{$newName}' and login email to '{$newEmail}'");
+                        $_SESSION['success'] = 'Profile updated successfully! Your new login email is ' . htmlspecialchars($newEmail) . '.';
+                    } else {
+                        $_SESSION['error'] = 'Failed to update profile record.';
+                    }
+                }
+            }
+        }
+    } elseif ($action === 'change_password') {
         $current_password = $_POST['current_password'] ?? '';
         $new_password = $_POST['new_password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
@@ -26,7 +105,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } elseif (strlen($new_password) < 8) {
             $_SESSION['error'] = 'New password must be at least 8 characters long.';
         } else {
-            $admin_id = (int)($_SESSION['admin_id'] ?? 1);
             $stmt = $conn->prepare("SELECT password FROM admin_users WHERE id = ? LIMIT 1");
             if ($stmt) {
                 $stmt->bind_param("i", $admin_id);
@@ -63,7 +141,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $kitchen_pass = $_POST['kitchen_password'] ?? '';
         if (!empty($kitchen_pass)) {
             $k_hash = password_hash($kitchen_pass, PASSWORD_BCRYPT);
-            $tenantId = (int)($_SESSION['restaurant_id'] ?? 0);
             $kCheck = $conn->query("SELECT id FROM landing_page_settings WHERE restaurant_id = $tenantId LIMIT 1");
             if ($kCheck && $kCheck->num_rows > 0) {
                 $kStmt = $conn->prepare("UPDATE landing_page_settings SET kds_password = ? WHERE restaurant_id = ?");
@@ -99,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#09090b">
-    <title>POS Security & Access Control - QR Cafe</title>
+    <title>Account Settings & Security - RMS SaaS</title>
     <link rel="manifest" href="../manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -132,12 +209,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-lg md:text-xl font-black text-white">Security & Access Management Center</h1>
+                        <h1 class="text-lg md:text-xl font-black text-white">Account & Security Management Center</h1>
                         <span class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-wider">
                             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Enterprise IAM
                         </span>
                     </div>
-                    <p class="text-xs text-zinc-400 hidden sm:block">Role-Based Access Control, Session Auditing, BCRYPT Password Encryption & Realtime Audit Logs</p>
+                    <p class="text-xs text-zinc-400 hidden sm:block">Email Identity Management, Role-Based Access Control, Session Auditing & Security Logs</p>
                 </div>
 
                 <!-- Action Controls -->
@@ -171,53 +248,115 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 </div>
             <?php endif; ?>
 
-            <!-- 1. TOP SECURITY KPI DASHBOARD (8 METRICS) -->
-            <section class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">👤 Total Users</span>
-                    <div id="kpiTotalUsers" class="text-lg font-black text-white">5</div>
+            <!-- 1. USER ACCOUNT PROFILE CARD (REQUIREMENT 2 & 18) -->
+            <section class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-4">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-4">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-400 flex items-center justify-center text-zinc-950 font-black text-2xl shadow-xl shadow-amber-500/20">
+                            👤
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-black text-white"><?= htmlspecialchars($currentUser['full_name']) ?></h2>
+                            <p class="text-xs text-amber-400 font-bold"><?= htmlspecialchars(strtoupper($currentUser['role'])) ?> &middot; <?= htmlspecialchars($currentUser['restaurant_name'] ?: 'RMS SaaS Restaurant') ?></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-extrabold text-xs">
+                            🟢 <?= htmlspecialchars($currentUser['tenant_status'] ?: 'ACTIVE') ?>
+                        </span>
+                    </div>
                 </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">🟢 Active Sessions</span>
-                    <div id="kpiActiveSessions" class="text-lg font-black text-emerald-400">1</div>
-                </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">🔒 Security Score</span>
-                    <div id="kpiSecurityScore" class="text-xs font-black text-emerald-400 truncate">96% (Pass)</div>
-                </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">⚠️ Failed Logins</span>
-                    <div id="kpiFailedLogins" class="text-lg font-black text-emerald-400">0</div>
-                </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">📱 Devices</span>
-                    <div id="kpiConnectedDevices" class="text-lg font-black text-white">3</div>
-                </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">🔑 API Keys</span>
-                    <div id="kpiApiKeys" class="text-lg font-black text-amber-400">2</div>
-                </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">🛡️ 2FA Accounts</span>
-                    <div id="kpi2faUsers" class="text-lg font-black text-blue-400">1</div>
-                </div>
-                <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-3 text-center space-y-1">
-                    <span class="text-xs text-zinc-400 font-bold">🚨 Alerts</span>
-                    <div id="kpiSecurityAlerts" class="text-lg font-black text-emerald-400">0</div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                    <div class="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1">
+                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Full Name</span>
+                        <span class="text-sm font-extrabold text-white block"><?= htmlspecialchars($currentUser['full_name']) ?></span>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-zinc-950 border border-amber-500/30 bg-amber-500/5 space-y-1">
+                        <span class="text-[10px] font-black text-amber-400 uppercase tracking-wider block">Login Email Address</span>
+                        <span class="text-sm font-black text-amber-300 font-mono block select-all"><?= htmlspecialchars($currentUser['email'] ?: 'No Email Configured') ?></span>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1">
+                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Phone Number</span>
+                        <span class="text-sm font-bold text-zinc-200 block"><?= htmlspecialchars($displayPhone) ?></span>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-1">
+                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Account Role</span>
+                        <span class="text-sm font-bold text-white block"><?= htmlspecialchars(strtoupper($currentUser['role'])) ?></span>
+                    </div>
                 </div>
             </section>
 
             <!-- 2. TABBED SECURITY CENTER NAVIGATION -->
             <section class="space-y-6">
-                <div class="flex items-center gap-2 border-b border-zinc-800 pb-2">
-                    <button onclick="switchSecurityTab('credentials')" id="secTabCredentials" class="px-4 py-2 rounded-2xl font-black text-xs bg-amber-500 text-zinc-950 shadow-md">🔐 Credentials & Password</button>
-                    <button onclick="switchSecurityTab('rbac')" id="secTabRBAC" class="px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white">👥 RBAC Roles & Users</button>
+                <div class="flex items-center gap-2 border-b border-zinc-800 pb-2 overflow-x-auto">
+                    <button onclick="switchSecurityTab('profile')" id="secTabProfile" class="px-4 py-2 rounded-2xl font-black text-xs bg-amber-500 text-zinc-950 shadow-md">✏️ Edit Profile</button>
+                    <button onclick="switchSecurityTab('credentials')" id="secTabCredentials" class="px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white">🔐 Change Password</button>
+                    <button onclick="switchSecurityTab('rbac')" id="secTabRBAC" class="px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white">👥 RBAC Matrix</button>
                     <button onclick="switchSecurityTab('sessions')" id="secTabSessions" class="px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white">📱 Active Sessions</button>
-                    <button onclick="switchSecurityTab('audit')" id="secTabAudit" class="px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white">📋 Realtime Audit Logs</button>
+                    <button onclick="switchSecurityTab('audit')" id="secTabAudit" class="px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white">📋 Audit Logs</button>
                 </div>
 
-                <!-- TAB 1: CREDENTIALS & PASSWORD -->
-                <div id="secContentCredentials" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- TAB 1: EDIT PROFILE (NAME & EMAIL CHANGE) -->
+                <div id="secContentProfile" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4">
+                        <div class="border-b border-zinc-800 pb-3">
+                            <h3 class="font-black text-white text-base">✏️ Update Account Profile & Login Email</h3>
+                            <p class="text-xs text-zinc-400">Update your account name and primary login email address</p>
+                        </div>
+
+                        <form method="POST" action="change-password.php" class="space-y-3">
+                            <?php echo CSRF::getField(); ?>
+                            <input type="hidden" name="action" value="update_profile">
+
+                            <div>
+                                <label class="block text-xs font-bold text-zinc-300 mb-1">Full Name *</label>
+                                <input type="text" name="full_name" required value="<?= htmlspecialchars($currentUser['full_name']) ?>" class="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-xs text-white font-bold outline-none focus:border-amber-500">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-zinc-300 mb-1">Login Email Address *</label>
+                                <input type="email" name="email" required value="<?= htmlspecialchars($currentUser['email']) ?>" class="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-xs text-white font-mono font-bold outline-none focus:border-amber-500">
+                                <p class="text-[10px] text-amber-500/90 mt-1">⚠️ Changing your email address will update your primary login credential.</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-zinc-300 mb-1">Current Password (Required to authorize changes) *</label>
+                                <input type="password" name="current_password" required placeholder="••••••••••••" class="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-xs text-white font-bold outline-none focus:border-amber-500">
+                            </div>
+
+                            <button type="submit" class="w-full h-11 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs active:scale-95 shadow-lg shadow-amber-500/20">Save Profile & Login Email</button>
+                        </form>
+                    </div>
+
+                    <!-- Kitchen KDS Access PIN Card -->
+                    <div class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4">
+                        <div class="border-b border-zinc-800 pb-3">
+                            <h3 class="font-black text-white text-base">👨‍🍳 Kitchen Display (KDS) Security PIN</h3>
+                            <p class="text-xs text-zinc-400">Configure quick access PIN for Kitchen Staff Portal</p>
+                        </div>
+
+                        <form method="POST" action="change-password.php" class="space-y-3">
+                            <?php echo CSRF::getField(); ?>
+                            <input type="hidden" name="action" value="change_kitchen_pin">
+
+                            <div>
+                                <label class="block text-xs font-bold text-zinc-300 mb-1">New Kitchen Access PIN *</label>
+                                <input type="password" name="kitchen_password" required placeholder="e.g. 1234" class="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-xs text-white font-bold outline-none focus:border-amber-500">
+                            </div>
+
+                            <p class="text-[11px] text-zinc-500">Kitchen staff use this PIN to log into the Kitchen Display System (KDS).</p>
+
+                            <button type="submit" class="w-full h-11 rounded-2xl bg-zinc-800 border border-zinc-700 text-white font-bold text-xs hover:border-amber-500/40">Update Kitchen PIN</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- TAB 2: CREDENTIALS & PASSWORD -->
+                <div id="secContentCredentials" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden">
                     
                     <!-- Admin Password Change Card -->
                     <div class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4">
@@ -249,31 +388,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </form>
                     </div>
 
-                    <!-- Kitchen KDS Access PIN Card -->
-                    <div class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4">
-                        <div class="border-b border-zinc-800 pb-3">
-                            <h3 class="font-black text-white text-base">👨‍🍳 Kitchen Display (KDS) Security PIN</h3>
-                            <p class="text-xs text-zinc-400">Configure quick 4-digit PIN for Kitchen Staff Portal</p>
-                        </div>
-
-                        <form method="POST" action="change-password.php" class="space-y-3">
-                            <?php echo CSRF::getField(); ?>
-                            <input type="hidden" name="action" value="change_kitchen_pin">
-
-                            <div>
-                                <label class="block text-xs font-bold text-zinc-300 mb-1">New Kitchen Access PIN *</label>
-                                <input type="password" name="kitchen_password" required placeholder="e.g. 1234" class="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-xs text-white font-bold outline-none focus:border-amber-500">
-                            </div>
-
-                            <p class="text-[11px] text-zinc-500">Kitchen staff use this PIN to log into the Kitchen Display System (KDS).</p>
-
-                            <button type="submit" class="w-full h-11 rounded-2xl bg-zinc-800 border border-zinc-700 text-white font-bold text-xs hover:border-amber-500/40">Update Kitchen PIN</button>
-                        </form>
-                    </div>
-
                 </div>
 
-                <!-- TAB 2: RBAC ROLES & USERS -->
+                <!-- TAB 3: RBAC ROLES & USERS -->
                 <div id="secContentRBAC" class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4 hidden">
                     <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
                         <h3 class="font-black text-white text-base">👥 System Users & Role Permissions Matrix</h3>
@@ -285,32 +402,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             <thead>
                                 <tr class="border-b border-zinc-800 text-zinc-400 font-bold">
                                     <th class="py-2.5 px-3">Role Name</th>
-                                    <th class="py-2.5 px-3">Assigned User</th>
+                                    <th class="py-2.5 px-3">Login Email</th>
                                     <th class="py-2.5 px-3">Access Level</th>
-                                    <th class="py-2.5 px-3">2FA Status</th>
                                     <th class="py-2.5 px-3 text-right">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr class="border-b border-zinc-800/60">
                                     <td class="py-3 px-3 font-bold text-white">Owner / Admin</td>
-                                    <td class="py-3 px-3 text-zinc-300">admin@qrcafe.com</td>
+                                    <td class="py-3 px-3 text-amber-400 font-mono"><?= htmlspecialchars($currentUser['email']) ?></td>
                                     <td class="py-3 px-3 font-black text-amber-400">Full System Access</td>
-                                    <td class="py-3 px-3 text-emerald-400 font-bold">🛡️ Enabled</td>
-                                    <td class="py-3 px-3 text-right"><span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold text-[10px]">🟢 Active</span></td>
-                                </tr>
-                                <tr class="border-b border-zinc-800/60">
-                                    <td class="py-3 px-3 font-bold text-white">Kitchen Staff</td>
-                                    <td class="py-3 px-3 text-zinc-300">kitchen@qrcafe.com</td>
-                                    <td class="py-3 px-3 font-bold text-blue-400">KDS Orders Only</td>
-                                    <td class="py-3 px-3 text-zinc-500">Disabled</td>
-                                    <td class="py-3 px-3 text-right"><span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold text-[10px]">🟢 Active</span></td>
-                                </tr>
-                                <tr class="border-b border-zinc-800/60">
-                                    <td class="py-3 px-3 font-bold text-white">Floor Cashier</td>
-                                    <td class="py-3 px-3 text-zinc-300">cashier@qrcafe.com</td>
-                                    <td class="py-3 px-3 font-bold text-purple-400">POS Settlement Only</td>
-                                    <td class="py-3 px-3 text-zinc-500">Disabled</td>
                                     <td class="py-3 px-3 text-right"><span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-bold text-[10px]">🟢 Active</span></td>
                                 </tr>
                             </tbody>
@@ -318,11 +419,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </div>
                 </div>
 
-                <!-- TAB 3: ACTIVE SESSIONS -->
+                <!-- TAB 4: ACTIVE SESSIONS -->
                 <div id="secContentSessions" class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4 hidden">
                     <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
                         <h3 class="font-black text-white text-base">📱 Active Sessions & Connected Devices</h3>
-                        <button onclick="showToast('Revoked all remote sessions', 'info')" class="px-3 py-1 rounded-xl bg-rose-500/10 text-rose-400 font-bold text-xs hover:bg-rose-500 hover:text-white">Revoke All Others</button>
                     </div>
 
                     <div id="sessionsContainer" class="space-y-3">
@@ -339,7 +439,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </div>
                 </div>
 
-                <!-- TAB 4: REALTIME AUDIT LOGS -->
+                <!-- TAB 5: REALTIME AUDIT LOGS -->
                 <div id="secContentAudit" class="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-5 shadow-xl space-y-4 hidden">
                     <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
                         <h3 class="font-black text-white text-base">📋 Realtime Security Audit Logs</h3>
@@ -371,39 +471,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         </main>
     </div>
 
-    <!-- MOBILE BOTTOM NAVIGATION -->
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-800/80 flex justify-around items-center h-16 rounded-t-2xl px-2">
-        <a href="index.php" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[10px]">
-            <span class="text-lg">📊</span>
-            <span>Dashboard</span>
-        </a>
-        <a href="change-password.php" class="flex flex-col items-center gap-0.5 text-amber-500 font-black text-[10px]">
-            <span class="text-lg">🔐</span>
-            <span>Security</span>
-        </a>
-        <a href="orders.php" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[10px]">
-            <span class="text-lg">📋</span>
-            <span>Orders</span>
-        </a>
-        <a href="tables.php" class="flex flex-col items-center gap-0.5 text-zinc-400 font-bold text-[10px]">
-            <span class="text-lg">📍</span>
-            <span>Tables</span>
-        </a>
-    </nav>
-
     <!-- REALTIME SECURITY STREAM CONTROLLER -->
     <script src="../js/modern.js"></script>
     <script>
         function switchSecurityTab(tab) {
-            ['credentials', 'rbac', 'sessions', 'audit'].forEach(t => {
+            ['profile', 'credentials', 'rbac', 'sessions', 'audit'].forEach(t => {
                 const btn = document.getElementById('secTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 const content = document.getElementById('secContent' + t.charAt(0).toUpperCase() + t.slice(1));
-                if (t === tab) {
-                    btn.className = 'px-4 py-2 rounded-2xl font-black text-xs bg-amber-500 text-zinc-950 shadow-md';
-                    content.classList.remove('hidden');
-                } else {
-                    btn.className = 'px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white';
-                    content.classList.add('hidden');
+                if (btn && content) {
+                    if (t === tab) {
+                        btn.className = 'px-4 py-2 rounded-2xl font-black text-xs bg-amber-500 text-zinc-950 shadow-md';
+                        content.classList.remove('hidden');
+                    } else {
+                        btn.className = 'px-4 py-2 rounded-2xl font-bold text-xs bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white';
+                        content.classList.add('hidden');
+                    }
                 }
             });
         }
@@ -413,27 +495,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        updateKPICards(data.kpi);
                         renderAuditLogs(data.audit_logs || []);
                     }
                 })
                 .catch(err => console.error('Security stream error:', err));
         }
 
-        function updateKPICards(kpi) {
-            if (!kpi) return;
-            document.getElementById('kpiTotalUsers').textContent = kpi.total_users || 5;
-            document.getElementById('kpiActiveSessions').textContent = kpi.active_sessions || 1;
-            document.getElementById('kpiSecurityScore').textContent = kpi.security_score || '96% (Pass)';
-            document.getElementById('kpiFailedLogins').textContent = kpi.failed_logins_today || 0;
-            document.getElementById('kpiConnectedDevices').textContent = kpi.connected_devices || 3;
-            document.getElementById('kpiApiKeys').textContent = kpi.api_keys || 2;
-            document.getElementById('kpi2faUsers').textContent = kpi.two_factor_users || 1;
-            document.getElementById('kpiSecurityAlerts').textContent = kpi.security_alerts || 0;
-        }
-
         function renderAuditLogs(logs) {
             const tbody = document.getElementById('auditLogsTableBody');
+            if (!tbody) return;
             if (logs.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-zinc-500">No audit events recorded today</td></tr>`;
                 return;
@@ -450,10 +520,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             `).join('');
         }
 
-        // Initialize Realtime Polling Stream (Every 4 seconds)
         document.addEventListener('DOMContentLoaded', () => {
             refreshSecurityStream();
-            setInterval(refreshSecurityStream, 4000);
         });
     </script>
 </body>

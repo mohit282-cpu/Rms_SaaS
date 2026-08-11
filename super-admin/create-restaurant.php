@@ -136,8 +136,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = "Please enter a valid email address.";
             } elseif (!preg_match('/^(?:\+?977)?([9][678][0-9]{8})$/', $cleanPhone)) {
                 $error = "Please enter a valid Nepali mobile number (e.g. 98XXXXXXXX, 97XXXXXXXX, or +97798XXXXXXXX).";
-            } elseif (!preg_match('/^[a-zA-Z0-9_]{4,30}$/', $username)) {
-                $error = "Username must be between 4 and 30 characters long and contain only letters, numbers, or underscores.";
             } elseif ($password !== $confirmPassword) {
                 $error = "Passwords do not match.";
             } elseif (strlen($password) < 8) {
@@ -145,12 +143,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // Server-Side Uniqueness Checks
                 
-                // 1. Check duplicate username
-                $checkUser = $conn->prepare("SELECT id FROM admin_users WHERE username = ? LIMIT 1");
-                $checkUser->bind_param("s", $username);
+                // 1. Check duplicate user email
+                $checkUser = $conn->prepare("SELECT id FROM admin_users WHERE LOWER(email) = ? LIMIT 1");
+                $checkUser->bind_param("s", $email);
                 $checkUser->execute();
                 if ($checkUser->get_result()->num_rows > 0) {
-                    $error = "Admin username is already in use. Please choose another username.";
+                    $error = "An account with this email address already exists.";
                     $checkUser->close();
                 } else {
                     $checkUser->close();
@@ -165,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $checkCode->close();
 
-                        // 3. Check duplicate email
+                        // 3. Check duplicate email in restaurants
                         $checkEmail = $conn->prepare("SELECT id FROM restaurants WHERE email = ? LIMIT 1");
                         $checkEmail->bind_param("s", $email);
                         $checkEmail->execute();
@@ -208,11 +206,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $stmtRest->close();
 
                                     // Insert Restaurant Admin User in admin_users (Role: owner / RESTAURANT_ADMIN)
+                                    $usernameVal = !empty($username) ? $username : $email;
                                     $stmtUser = $conn->prepare("
-                                        INSERT INTO admin_users (username, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
-                                        VALUES (?, ?, ?, 'owner', 0, 0, ?)
+                                        INSERT INTO admin_users (username, email, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
+                                        VALUES (?, ?, ?, ?, 'owner', 0, 0, ?)
                                     ");
-                                    $stmtUser->bind_param("sssi", $username, $hashedPass, $ownerName, $newRestId);
+                                    $stmtUser->bind_param("ssssi", $usernameVal, $email, $hashedPass, $ownerName, $newRestId);
                                     $stmtUser->execute();
                                     $stmtUser->close();
 

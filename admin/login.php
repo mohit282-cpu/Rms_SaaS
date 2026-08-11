@@ -7,7 +7,7 @@ require_once '../config.php';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#09090b">
-    <title>Manager & KDS Portal - QR Cafe</title>
+    <title>Manager & Staff Portal - RMS SaaS</title>
     <link rel="manifest" href="../manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -34,11 +34,11 @@ require_once '../config.php';
             <div class="text-center space-y-2">
                 <div class="text-5xl">☕</div>
                 <h1 class="text-xl font-black text-white">Manager & Staff Portal</h1>
-                <p class="text-xs text-zinc-400">QR Cafe Administration System</p>
+                <p class="text-xs text-zinc-400">RMS SaaS Restaurant Operations System</p>
             </div>
 
             <?php if (isset($_SESSION['error'])): ?>
-                <div class="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold flex items-center gap-2">
+                <div class="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold flex items-center gap-2">
                     <span>⚠️</span> <span><?php echo $_SESSION['error']; unset($_SESSION['error']); ?></span>
                 </div>
             <?php endif; ?>
@@ -47,8 +47,8 @@ require_once '../config.php';
             <form method="POST" action="login-process.php" class="space-y-4">
                 <?php echo CSRF::getField(); ?>
                 <div>
-                    <label for="username" class="block text-xs font-bold text-zinc-300 mb-1.5">Username</label>
-                    <input type="text" id="username" name="username" placeholder="Enter administrator username" required class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-500 outline-none focus:border-amber-500 transition-all font-bold">
+                    <label for="email" class="block text-xs font-bold text-zinc-300 mb-1.5">Email Address</label>
+                    <input type="email" id="email" name="email" placeholder="admin@restaurant.com" required class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-500 outline-none focus:border-amber-500 transition-all font-medium" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
                 </div>
 
                 <div>

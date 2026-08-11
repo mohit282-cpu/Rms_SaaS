@@ -71,7 +71,7 @@ assertTest(isset($val['table']) && $val['table']['table_number'] === '3', "Valid
 
 echo "\n--- STEP 3: PLACE ORDER VIA CUSTOMER CHECKOUT ---\n";
 // Create test order items
-$menuRes = $conn->query("SELECT id, name, price FROM menu_items WHERE restaurant_id = $tenantId AND status = 'available' LIMIT 2");
+$menuRes = $conn->query("SELECT id, name, price FROM menu_items WHERE restaurant_id = $tenantId AND status = 'active' LIMIT 2");
 $items = [];
 if ($menuRes) {
     while ($row = $menuRes->fetch_assoc()) {

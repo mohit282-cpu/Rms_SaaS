@@ -50,7 +50,7 @@ $conn->query("DELETE FROM reservations WHERE restaurant_id = $tenantId");
 
 // --- STEP 1: CREATE RESTAURANT ---
 echo "--- STEP 1 & 2: PROVISION TENANT & LOGIN ---\n";
-$stmt = $conn->prepare("INSERT INTO restaurants (id, uuid, restaurant_name, email, phone, status, created_at) VALUES (?, 'uuid-os-7777', 'The Royal Palace Bistro', 'bistro@royal.com', '9811223344', 'active', NOW())");
+$stmt = $conn->prepare("INSERT INTO restaurants (id, uuid, restaurant_code, restaurant_name, owner_name, email, phone, status, created_at) VALUES (?, 'uuid-os-7777', 'REST-OS-7777', 'The Royal Palace Bistro', 'Owner Test', 'bistro@royal.com', '9811223344', 'active', NOW())");
 $stmt->bind_param("i", $tenantId);
 $ok1 = $stmt->execute();
 $stmt->close();
