@@ -118,7 +118,7 @@ try {
             Inventory::ensureAssetQR($conn, $assetId);
 
             // Record audit log
-            $actor = $_SESSION['admin_username'] ?? 'admin';
+            $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
             $event = $id > 0 ? 'updated' : 'created';
             $desc = ($id > 0 ? "Asset #$assetId updated" : "Asset #$assetId created") . " — $name ($asset_code)";
             
@@ -139,7 +139,7 @@ try {
             $name = ($r && $row = $r->fetch_assoc()) ? $row['name'] : "#$id";
             $ok = $conn->query("UPDATE assets SET status='disposed' WHERE restaurant_id = $tenantId AND id=$id");
 
-            $actor = $_SESSION['admin_username'] ?? 'admin';
+            $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
             $desc = "Asset #$id marked as disposed — $name";
             $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
             $logStmt->bind_param("iisss", $tenantId, $id, 'disposed', $desc, $actor);
@@ -240,7 +240,7 @@ try {
                 $conn->query("UPDATE assets SET status='maintenance' WHERE restaurant_id = $tenantId AND id=$asset_id AND status='in_use'");
             }
 
-            $actor = $_SESSION['admin_username'] ?? 'admin';
+            $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
             $logDesc = ($id > 0 ? "Updated maintenance #$id" : "Scheduled maintenance") . " for asset #$asset_id ($type, cost Rs.$cost)";
             $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
             $logStmt->bind_param("iisss", $tenantId, $asset_id, 'maintenance', $logDesc, $actor);
@@ -329,7 +329,7 @@ try {
             if (!$chk || !$chk->fetch_assoc()) { echo json_encode(['success' => false, 'message' => 'Asset not found']); break; }
 
             $conn->begin_transaction();
-            $actor = $_SESSION['admin_username'] ?? 'admin';
+            $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
             $stmt = $conn->prepare("INSERT INTO asset_transfers (restaurant_id, asset_id, from_location, to_location, from_employee, to_employee, transfer_date, reason, transferred_by) VALUES (?,?,?,?,?,?,?,?,?)");
             $stmt->bind_param("iisssssss", $tenantId, $asset_id, $from_loc, $to_loc, $from_emp, $to_emp, $tdate, $reason, $actor);
             $ok = $stmt->execute();

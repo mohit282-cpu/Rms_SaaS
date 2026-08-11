@@ -772,7 +772,7 @@ The Super Admin portal (`super-admin/`) manages the entire multi-tenant platform
 | **Dashboard** | Platform-wide metrics — total tenants, active subscriptions, recent activity |
 | **Onboarding Pipeline** | Public request form → PENDING → CONTACTED → APPROVED → CONVERTED (auto-provisions tenant) or REJECTED |
 | **Manual Provisioning** | Create a new restaurant tenant with owner account, subscription, default tables, and categories — all in one atomic transaction |
-| **Tenant Management** | View all restaurants, suspend/activate accounts, reset passwords, change usernames |
+| **Tenant Management** | View all restaurants, suspend/activate accounts, reset passwords, change login emails |
 | **Impersonation** | Log into any tenant's admin portal to provide support — without knowing their password |
 | **Subscription Plans** | Manage plan catalog — name, pricing, max tables, max staff, features |
 | **Subscription Governance** | Upgrade/downgrade tenant plans with usage-limit validation |

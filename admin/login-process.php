@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($conn) {
         $stmt = $conn->prepare("
-            SELECT u.id, u.username, u.email, u.password, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.force_password_change, r.status as tenant_status 
+            SELECT u.id, u.email, u.password, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.force_password_change, r.status as tenant_status 
             FROM admin_users u
             LEFT JOIN restaurants r ON u.restaurant_id = r.id
             WHERE LOWER(u.email) = ? LIMIT 1
@@ -90,10 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $_SESSION['admin_logged_in'] = true;
                     $_SESSION['admin_id'] = $user['id'];
+                    $_SESSION['user_id'] = $user['id'];
                     $_SESSION['admin_email'] = $user['email'];
                     $_SESSION['email'] = $user['email'];
-                    $_SESSION['username'] = !empty($user['email']) ? $user['email'] : $user['username'];
-                    $_SESSION['admin_username'] = $_SESSION['username'];
                     $_SESSION['admin_full_name'] = $user['full_name'];
                     $_SESSION['role'] = strtoupper($user['role'] ?? 'OWNER');
                     $_SESSION['is_super_admin'] = (bool)($user['is_super_admin'] ?? false);

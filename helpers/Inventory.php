@@ -129,7 +129,7 @@ class Inventory {
         if (!$conn) return;
         $tenantId = (int)TenantContext::getTenantId();
         $uid = intval($_SESSION['admin_id'] ?? 0);
-        $user = $_SESSION['admin_username'] ?? 'System';
+        $user = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'System';
         $ip = $_SERVER['REMOTE_ADDR'] ?? '';
         $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
         $stmt = $conn->prepare("INSERT INTO audit_logs (restaurant_id, user_id, username, event_type, description, ip_address, user_agent) VALUES (?,?,?,?,?,?,?)");
@@ -152,7 +152,7 @@ class Inventory {
         if ($restaurantId <= 0) return false;
 
         $refIdSql = ($refId !== null) ? intval($refId) : null;
-        $creator = $conn->real_escape_string($_SESSION['admin_username'] ?? 'system');
+        $creator = $conn->real_escape_string($_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'system');
         $refTypeSql = $conn->real_escape_string($refType);
         $notesSql = $conn->real_escape_string(mb_substr($notes, 0, 255));
         $stmt = $conn->prepare(

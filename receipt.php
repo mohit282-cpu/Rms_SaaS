@@ -202,7 +202,7 @@ $paymentMethodLabel = $methodLabel[strtolower($paymentMethod)] ?? $paymentMethod
         </div>
         <div class="flex-between text-sm mb-2">
             <span>Order #: <span class="bold">#<?php echo $orderId; ?></span></span>
-            <span>Cashier: <?php echo htmlspecialchars($_SESSION['username'] ?? 'Staff'); ?></span>
+            <span>Cashier: <?php echo htmlspecialchars($_SESSION['email'] ?? 'Staff'); ?></span>
         </div>
         <?php if ($customer): ?>
         <div class="flex-between text-sm mb-2">

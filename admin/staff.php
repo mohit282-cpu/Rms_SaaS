@@ -185,25 +185,36 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $activeTab = 'payroll';
     } elseif ($action === 'create_staff') {
         // Preserved legacy staff account creation
-        $username = Security::sanitize($_POST['username'] ?? '');
+        $email = strtolower(trim(Security::sanitize($_POST['email'] ?? '')));
         $fullName = Security::sanitize($_POST['full_name'] ?? '');
         $role = strtoupper(Security::sanitize($_POST['role'] ?? 'CASHIER'));
         $password = $_POST['password'] ?? '';
 
         if ($role === 'SUPER_ADMIN') {
             $error = "Cannot assign SUPER_ADMIN role.";
-        } elseif (empty($username) || empty($password)) {
-            $error = "Username and password are required.";
+        } elseif (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error = "A valid login email address is required.";
+        } elseif (empty($password)) {
+            $error = "Password is required.";
         } else {
-            $hash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("INSERT INTO admin_users (username, password, full_name, role, restaurant_id, is_super_admin) VALUES (?, ?, ?, ?, ?, 0)");
-            $stmt->bind_param("ssssi", $username, $hash, $fullName, $role, $tenantId);
-            if ($stmt->execute()) {
-                $message = "Staff account '$username' created successfully!";
+            $dup = $conn->prepare("SELECT id FROM admin_users WHERE LOWER(email) = ? LIMIT 1");
+            $dup->bind_param("s", $email);
+            $dup->execute();
+            if ($dup->get_result()->num_rows > 0) {
+                $dup->close();
+                $error = "An account with this email address already exists.";
             } else {
-                $error = "Failed to create staff account: " . $conn->error;
+                $dup->close();
+                $hash = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("INSERT INTO admin_users (email, password, full_name, role, restaurant_id, is_super_admin) VALUES (?, ?, ?, ?, ?, 0)");
+                $stmt->bind_param("ssssi", $email, $hash, $fullName, $role, $tenantId);
+                if ($stmt->execute()) {
+                    $message = "Staff account '$email' created successfully!";
+                } else {
+                    $error = "Failed to create staff account: " . $conn->error;
+                }
+                $stmt->close();
             }
-            $stmt->close();
         }
     }
 }
@@ -407,9 +418,9 @@ $currentPage = 'staff';
                                             <div class="text-[11px] text-zinc-500 mt-0.5"><?= htmlspecialchars($emp['employment_type']) ?></div>
                                         </td>
                                         <td class="py-3 px-3">
-                                            <?php if (!empty($emp['system_email']) || !empty($emp['system_username'])): ?>
+                                            <?php if (!empty($emp['system_email'])): ?>
                                                 <span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-amber-400 font-bold text-[10px]">
-                                                    ✉️ <?= htmlspecialchars($emp['system_email'] ?: $emp['system_username']) ?> (<?= htmlspecialchars($emp['system_role']) ?>)
+                                                    ✉️ <?= htmlspecialchars($emp['system_email']) ?> (<?= htmlspecialchars($emp['system_role']) ?>)
                                                 </span>
                                             <?php else: ?>
                                                 <span class="text-zinc-500 italic text-[11px]">No Login Account</span>

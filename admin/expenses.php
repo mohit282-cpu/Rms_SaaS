@@ -82,7 +82,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $vendor = Security::sanitize($_POST['vendor'] ?? '');
     $method = Security::sanitize($_POST['payment_method'] ?? 'cash');
     $notes = Security::sanitize($_POST['notes'] ?? '');
-    $user = $_SESSION['admin_username'] ?? 'Admin';
+    $user = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'Admin';
 
     if (empty($title) || $amount <= 0) {
         $error = "Valid expense title and amount are required.";

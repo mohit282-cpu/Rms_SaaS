@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$conn) {
                 $error = "Database connection error.";
             } else {
-                $stmt = $conn->prepare("SELECT id, username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change FROM admin_users WHERE LOWER(email) = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
+                $stmt = $conn->prepare("SELECT id, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change FROM admin_users WHERE LOWER(email) = ? AND (is_super_admin = 1 OR LOWER(role) = 'super_admin') LIMIT 1");
                 if ($stmt) {
                     $stmt->bind_param("s", $email);
                     $stmt->execute();
@@ -45,13 +45,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         RateLimiter::clear("superadmin_login_" . $ip);
                         Auth::regenerateSession();
                         $_SESSION['admin_id'] = $user['id'];
+                        $_SESSION['user_id'] = $user['id'];
                         $_SESSION['admin_logged_in'] = true;
                         $_SESSION['is_super_admin'] = true;
                         $_SESSION['role'] = 'SUPER_ADMIN';
-                        $_SESSION['username'] = $user['username'] ?? $user['email'];
                         $_SESSION['email'] = $user['email'];
+                        $_SESSION['admin_email'] = $user['email'];
                         $_SESSION['full_name'] = $user['full_name'];
-                        $_SESSION['restaurant_id'] = $user['restaurant_id'] ?? 1;
+                        $_SESSION['restaurant_id'] = (int)($user['restaurant_id'] ?? 0) > 0 ? (int)$user['restaurant_id'] : 1;
+                        $_SESSION['sa_restaurant_id'] = (int)($user['restaurant_id'] ?? 0) > 0 ? (int)$user['restaurant_id'] : 1;
                         $_SESSION['force_password_change'] = (int)($user['force_password_change'] ?? 0);
 
                         Security::logAudit("SUPER_ADMIN_LOGIN", "Super Admin logged in successfully: " . $user['email']);

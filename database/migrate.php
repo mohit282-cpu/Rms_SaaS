@@ -308,7 +308,7 @@ if ($saCheck && $saCheck->num_rows > 0) {
     }
     echo "  ✅ Super Admin account verified (platform-level): $targetEmail\n";
 } else {
-    $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, 0)");
+    $stmt = $conn->prepare("INSERT INTO admin_users (email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES (?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, 0)");
     if ($stmt) {
         $stmt->bind_param("ss", $targetEmail, $superHash);
         $stmt->execute();
@@ -317,27 +317,14 @@ if ($saCheck && $saCheck->num_rows > 0) {
     echo "  ✅ Super Admin account created: $targetEmail\n";
 }
 
-echo "--> Backfilling missing email addresses for legacy restaurant admin accounts...\n";
-$emptyUsersRes = $conn->query("SELECT u.id, u.username, u.restaurant_id, r.email as rest_email FROM admin_users u LEFT JOIN restaurants r ON u.restaurant_id = r.id WHERE u.email IS NULL OR TRIM(u.email) = ''");
+echo "--> Verifying restaurant admin accounts use email authentication...\n";
+$emptyUsersRes = $conn->query("SELECT u.id, u.email FROM admin_users u WHERE u.email IS NULL OR TRIM(u.email) = ''");
 if ($emptyUsersRes && $emptyUsersRes->num_rows > 0) {
     while ($uRow = $emptyUsersRes->fetch_assoc()) {
-        $uId = (int)$uRow['id'];
-        $rEmail = trim($uRow['rest_email'] ?? '');
-        if ($uId === 1 && empty($rEmail)) {
-            $rEmail = 'admin@qrcafe.com';
-        }
-        if (empty($rEmail) || !filter_var($rEmail, FILTER_VALIDATE_EMAIL)) {
-            $rEmail = strtolower($uRow['username']) . '@restaurant' . $uRow['restaurant_id'] . '.com';
-        }
-        $cCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '" . $conn->real_escape_string(strtolower($rEmail)) . "' AND id != $uId");
-        if ($cCheck && $cCheck->num_rows > 0) {
-            $rEmail = strtolower($uRow['username']) . '_' . $uId . '@restaurant' . $uRow['restaurant_id'] . '.com';
-        }
-        $conn->query("UPDATE admin_users SET email = '" . $conn->real_escape_string(strtolower($rEmail)) . "' WHERE id = $uId");
-        echo "    Migrated User #$uId ('{$uRow['username']}') -> Email: $rEmail\n";
+        echo "    ⚠️  User #{$uRow['id']} has no email address and cannot log in. Assign an email via the Super Admin 'Change Email' action.\n";
     }
 }
-echo "  ✅ Restaurant admin accounts migrated to Email Authentication.\n";
+echo "  ✅ Restaurant admin accounts verified for Email Authentication.\n";
 
 echo "=================================================================\n";
 echo "              SCHEMA MIGRATION COMPLETED SUCCESSFULLY!           \n";

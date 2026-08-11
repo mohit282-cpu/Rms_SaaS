@@ -77,44 +77,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt->execute();
                         $stmt->close();
 
-                        // Get username for display
-                        $uRes = $conn->query("SELECT username FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 0 LIMIT 1");
-                        $uName = ($uRes && $u = $uRes->fetch_assoc()) ? $u['username'] : 'Admin';
+                        // Get admin email for display
+                        $uRes = $conn->query("SELECT email FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 0 LIMIT 1");
+                        $uName = ($uRes && $u = $uRes->fetch_assoc()) ? $u['email'] : 'Admin';
 
                         Security::logAudit("SUPER_ADMIN_RESET_PASSWORD", "Super Admin reset password for restaurant ID: {$restId} (Admin User: {$uName})");
                         $resetResult = [
-                            'username' => $uName,
+                            'email' => $uName,
                             'password' => $newPass
                         ];
                         $message = "Administrator password has been reset successfully.";
                     }
                 }
-            } elseif ($action === 'change_username') {
-                $rawUsername = trim($_POST['new_username'] ?? '');
-                $newUsername = strtolower(Security::sanitize($rawUsername));
+            } elseif ($action === 'change_email') {
+                $rawEmail = trim($_POST['new_email'] ?? '');
+                $newEmail = strtolower(Security::sanitize($rawEmail));
 
-                if (empty($newUsername) || !preg_match('/^[a-zA-Z0-9_]{4,30}$/', $newUsername)) {
-                    $error = "Username must be between 4 and 30 characters and contain only letters, numbers, or underscores.";
+                if (empty($newEmail) || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+                    $error = "A valid email address is required.";
                 } else {
-                    // Check duplicate username
-                    $checkUser = $conn->prepare("SELECT id FROM admin_users WHERE username = ? AND restaurant_id != ? LIMIT 1");
-                    $checkUser->bind_param("si", $newUsername, $restId);
+                    // Check duplicate email (globally unique - email is the login identity)
+                    $checkUser = $conn->prepare("SELECT id FROM admin_users WHERE LOWER(email) = ? AND id != (SELECT id FROM admin_users WHERE restaurant_id = ? AND is_super_admin = 0 ORDER BY id ASC LIMIT 1) LIMIT 1");
+                    $checkUser->bind_param("si", $newEmail, $restId);
                     $checkUser->execute();
                     if ($checkUser->get_result()->num_rows > 0) {
-                        $error = "An account already exists with this username.";
+                        $error = "An account already exists with this email address.";
                         $checkUser->close();
                     } else {
                         $checkUser->close();
 
-                        $stmt = $conn->prepare("UPDATE admin_users SET username = ? WHERE restaurant_id = ? AND is_super_admin = 0 ORDER BY id ASC LIMIT 1");
+                        $stmt = $conn->prepare("UPDATE admin_users SET email = ? WHERE restaurant_id = ? AND is_super_admin = 0 ORDER BY id ASC LIMIT 1");
                         if ($stmt) {
-                            $stmt->bind_param("si", $newUsername, $restId);
+                            $stmt->bind_param("si", $newEmail, $restId);
                             $stmt->execute();
                             $stmt->close();
                         }
 
-                        Security::logAudit("SUPER_ADMIN_CHANGE_USERNAME", "Super Admin changed username to {$newUsername} for restaurant ID: {$restId}");
-                        $message = "Administrator username updated successfully to '{$newUsername}'.";
+                        Security::logAudit("SUPER_ADMIN_CHANGE_EMAIL", "Super Admin changed admin login email to {$newEmail} for restaurant ID: {$restId}");
+                        $message = "Administrator login email updated successfully to '{$newEmail}'.";
                     }
                 }
             } elseif ($action === 'edit_restaurant') {
@@ -138,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 Security::logAudit("SUPER_ADMIN_EDIT_TENANT", "Super Admin updated details for restaurant ID: {$restId}");
                 $message = "Restaurant details updated successfully.";
             } elseif ($action === 'impersonate') {
-                Security::logAudit("SUPER_ADMIN_IMPERSONATE_TENANT", "Super Admin (" . $_SESSION['username'] . ") initiated support impersonation session for restaurant ID: {$restId}");
+                Security::logAudit("SUPER_ADMIN_IMPERSONATE_TENANT", "Super Admin (" . ($_SESSION['email'] ?? 'unknown') . ") initiated support impersonation session for restaurant ID: {$restId}");
                 
                 // Regenerate session ID to prevent session fixation
                 session_regenerate_id(true);
@@ -146,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Preserve superadmin context
                 $_SESSION['impersonating_superadmin'] = true;
                 $_SESSION['sa_original_admin_id'] = $_SESSION['admin_id'];
-                $_SESSION['sa_original_username'] = $_SESSION['username'];
+                $_SESSION['sa_original_email'] = $_SESSION['email'];
                 $_SESSION['sa_original_role'] = $_SESSION['role'];
                 $_SESSION['sa_original_restaurant_id'] = isset($_SESSION['restaurant_id']) ? (int)$_SESSION['restaurant_id'] : 1;
                 
@@ -154,10 +154,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['restaurant_id'] = $restId;
                 $_SESSION['is_super_admin'] = false; // Impersonation uses tenant role
                 
-                $ownerRes = $conn->query("SELECT id, username, full_name, role FROM admin_users WHERE restaurant_id = {$restId} ORDER BY id ASC LIMIT 1");
+                $ownerRes = $conn->query("SELECT id, email, full_name, role FROM admin_users WHERE restaurant_id = {$restId} ORDER BY id ASC LIMIT 1");
                 if ($ownerRes && $owner = $ownerRes->fetch_assoc()) {
                     $_SESSION['admin_id'] = $owner['id'];
-                    $_SESSION['username'] = $owner['username'];
+                    $_SESSION['user_id'] = $owner['id'];
+                    $_SESSION['email'] = $owner['email'];
+                    $_SESSION['admin_email'] = $owner['email'];
                     $_SESSION['full_name'] = $owner['full_name'];
                     $_SESSION['role'] = strtoupper($owner['role']);
                 }
@@ -172,11 +174,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             } elseif ($action === 'exit_impersonation') {
                 // Exit impersonation and restore superadmin context
-                Security::logAudit("SUPER_ADMIN_EXIT_IMPERSONATION", "Super Admin (" . ($_SESSION['sa_original_username'] ?? 'unknown') . ") exited impersonation session");
+                Security::logAudit("SUPER_ADMIN_EXIT_IMPERSONATION", "Super Admin (" . ($_SESSION['sa_original_email'] ?? 'unknown') . ") exited impersonation session");
                 
                 if (isset($_SESSION['impersonating_superadmin']) && $_SESSION['impersonating_superadmin']) {
                     $_SESSION['admin_id'] = $_SESSION['sa_original_admin_id'];
-                    $_SESSION['username'] = $_SESSION['sa_original_username'];
+                    $_SESSION['user_id'] = $_SESSION['sa_original_admin_id'];
+                    $_SESSION['email'] = $_SESSION['sa_original_email'];
+                    $_SESSION['admin_email'] = $_SESSION['sa_original_email'];
                     $_SESSION['role'] = $_SESSION['sa_original_role'];
                     $_SESSION['restaurant_id'] = $_SESSION['sa_original_restaurant_id'];
                     $_SESSION['is_super_admin'] = true;
@@ -184,7 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Clear impersonation session vars
                     unset($_SESSION['impersonating_superadmin']);
                     unset($_SESSION['sa_original_admin_id']);
-                    unset($_SESSION['sa_original_username']);
+                    unset($_SESSION['sa_original_email']);
                     unset($_SESSION['sa_original_role']);
                     unset($_SESSION['sa_original_restaurant_id']);
                     unset($_SESSION['force_password_change']);
@@ -213,7 +217,7 @@ $offset = ($page - 1) * $limit;
 $whereClauses = ["1=1"];
 if (!empty($search)) {
     $safeSearch = $conn->real_escape_string($search);
-    $whereClauses[] = "(r.restaurant_name LIKE '%{$safeSearch}%' OR r.owner_name LIKE '%{$safeSearch}%' OR r.email LIKE '%{$safeSearch}%' OR r.phone LIKE '%{$safeSearch}%' OR r.restaurant_code LIKE '%{$safeSearch}%' OR r.pan_number LIKE '%{$safeSearch}%' OR u.username LIKE '%{$safeSearch}%' OR r.id = '{$safeSearch}')";
+    $whereClauses[] = "(r.restaurant_name LIKE '%{$safeSearch}%' OR r.owner_name LIKE '%{$safeSearch}%' OR r.email LIKE '%{$safeSearch}%' OR r.phone LIKE '%{$safeSearch}%' OR r.restaurant_code LIKE '%{$safeSearch}%' OR r.pan_number LIKE '%{$safeSearch}%' OR u.email LIKE '%{$safeSearch}%' OR r.id = '{$safeSearch}')";
 }
 
 if (!empty($statusFilter)) {
@@ -242,7 +246,7 @@ $totalPages = max(1, ceil($totalRecords / $limit));
 
 $query = "
     SELECT r.*, p.name as plan_name,
-    u.username as admin_username,
+    u.email as admin_email,
     u.id as admin_user_id,
     (SELECT COUNT(*) FROM tables t WHERE t.restaurant_id = r.id) as table_count,
     (SELECT COUNT(*) FROM orders o WHERE o.restaurant_id = r.id) as order_count,
@@ -295,7 +299,7 @@ $csrfField = CSRF::getField();
             <div>✅ <?= htmlspecialchars($message) ?></div>
             <?php if ($resetResult): ?>
                 <div class="font-mono text-xs text-white">
-                    Username: <strong class="text-amber-400 select-all"><?= htmlspecialchars($resetResult['username']) ?></strong> | 
+                    Login Email: <strong class="text-amber-400 select-all"><?= htmlspecialchars($resetResult['email']) ?></strong> | 
                     Password: <strong class="text-amber-400 select-all"><?= htmlspecialchars($resetResult['password']) ?></strong>
                 </div>
             <?php endif; ?>
@@ -311,7 +315,7 @@ $csrfField = CSRF::getField();
     <!-- Search & Filter Controls -->
     <form method="GET" class="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col md:flex-row items-center gap-4 shadow-xl">
         <div class="flex-1 w-full">
-            <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Search by restaurant name, code, tenant ID, owner, username, email, phone, PAN..." class="w-full h-10 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-amber-500 transition-colors">
+            <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Search by restaurant name, code, tenant ID, owner, email, phone, PAN..." class="w-full h-10 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 text-xs text-white placeholder-zinc-500 outline-none focus:border-amber-500 transition-colors">
         </div>
         <div class="w-full md:w-48">
             <select name="status" class="w-full h-10 bg-zinc-950 border border-zinc-800 rounded-xl px-3 text-xs text-white outline-none focus:border-amber-500">
@@ -344,7 +348,7 @@ $csrfField = CSRF::getField();
                 <thead>
                     <tr class="border-b border-zinc-800 bg-zinc-950/60 text-[11px] font-black uppercase text-zinc-400 tracking-wider">
                         <th class="py-3.5 px-4">Restaurant & Code</th>
-                        <th class="py-3.5 px-4">Admin Username & Contact</th>
+                        <th class="py-3.5 px-4">Admin Email & Contact</th>
                         <th class="py-3.5 px-4">Plan & Subscription</th>
                         <th class="py-3.5 px-4">Created / Last Login</th>
                         <th class="py-3.5 px-4">Status</th>
@@ -398,10 +402,10 @@ $csrfField = CSRF::getField();
                                 </td>
 
                                 <td class="py-4 px-4">
-                                    <!-- Username action triggers Account Details Modal -->
-                                    <button type="button" onclick="openUsernameModal(<?= $r['id'] ?>, '<?= htmlspecialchars($r['restaurant_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['restaurant_code'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['admin_username'] ?: 'Unassigned', ENT_QUOTES) ?>', '<?= htmlspecialchars($r['email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['phone'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['status'], ENT_QUOTES) ?>', '<?= date('M d, Y', strtotime($r['created_at'])) ?>', '<?= !empty($r['last_login']) ? date('M d, Y H:i', strtotime($r['last_login'])) : 'Never' ?>')" class="font-mono font-bold text-amber-400 text-xs hover:underline cursor-pointer inline-flex items-center space-x-1">
-                                        <span>👤</span>
-                                        <span><?= htmlspecialchars($r['admin_username'] ?: 'N/A') ?></span>
+                                    <!-- Email action triggers Account Details Modal -->
+                                    <button type="button" onclick="openAccountModal(<?= $r['id'] ?>, '<?= htmlspecialchars($r['restaurant_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['restaurant_code'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['admin_email'] ?: 'Unassigned', ENT_QUOTES) ?>', '<?= htmlspecialchars($r['email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['phone'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['status'], ENT_QUOTES) ?>', '<?= date('M d, Y', strtotime($r['created_at'])) ?>', '<?= !empty($r['last_login']) ? date('M d, Y H:i', strtotime($r['last_login'])) : 'Never' ?>')" class="font-mono font-bold text-amber-400 text-xs hover:underline cursor-pointer inline-flex items-center space-x-1">
+                                        <span>✉️</span>
+                                        <span><?= htmlspecialchars($r['admin_email'] ?: 'N/A') ?></span>
                                     </button>
                                     <div class="font-semibold text-zinc-200 text-[11px] mt-0.5"><?= htmlspecialchars($r['owner_name'] ?: 'N/A') ?></div>
                                     <div class="text-zinc-400 text-[11px]"><?= htmlspecialchars($r['email'] ?: 'N/A') ?> &bull; <?= htmlspecialchars($r['phone'] ?: 'N/A') ?></div>
@@ -465,7 +469,7 @@ $csrfField = CSRF::getField();
                                         </button>
 
                                         <!-- Reset Password Modal Trigger Button -->
-                                        <button type="button" onclick="openResetModal(<?= $r['id'] ?>, '<?= htmlspecialchars($r['restaurant_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['admin_username'] ?: 'Admin', ENT_QUOTES) ?>')" title="Reset Administrator Password" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-amber-400 text-xs font-bold transition-all">
+                                        <button type="button" onclick="openResetModal(<?= $r['id'] ?>, '<?= htmlspecialchars($r['restaurant_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($r['admin_email'] ?: 'Admin', ENT_QUOTES) ?>')" title="Reset Administrator Password" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-amber-400 text-xs font-bold transition-all">
                                             🔑 Reset Pass
                                         </button>
 
@@ -518,7 +522,7 @@ $csrfField = CSRF::getField();
     </div>
 </div>
 
-<!-- MODAL 1: ACCOUNT DETAILS & USERNAME VIEW -->
+<!-- MODAL 1: ACCOUNT DETAILS & LOGIN EMAIL VIEW -->
 <div id="username-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
         <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
@@ -533,7 +537,7 @@ $csrfField = CSRF::getField();
             </div>
             <div class="p-3 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-2">
                 <div class="flex justify-between">
-                    <span class="text-zinc-400">Admin Username:</span>
+                    <span class="text-zinc-400">Login Email:</span>
                     <strong id="u-modal-user" class="text-amber-400 font-mono select-all"></strong>
                 </div>
                 <div class="flex justify-between">
@@ -553,6 +557,16 @@ $csrfField = CSRF::getField();
                     <strong id="u-modal-login" class="text-zinc-300"></strong>
                 </div>
             </div>
+            <form method="POST" class="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
+                <?= $csrfField ?>
+                <input type="hidden" name="action" value="change_email">
+                <input type="hidden" name="restaurant_id" id="u-modal-restid">
+                <span class="text-zinc-400 block text-[10px] font-bold uppercase tracking-wider">Update Login Email</span>
+                <div class="flex gap-2">
+                    <input type="email" name="new_email" id="u-modal-newemail" placeholder="admin@restaurant.com" class="flex-1 h-9 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 text-white font-mono text-[11px] outline-none focus:border-amber-500">
+                    <button type="submit" class="px-3 py-1.5 rounded-lg bg-amber-500 text-zinc-950 font-black text-[10px] hover:bg-amber-400">Update</button>
+                </div>
+            </form>
             <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-medium">
                 🔒 Plaintext passwords are never stored or displayed for security compliance.
             </div>
@@ -815,17 +829,19 @@ $csrfField = CSRF::getField();
 </div>
 
 <script>
-    // Modal 1: Account Details & Username
-    function openUsernameModal(restId, restName, restCode, username, email, phone, status, createdAt, lastLogin) {
+    // Modal 1: Account Details & Login Email
+    function openAccountModal(restId, restName, restCode, adminEmail, email, phone, status, createdAt, lastLogin) {
         document.getElementById('u-modal-rest').innerText = restName;
         document.getElementById('u-modal-code').innerText = restCode;
-        document.getElementById('u-modal-user').innerText = username;
+        document.getElementById('u-modal-user').innerText = adminEmail;
         document.getElementById('u-modal-email').innerText = email;
         document.getElementById('u-modal-phone').innerText = phone;
         document.getElementById('u-modal-status').innerText = status;
         document.getElementById('u-modal-login').innerText = lastLogin;
+        document.getElementById('u-modal-restid').value = restId;
+        document.getElementById('u-modal-newemail').value = adminEmail;
         
-        window.currentSelectedRest = { id: restId, name: restName, username: username };
+        window.currentSelectedRest = { id: restId, name: restName, username: adminEmail };
         document.getElementById('username-modal').classList.remove('hidden');
     }
     function closeUsernameModal() {
@@ -842,7 +858,7 @@ $csrfField = CSRF::getField();
     function openResetModal(restId, restName, username) {
         document.getElementById('reset-rest-id').value = restId;
         document.getElementById('reset-rest-name').innerText = restName;
-        document.getElementById('reset-user-name').innerText = 'Username: ' + username;
+        document.getElementById('reset-user-name').innerText = 'Login Email: ' + username;
         document.getElementById('reset-modal').classList.remove('hidden');
     }
     function closeResetModal() {

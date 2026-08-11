@@ -13,7 +13,7 @@ $tenantId = (int)($_SESSION['restaurant_id'] ?? 1);
 
 // Fetch active user account profile
 $userStmt = $conn->prepare("
-    SELECT u.id, u.username, u.email, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.created_at, r.restaurant_name, r.phone as rest_phone, r.status as tenant_status
+    SELECT u.id, u.email, u.full_name, u.role, u.is_super_admin, u.restaurant_id, u.created_at, r.restaurant_name, r.phone as rest_phone, r.status as tenant_status
     FROM admin_users u
     LEFT JOIN restaurants r ON u.restaurant_id = r.id
     WHERE u.id = ? LIMIT 1
@@ -83,7 +83,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         $_SESSION['admin_full_name'] = $newName;
                         $_SESSION['admin_email'] = $newEmail;
                         $_SESSION['email'] = $newEmail;
-                        $_SESSION['username'] = $newEmail;
 
                         Security::logAudit("PROFILE_UPDATED", "User ID {$admin_id} updated profile name to '{$newName}' and login email to '{$newEmail}'");
                         $_SESSION['success'] = 'Profile updated successfully! Your new login email is ' . htmlspecialchars($newEmail) . '.';

@@ -6,7 +6,7 @@ Auth::startSession();
 
 if (isset($_GET['exit_impersonation']) && isset($_SESSION['impersonating_superadmin'])) {
     $saId = $_SESSION['impersonating_superadmin'];
-    $saUsername = $_SESSION['username'] ?? 'superadmin';
+    $saEmail = $_SESSION['email'] ?? '';
     $saFullName = $_SESSION['full_name'] ?? 'Super Admin';
     $saRestaurantId = isset($_SESSION['sa_restaurant_id']) ? (int)$_SESSION['sa_restaurant_id'] : 1;
 
@@ -17,12 +17,15 @@ if (isset($_GET['exit_impersonation']) && isset($_SESSION['impersonating_superad
 
     $_SESSION = [];
     $_SESSION['admin_id'] = $saId;
+    $_SESSION['user_id'] = $saId;
     $_SESSION['admin_logged_in'] = true;
     $_SESSION['is_super_admin'] = true;
     $_SESSION['role'] = 'SUPER_ADMIN';
-    $_SESSION['username'] = $saUsername;
+    $_SESSION['email'] = $saEmail;
+    $_SESSION['admin_email'] = $saEmail;
     $_SESSION['full_name'] = $saFullName;
     $_SESSION['restaurant_id'] = $saRestaurantId;
+    $_SESSION['sa_restaurant_id'] = $saRestaurantId;
 
     header('Location: ../super-admin/restaurants.php');
     exit;

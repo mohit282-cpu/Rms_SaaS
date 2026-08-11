@@ -25,7 +25,7 @@ class LoggerService {
     public static function security($event, array $context = []) {
         $logFile = self::getLogFile('security');
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $user = $_SESSION['admin_username'] ?? 'guest';
+        $user = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'guest';
         $timestamp = date('Y-m-d H:i:s');
         $contextStr = !empty($context) ? ' ' . json_encode($context) : '';
         $entry = sprintf("[%s] [SECURITY] [IP:%s] [USER:%s] %s%s%s", $timestamp, $ip, $user, $event, $contextStr, PHP_EOL);

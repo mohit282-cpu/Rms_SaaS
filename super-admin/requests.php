@@ -74,8 +74,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $planId = (int)($_POST['plan_id'] ?? 2);
                         
                         // Manual Admin Credentials Input
-                        $rawUsername = trim($_POST['username'] ?? '');
-                        $username = strtolower(Security::sanitize($rawUsername));
                         $password = $_POST['password'] ?? '';
                         $confirmPassword = $_POST['confirm_password'] ?? '';
 
@@ -88,23 +86,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
 
                         // Validation Rules
-                        if (empty($restName) || empty($restCode) || empty($ownerName) || empty($email) || empty($phone) || empty($username) || empty($password) || empty($confirmPassword)) {
+                        if (empty($restName) || empty($restCode) || empty($ownerName) || empty($email) || empty($phone) || empty($password) || empty($confirmPassword)) {
                             $error = "Please fill in all required fields marked with *.";
                         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                             $error = "Please enter a valid email address.";
-                        } elseif (!preg_match('/^[a-zA-Z0-9_]{4,30}$/', $username)) {
-                            $error = "Username must be between 4 and 30 characters long and contain only letters, numbers, or underscores.";
                         } elseif ($password !== $confirmPassword) {
                             $error = "Passwords do not match.";
                         } elseif (strlen($password) < 8) {
                             $error = "Password must be at least 8 characters long.";
                         } else {
                             // Server-Side Uniqueness Checks
-                            $cUser = $conn->prepare("SELECT id FROM admin_users WHERE username = ? LIMIT 1");
-                            $cUser->bind_param("s", $username);
+                            $cUser = $conn->prepare("SELECT id FROM admin_users WHERE LOWER(email) = ? LIMIT 1");
+                            $cUser->bind_param("s", $email);
                             $cUser->execute();
                             if ($cUser->get_result()->num_rows > 0) {
-                                $error = "Admin username is already in use. Please choose another username.";
+                                $error = "An account with this email address already exists.";
                                 $cUser->close();
                             } else {
                                 $cUser->close();
@@ -146,12 +142,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $stmtRest->close();
 
                                             // Insert Admin User (Owner Role)
-                                            $usernameVal = !empty($username) ? $username : $email;
                                             $stmtUser = $conn->prepare("
-                                                INSERT INTO admin_users (username, email, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
-                                                VALUES (?, ?, ?, ?, 'owner', 0, 0, ?)
+                                                INSERT INTO admin_users (email, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
+                                                VALUES (?, ?, ?, 'owner', 0, 0, ?)
                                             ");
-                                            $stmtUser->bind_param("ssssi", $usernameVal, $email, $hashedPass, $ownerName, $newRestId);
+                                            $stmtUser->bind_param("sssi", $email, $hashedPass, $ownerName, $newRestId);
                                             $stmtUser->execute();
                                             $stmtUser->close();
 
@@ -184,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $conn->query("UPDATE restaurant_requests SET status = 'CONVERTED', tenant_id = {$newRestId}, internal_notes = 'Onboarded to Tenant ID #{$newRestId} ({$restCode})' WHERE id = {$reqId}");
 
                                             // Security Audit Logging (NEVER LOGGING PASSWORD)
-                                            Security::logAudit("SUPER_ADMIN_CREATE_TENANT", "Onboarded request #{$reqId} into restaurant tenant #{$newRestId} ({$restCode}) with admin username: {$username}");
+                                            Security::logAudit("SUPER_ADMIN_CREATE_TENANT", "Onboarded request #{$reqId} into restaurant tenant #{$newRestId} ({$restCode}) with admin login email: {$email}");
 
                                             // COMMIT TRANSACTION
                                             $conn->commit();
@@ -195,7 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 'restaurant_name' => $restName,
                                                 'owner_name' => $ownerName,
                                                 'email' => $email,
-                                                'username' => $username,
                                                 'password' => $password
                                             ];
                                         } catch (Exception $e) {
@@ -318,8 +312,8 @@ $csrfField = CSRF::getField();
                     <strong class="text-white select-all"><?= htmlspecialchars($createdData['restaurant_name']) ?> (<?= htmlspecialchars($createdData['restaurant_code']) ?>)</strong>
                 </div>
                 <div>
-                    <span class="text-zinc-500 block text-[10px]">Admin Username</span>
-                    <strong id="deliv-user" class="text-amber-400 select-all"><?= htmlspecialchars($createdData['username']) ?></strong>
+                    <span class="text-zinc-500 block text-[10px]">Admin Login Email</span>
+                    <strong id="deliv-user" class="text-amber-400 select-all"><?= htmlspecialchars($createdData['email']) ?></strong>
                 </div>
                 <div>
                     <span class="text-zinc-500 block text-[10px]">Admin Password</span>
@@ -339,7 +333,7 @@ $csrfField = CSRF::getField();
             function copyDeliveryDetails() {
                 const user = document.getElementById('deliv-user').innerText.trim();
                 const pass = document.getElementById('deliv-pass').innerText.trim();
-                const text = `RMS SaaS Credentials\nUsername: ${user}\nPassword: ${pass}\nLogin: http://${window.location.host}/admin/login.php`;
+                const text = `RMS SaaS Credentials\nLogin Email: ${user}\nPassword: ${pass}\nLogin: http://${window.location.host}/admin/login.php`;
                 navigator.clipboard.writeText(text).then(() => {
                     alert('Credentials copied to clipboard!');
                 });
@@ -565,11 +559,8 @@ $csrfField = CSRF::getField();
             <!-- Manual Administrator Credentials Input -->
             <div class="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-4">
                 <div class="font-bold text-amber-400 uppercase tracking-wider text-[11px]">Manual Administrator Credentials</div>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                        <label class="block font-bold text-zinc-400 mb-1">Admin Username *</label>
-                        <input type="text" name="username" id="onb-user" required placeholder="e.g. royal_admin" class="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-white font-mono outline-none focus:border-amber-500">
-                    </div>
+                <p class="text-[11px] text-zinc-500">The owner email address above is the administrator login email.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block font-bold text-zinc-400 mb-1">Admin Password *</label>
                         <input type="password" name="password" required minlength="8" placeholder="••••••••••••" class="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-3 text-white outline-none focus:border-amber-500">
@@ -714,10 +705,6 @@ $csrfField = CSRF::getField();
         // Auto-generate clean code suggestion
         const cleanCode = 'RMS-' + String(req.id).padStart(6, '0');
         document.getElementById('onb-rest-code').value = cleanCode;
-
-        // Auto-suggest clean username based on owner
-        const cleanUser = req.owner_name.toLowerCase().replace(/[^a-z0-9_]/g, '');
-        document.getElementById('onb-user').value = cleanUser.substring(0, 20);
 
         document.getElementById('onboard-modal').classList.remove('hidden');
     }

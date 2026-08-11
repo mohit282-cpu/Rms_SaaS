@@ -423,7 +423,7 @@ switch ($action) {
         Inventory::requireWrite('waste');
         $id = intval($_POST['id'] ?? 0);
         $action = ($_POST['approve'] ?? '1') === '1' ? 'approved' : 'rejected';
-        $by = $conn->real_escape_string($_SESSION['admin_username'] ?? 'admin');
+        $by = $conn->real_escape_string($_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin');
         $ok = $conn->query("UPDATE inventory_waste SET approval_status='$action', approved_by='$by' WHERE restaurant_id = $tenantId AND id=$id");
         Inventory::audit('waste.approve', "Waste #$id marked as $action by $by");
         echo json_encode(['success'=>(bool)$ok]);
@@ -570,7 +570,7 @@ switch ($action) {
         Inventory::ensureAssetQR($conn, $assetId);
         // Immutable asset lifecycle log
         $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
-        $actor = $_SESSION['admin_username'] ?? 'admin';
+        $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
         $event = $id > 0 ? 'updated' : 'created';
         $desc = ($id > 0 ? "Asset #$assetId updated" : "Asset #$assetId created") . " — $name";
         $logStmt->bind_param("iisss", $tenantId, $assetId, $event, $desc, $actor);
@@ -588,7 +588,7 @@ switch ($action) {
         $name = ($r && $row = $r->fetch_assoc()) ? $row['name'] : "#$id";
         $ok = $conn->query("UPDATE assets SET status='disposed' WHERE restaurant_id = $tenantId AND id=$id");
         $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
-        $actor = $_SESSION['admin_username'] ?? 'admin';
+        $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
         $desc = "Asset #$id disposed — $name";
         $logStmt->bind_param("iisss", $tenantId, $id, 'disposed', $desc, $actor);
         $logStmt->execute();
@@ -637,7 +637,7 @@ switch ($action) {
 
         $conn->begin_transaction();
         $stmt = $conn->prepare("INSERT INTO asset_transfers (restaurant_id,asset_id,from_location,to_location,from_employee,to_employee,transfer_date,reason,transferred_by) VALUES (?,?,?,?,?,?,?,?,?)");
-        $actor = $_SESSION['admin_username'] ?? 'admin';
+        $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
         $stmt->bind_param("iisssssss", $tenantId, $asset_id, $from_loc, $to_loc, $from_emp, $to_emp, $tdate, $reason, $actor);
         $ok = $stmt->execute();
         $stmt->close();
@@ -704,7 +704,7 @@ switch ($action) {
             $conn->query("UPDATE assets SET status='maintenance' WHERE restaurant_id = $tenantId AND id=$asset_id AND status='in_use'");
         }
         $logStmt = $conn->prepare("INSERT INTO asset_logs (restaurant_id, asset_id, event_type, description, changed_by) VALUES (?,?,?,?,?)");
-        $actor = $_SESSION['admin_username'] ?? 'admin';
+        $actor = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'admin';
         $desc = ($id > 0 ? "Updated maintenance #$id" : "Scheduled maintenance") . " for asset #$asset_id ($type, Rs.$cost)";
         $logStmt->bind_param("iisss", $tenantId, $asset_id, 'maintenance', $desc, $actor);
         $logStmt->execute();

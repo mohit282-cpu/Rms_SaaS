@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             // Audit log event (tenant-scoped)
-            $user_role = $_SESSION['admin_username'] ?? 'kitchen';
+            $user_role = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'kitchen';
             $audit = $conn->prepare("INSERT INTO audit_logs (restaurant_id, username, event_type, description) VALUES (?, ?, 'ORDER_STATUS_UPDATE', ?)");
             if ($audit) {
                 $desc = "Order #$order_id status changed to " . strtoupper($new_status);

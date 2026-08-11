@@ -295,7 +295,7 @@ class HrService {
     public static function getEmployees(mysqli $conn, int $tenantId, array $filters = []): array {
         self::ensureHrSchema($conn);
 
-        $sql = "SELECT e.*, u.email as system_email, u.username as system_username, u.role as system_role, u.is_super_admin
+        $sql = "SELECT e.*, u.email as system_email, u.role as system_role, u.is_super_admin
                 FROM employees e
                 LEFT JOIN admin_users u ON e.user_id = u.id AND (u.restaurant_id = e.restaurant_id OR u.restaurant_id IS NULL)
                 WHERE e.restaurant_id = ?";
@@ -304,9 +304,9 @@ class HrService {
 
         if (!empty($filters['search'])) {
             $search = '%' . trim($filters['search']) . '%';
-            $sql .= " AND (e.full_name LIKE ? OR e.emp_code LIKE ? OR e.email LIKE ? OR e.phone LIKE ? OR u.email LIKE ? OR u.username LIKE ?)";
-            $types .= "ssssss";
-            $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search;
+            $sql .= " AND (e.full_name LIKE ? OR e.emp_code LIKE ? OR e.email LIKE ? OR e.phone LIKE ? OR u.email LIKE ?)";
+            $types .= "sssss";
+            $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search; $params[] = $search;
         }
 
         if (!empty($filters['department'])) {
@@ -347,7 +347,7 @@ class HrService {
      */
     public static function getEmployeeById(mysqli $conn, int $tenantId, int $empId): ?array {
         self::ensureHrSchema($conn);
-        $stmt = $conn->prepare("SELECT e.*, u.email as system_email, u.username as system_username, u.role as system_role, u.created_at as account_created_at
+        $stmt = $conn->prepare("SELECT e.*, u.email as system_email, u.role as system_role, u.created_at as account_created_at
                                 FROM employees e
                                 LEFT JOIN admin_users u ON e.user_id = u.id
                                 WHERE e.restaurant_id = ? AND e.id = ? LIMIT 1");
@@ -458,9 +458,8 @@ class HrService {
             $chk->close();
 
             $hashPass = password_hash($password, PASSWORD_DEFAULT);
-            $usernameFallback = $accountEmail;
-            $insUser = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, restaurant_id, is_super_admin) VALUES (?, ?, ?, ?, ?, ?, 0)");
-            $insUser->bind_param("sssssi", $usernameFallback, $accountEmail, $hashPass, $fullName, $role, $tenantId);
+            $insUser = $conn->prepare("INSERT INTO admin_users (email, password, full_name, role, restaurant_id, is_super_admin) VALUES (?, ?, ?, ?, ?, 0)");
+            $insUser->bind_param("ssssi", $accountEmail, $hashPass, $fullName, $role, $tenantId);
             if (!$insUser->execute()) {
                 return ['success' => false, 'error' => "Failed to create user account: " . $insUser->error];
             }

@@ -699,7 +699,7 @@ try {
             // Apply NCR (no charge / complimentary) waiver to an order
             $orderId = (int)($_POST['order_id'] ?? 0);
             $reason = Security::sanitize(trim($_POST['reason'] ?? ''));
-            $authorizedBy = Security::sanitize(trim($_POST['authorized_by'] ?? $_SESSION['username'] ?? 'Cashier'));
+            $authorizedBy = Security::sanitize(trim($_POST['authorized_by'] ?? $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'Cashier'));
 
             if ($orderId <= 0) {
                 Response::error('Order ID required', 400);

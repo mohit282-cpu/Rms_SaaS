@@ -125,7 +125,7 @@ class Security {
         if (!$conn) return;
 
         $userId = (int)($_SESSION['admin_id'] ?? $_SESSION['user_id'] ?? 0);
-        $username = Security::sanitize($_SESSION['username'] ?? $_SESSION['admin_username'] ?? $_SESSION['full_name'] ?? 'System');
+        $username = Security::sanitize($_SESSION['email'] ?? $_SESSION['admin_email'] ?? $_SESSION['full_name'] ?? 'System');
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
         // No tenant fallback: unknown/unscoped contexts are attributed to the platform (restaurant_id = 0).

@@ -21,7 +21,6 @@ $prefill = [
     'table_count' => 10,
     'plan_id' => 2,
     'account_status' => 'ACTIVE',
-    'username' => '',
     'request_id' => 0
 ];
 
@@ -54,10 +53,6 @@ if (isset($_GET['request_id']) && (int)$_GET['request_id'] > 0 && $conn) {
             $prefill['restaurant_type'] = $req['restaurant_type'] ?? 'Casual Dining';
             $prefill['table_count'] = max(1, (int)($req['table_count'] ?? 10));
             $prefill['request_id'] = $req['id'];
-            
-            // Suggest clean username based on owner/restaurant
-            $cleanUser = strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', $req['owner_name']));
-            $prefill['username'] = substr($cleanUser, 0, 20);
 
             // Generate clean code from restaurant name
             $words = explode(' ', preg_replace('/[^a-zA-Z0-9 ]/', '', $req['restaurant_name']));
@@ -104,8 +99,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $accountStatus = Security::sanitize(trim($_POST['account_status'] ?? 'ACTIVE'));
         
         // Manual Credentials Input (MUST NOT BE AUTO-GENERATED)
-        $rawUsername = trim($_POST['username'] ?? '');
-        $username = strtolower(Security::sanitize($rawUsername));
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm_password'] ?? '';
         $reqId = (int)($_POST['request_id'] ?? 0);
@@ -130,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($error)) {
             // Validation Rules
-            if (empty($restName) || empty($restCode) || empty($ownerName) || empty($email) || empty($phone) || empty($username) || empty($password) || empty($confirmPassword)) {
+            if (empty($restName) || empty($restCode) || empty($ownerName) || empty($email) || empty($phone) || empty($password) || empty($confirmPassword)) {
                 $error = "Please fill in all required fields marked with *.";
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $error = "Please enter a valid email address.";
@@ -206,12 +199,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $stmtRest->close();
 
                                     // Insert Restaurant Admin User in admin_users (Role: owner / RESTAURANT_ADMIN)
-                                    $usernameVal = !empty($username) ? $username : $email;
                                     $stmtUser = $conn->prepare("
-                                        INSERT INTO admin_users (username, email, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
-                                        VALUES (?, ?, ?, ?, 'owner', 0, 0, ?)
+                                        INSERT INTO admin_users (email, password, full_name, role, force_password_change, is_super_admin, restaurant_id)
+                                        VALUES (?, ?, ?, 'owner', 0, 0, ?)
                                     ");
-                                    $stmtUser->bind_param("ssssi", $usernameVal, $email, $hashedPass, $ownerName, $newRestId);
+                                    $stmtUser->bind_param("sssi", $email, $hashedPass, $ownerName, $newRestId);
                                     $stmtUser->execute();
                                     $stmtUser->close();
 
@@ -246,7 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     }
 
                                     // Record Security Audit Log (NEVER LOGGING PLAINTEXT PASSWORD!)
-                                    Security::logAudit("SUPER_ADMIN_CREATE_TENANT", "Created restaurant tenant ID #{$newRestId} ({$restCode} - {$restName}) with admin username: {$username}");
+                                    Security::logAudit("SUPER_ADMIN_CREATE_TENANT", "Created restaurant tenant ID #{$newRestId} ({$restCode} - {$restName}) with admin login email: {$email}");
 
                                     // COMMIT TRANSACTION
                                     $conn->commit();
@@ -259,7 +251,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         'owner_name' => $ownerName,
                                         'email' => $email,
                                         'phone' => $normalizedPhone,
-                                        'username' => $username,
                                         'password' => $password,
                                         'plan_id' => $planId,
                                         'table_count' => $tableCount
@@ -328,8 +319,8 @@ $csrfField = CSRF::getField();
 
                 <div class="border-t border-zinc-800 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <span class="text-zinc-500 block uppercase tracking-wider text-[10px] font-bold">Admin Username</span>
-                        <span id="created-username" class="text-amber-400 font-mono font-black text-lg block mt-0.5 select-all"><?= htmlspecialchars($createdData['username']) ?></span>
+                        <span class="text-zinc-500 block uppercase tracking-wider text-[10px] font-bold">Admin Login Email</span>
+                        <span id="created-login" class="text-amber-400 font-mono font-black text-lg block mt-0.5 select-all"><?= htmlspecialchars($createdData['email']) ?></span>
                     </div>
                     <div>
                         <span class="text-zinc-500 block uppercase tracking-wider text-[10px] font-bold">Temporary Admin Password</span>
@@ -344,9 +335,9 @@ $csrfField = CSRF::getField();
             </div>
 
             <div class="flex flex-wrap items-center gap-3">
-                <button type="button" onclick="copyField('created-username', 'Copy Username')" id="btn-copy-user" class="px-5 py-2.5 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs hover:bg-amber-400 transition-all flex items-center space-x-1.5 shadow-lg shadow-amber-500/20">
+                <button type="button" onclick="copyField('created-login', 'Copy Login Email')" id="btn-copy-user" class="px-5 py-2.5 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs hover:bg-amber-400 transition-all flex items-center space-x-1.5 shadow-lg shadow-amber-500/20">
                     <span>📋</span>
-                    <span>Copy Username</span>
+                    <span>Copy Login Email</span>
                 </button>
                 <button type="button" onclick="copyField('created-password', 'Copy Password')" id="btn-copy-pass" class="px-5 py-2.5 rounded-2xl bg-amber-500 text-zinc-950 font-black text-xs hover:bg-amber-400 transition-all flex items-center space-x-1.5 shadow-lg shadow-amber-500/20">
                     <span>🔑</span>
@@ -371,12 +362,12 @@ $csrfField = CSRF::getField();
             }
 
             function copyAllDetails() {
-                const user = document.getElementById('created-username').innerText.trim();
+                const user = document.getElementById('created-login').innerText.trim();
                 const pass = document.getElementById('created-password').innerText.trim();
                 const rest = "<?= htmlspecialchars($createdData['restaurant_name'], ENT_QUOTES) ?>";
                 const code = "<?= htmlspecialchars($createdData['restaurant_code'], ENT_QUOTES) ?>";
                 const loginUrl = window.location.origin + "/admin/login.php";
-                const text = `RMS SaaS Restaurant Account Credentials\n------------------------------------\nRestaurant: ${rest} (${code})\nAdmin Username: ${user}\nAdmin Password: ${pass}\nLogin Portal URL: ${loginUrl}`;
+                const text = `RMS SaaS Restaurant Account Credentials\n------------------------------------\nRestaurant: ${rest} (${code})\nAdmin Login Email: ${user}\nAdmin Password: ${pass}\nLogin Portal URL: ${loginUrl}`;
                 
                 navigator.clipboard.writeText(text).then(() => {
                     alert('All account credentials copied to clipboard!');
@@ -486,15 +477,9 @@ $csrfField = CSRF::getField();
             <!-- SECTION 2: MANUAL LOGIN CREDENTIALS -->
             <div class="space-y-4">
                 <h3 class="text-sm font-black uppercase tracking-wider text-amber-500 border-b border-zinc-800 pb-2">2. Manual Administrator Credentials</h3>
-                <p class="text-xs text-zinc-400">Super Admin explicitly assigns the login username and password. Credentials are not automatically generated.</p>
+                <p class="text-xs text-zinc-400">The Owner Email Address from Section 1 is the administrator login email. Super Admin explicitly assigns the login password. Credentials are not automatically generated.</p>
                 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-zinc-400 mb-1.5">Admin Username *</label>
-                        <input type="text" name="username" id="username-field" required value="<?= htmlspecialchars($_POST['username'] ?? $prefill['username']) ?>" placeholder="e.g. royal_admin" onkeyup="checkUsernameStrength(this.value);" class="w-full h-11 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-amber-500 font-mono">
-                        <div id="username-hint" class="text-[10px] text-zinc-500 mt-1 font-mono">Allowed: letters, numbers, underscores (4-30 chars)</div>
-                    </div>
-
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="relative">
                         <label class="block text-xs font-bold text-zinc-400 mb-1.5">Admin Password *</label>
                         <div class="relative">
@@ -612,19 +597,6 @@ $csrfField = CSRF::getField();
                 } else {
                     hint.innerText = 'Must match Admin Password';
                     hint.className = 'text-[10px] text-zinc-500 mt-1';
-                }
-            }
-
-            function checkUsernameStrength(val) {
-                const hint = document.getElementById('username-hint');
-                if (val.length > 0) {
-                    if (/^[a-zA-Z0-9_]{4,30}$/.test(val)) {
-                        hint.innerText = '✓ Username format valid';
-                        hint.className = 'text-[10px] font-bold text-emerald-400 mt-1 font-mono';
-                    } else {
-                        hint.innerText = '✕ 4-30 characters, letters/numbers/underscores only';
-                        hint.className = 'text-[10px] font-bold text-rose-400 mt-1 font-mono';
-                    }
                 }
             }
 

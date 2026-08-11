@@ -344,7 +344,7 @@ function ensureDatabaseSchema($conn) {
     // 0. Admin Users table check
     @$conn->query("CREATE TABLE IF NOT EXISTS admin_users (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL UNIQUE,
+        email VARCHAR(255) DEFAULT NULL UNIQUE,
         password VARCHAR(255) NOT NULL,
         full_name VARCHAR(100),
         role VARCHAR(20) DEFAULT 'admin',
@@ -367,7 +367,7 @@ function ensureDatabaseSchema($conn) {
         // Fixes RMS-020: Use environment variable or random bootstrap secret instead of static 'admin123'
         $initial_pass = getenv('APP_ADMIN_PASSWORD') ?: bin2hex(random_bytes(8));
         $hashed_pass = password_hash($initial_pass, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("INSERT IGNORE INTO admin_users (username, password, full_name) VALUES ('admin', ?, 'Administrator')");
+        $stmt = $conn->prepare("INSERT IGNORE INTO admin_users (password, full_name) VALUES (?, 'Administrator')");
         if ($stmt) {
             $stmt->bind_param("s", $hashed_pass);
             $stmt->execute();
@@ -1391,7 +1391,7 @@ function ensureSuperAdminAccount($conn) {
                 $superHash = password_hash($saBootstrapPassword, PASSWORD_DEFAULT);
                 $saUsedRandomPassword = true;
             }
-            $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, ?)");
+            $stmt = $conn->prepare("INSERT INTO admin_users (email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES (?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, ?)");
             if ($stmt) {
                 $stmt->bind_param("ssi", $targetEmail, $superHash, $forceChange);
                 $stmt->execute();
@@ -1413,29 +1413,9 @@ function ensureSuperAdminAccount($conn) {
         // Never break the request because of super admin provisioning.
     }
 
-    // Backfill emails for any existing restaurant admin users missing an email address
-    try {
-        $emptyUsersRes = $conn->query("SELECT u.id, u.username, u.restaurant_id, r.email as rest_email FROM admin_users u LEFT JOIN restaurants r ON u.restaurant_id = r.id WHERE u.email IS NULL OR TRIM(u.email) = ''");
-        if ($emptyUsersRes && $emptyUsersRes->num_rows > 0) {
-            while ($uRow = $emptyUsersRes->fetch_assoc()) {
-                $uId = (int)$uRow['id'];
-                $rEmail = trim($uRow['rest_email'] ?? '');
-                if ($uId === 1 && empty($rEmail)) {
-                    $rEmail = 'admin@qrcafe.com';
-                }
-                if (empty($rEmail) || !filter_var($rEmail, FILTER_VALIDATE_EMAIL)) {
-                    $rEmail = strtolower($uRow['username']) . '@restaurant' . $uRow['restaurant_id'] . '.com';
-                }
-                $cCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '" . $conn->real_escape_string(strtolower($rEmail)) . "' AND id != $uId");
-                if ($cCheck && $cCheck->num_rows > 0) {
-                    $rEmail = strtolower($uRow['username']) . '_' . $uId . '@restaurant' . $uRow['restaurant_id'] . '.com';
-                }
-                $conn->query("UPDATE admin_users SET email = '" . $conn->real_escape_string(strtolower($rEmail)) . "' WHERE id = $uId");
-            }
-        }
-    } catch (Throwable $e) {
-        // Never break the request because of email backfill.
-    }
+    // No automated email backfill: users with NULL email remain blocked from login
+    // until an email is explicitly assigned via the super admin "change_email" action
+    // or the admin profile edit form.
 }
 
 

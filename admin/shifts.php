@@ -14,7 +14,7 @@ $error = '';
 RegisterShiftService::ensureRegisterShiftSchema($conn);
 
 $staffId = Auth::userId() ?? 0;
-$staffName = $_SESSION['admin_username'] ?? 'Cashier';
+$staffName = $_SESSION['email'] ?? $_SESSION['admin_email'] ?? 'Cashier';
 
 // Fetch active open register shift
 $activeShift = RegisterShiftService::getActiveShift($conn, $tenantId);
