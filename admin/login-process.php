@@ -66,6 +66,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     }
 
+                    // Super Admin has no tenant of their own; they land on the platform
+                    // demo tenant (id 1) ONLY if it exists and is ACTIVE. Everything is
+                    // stored in sa_restaurant_id so impersonation exit restores it.
+                    $sessionRestId = $userRestId;
+                    if ($user['is_super_admin'] && $userRestId <= 0) {
+                        $demoStmt = $conn->prepare("SELECT id FROM restaurants WHERE id = 1 AND status = 'ACTIVE' LIMIT 1");
+                        if ($demoStmt) {
+                            $demoStmt->execute();
+                            $demoRow = $demoStmt->get_result()->fetch_assoc();
+                            $demoStmt->close();
+                        }
+                        if ($demoRow) {
+                            $sessionRestId = 1;
+                        } else {
+                            RateLimiter::hit($login_rl_key, 5, 300);
+                            Security::logAudit("LOGIN_BLOCKED_NO_DEMO_TENANT", "Super Admin login blocked: default tenant (id 1) is missing or inactive: {$email}");
+                            $_SESSION['error'] = 'Platform default tenant is not available. Please contact support.';
+                            header('Location: login.php');
+                            exit;
+                        }
+                    }
+
                     $_SESSION['admin_logged_in'] = true;
                     $_SESSION['admin_id'] = $user['id'];
                     $_SESSION['admin_email'] = $user['email'];
@@ -75,7 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['admin_full_name'] = $user['full_name'];
                     $_SESSION['role'] = strtoupper($user['role'] ?? 'OWNER');
                     $_SESSION['is_super_admin'] = (bool)($user['is_super_admin'] ?? false);
-                    $_SESSION['restaurant_id'] = $userRestId > 0 ? $userRestId : 1;
+                    $_SESSION['restaurant_id'] = $sessionRestId > 0 ? $sessionRestId : 1;
+                    $_SESSION['sa_restaurant_id'] = $sessionRestId;
                     $_SESSION['force_password_change'] = (bool)($user['force_password_change'] ?? false);
 
                     Security::logAudit("STAFF_LOGIN", "Staff logged in via email: {$email} (Tenant ID: {$_SESSION['restaurant_id']})");

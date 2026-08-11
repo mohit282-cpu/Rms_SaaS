@@ -16,7 +16,7 @@
 Options -Indexes
 
 # Protect sensitive files and directories
-<FilesMatch "^\.env|\.app_secret|\.log$|\.sql$">
+<FilesMatch "^\.env|\.app_secret|\.log$|\.sql$|\.superadmin-credentials\.txt$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>

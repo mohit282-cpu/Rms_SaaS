@@ -299,15 +299,16 @@ $superHash = '$2y$10$tDXqmC4kMXNBTfRrrgvjT.9oTaEQKbn2LAPq841OKfXYtP8J3Qdzm';
 $saCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '$targetEmail' OR is_super_admin = 1 ORDER BY is_super_admin DESC, id ASC LIMIT 1");
 if ($saCheck && $saCheck->num_rows > 0) {
     $saUser = $saCheck->fetch_assoc();
-    $stmt = $conn->prepare("UPDATE admin_users SET email = ?, password = ?, is_super_admin = 1, role = 'SUPER_ADMIN' WHERE id = ?");
+    // Super Admin must be platform-level (restaurant_id = NULL). Do NOT update existing password!
+    $stmt = $conn->prepare("UPDATE admin_users SET is_super_admin = 1, role = 'SUPER_ADMIN', restaurant_id = NULL WHERE id = ?");
     if ($stmt) {
-        $stmt->bind_param("ssi", $targetEmail, $superHash, $saUser['id']);
+        $stmt->bind_param("i", $saUser['id']);
         $stmt->execute();
         $stmt->close();
     }
-    echo "  ✅ Super Admin account provisioned: $targetEmail\n";
+    echo "  ✅ Super Admin account verified (platform-level): $targetEmail\n";
 } else {
-    $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, 1, 0)");
+    $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, 0)");
     if ($stmt) {
         $stmt->bind_param("ss", $targetEmail, $superHash);
         $stmt->execute();

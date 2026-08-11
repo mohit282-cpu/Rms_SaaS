@@ -728,6 +728,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
     <!-- REALTIME POS DASHBOARD SCRIPT -->
     <script src="../js/modern.js"></script>
     <script>
+        window.csrfToken = '<?php echo CSRF::generateToken(); ?>';
         let allTablesData = [];
         let selectedTableNumber = null;
         let selectedZone = 'all';
@@ -1702,6 +1703,7 @@ $base_url = $scheme . $host . str_replace('/admin', '', $uri_dir);
             formData.append('customer_id', currentCustomerId);
             formData.append('loyalty_points_redeemed', currentBill ? currentBill.loyalty_points_redeemed : 0);
             formData.append('cash_received', cashReceived);
+            formData.append('csrf_token', window.csrfToken || '');
 
             fetch('../api/table-payment.php', {
                 method: 'POST',

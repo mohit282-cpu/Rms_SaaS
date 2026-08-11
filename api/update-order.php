@@ -34,6 +34,13 @@ if (Auth::isKitchenLoggedIn() && !Auth::isAdminLoggedIn()) {
     $userRole = 'kitchen';
 }
 
+// Role-based permission guard: KDS/kitchen is a separate authentication boundary
+// (its state machine already blocks refunds/payment changes), but every admin/staff
+// session must hold the orders.update permission to transition order status.
+if ($userRole !== 'kitchen' && !AuthorizationService::hasPermission('orders.update')) {
+    Response::error('Access Denied: Your role does not have permission to update orders.', 403);
+}
+
 // Assert order ownership (IDOR protection) before any write
 TenantContext::assertOwnership($conn, 'orders', $order_id);
 

@@ -184,6 +184,11 @@ function getDBConnection() {
     // Ensure critical tenant-scoped loyalty columns exist (idempotent, cached)
     ensureCriticalTenantColumns($conn);
 
+    // Super Admin provisioning runs unconditionally (idempotent) so existing
+    // installations whose super admin predates the SaaS migration are repaired
+    // even when ensureDatabaseSchema early-returns for an already-provisioned DB.
+    ensureSuperAdminAccount($conn);
+
     return $conn;
 }
 
@@ -1259,8 +1264,15 @@ function ensureDatabaseSchema($conn) {
     ensureIndex($conn, 'orders', 'idx_orders_pay_status', 'payment_status, status');
     ensureIndex($conn, 'orders', 'idx_orders_table_status', 'table_number, status');
 
-    // Run SaaS Multi-Tenancy Migrations and Column Checks
-    applySaaSMultiTenancyMigration($conn);
+    // Run SaaS Multi-Tenancy Migrations ONLY when tables are completely uninitialized
+    $checkSaas = $conn->query("SHOW TABLES LIKE 'restaurants'");
+    if (!$checkSaas || $checkSaas->num_rows == 0) {
+        applySaaSMultiTenancyMigration($conn);
+    }
+
+    // Super Admin provisioning runs unconditionally (idempotent) so it also
+    // repairs installations where the super admin predates the SaaS migration.
+    ensureSuperAdminAccount($conn);
 }
 
 /**
@@ -1306,69 +1318,123 @@ function applySaaSMultiTenancyMigration($conn) {
                     $conn->query("ALTER TABLE `$table` ADD INDEX idx_tenant_rest (restaurant_id)");
                 } catch (Throwable $e) {}
             }
-            // Backfill 0 or NULL to 1
-            @$conn->query("UPDATE `$table` SET restaurant_id = 1 WHERE restaurant_id IS NULL OR restaurant_id = 0");
         }
     }
 
-    // 3. Admin Users table columns check (force_password_change, is_super_admin)
+    // 3. Admin users column audit + Super Admin provisioning.
+    //    Runs on EVERY request (idempotent) so existing installations whose
+    //    super admin predates the SaaS migration are also corrected.
+    ensureSuperAdminAccount($conn);
+}
+
+
+/**
+ * Admin users column audit + Super Admin account provisioning.
+ * Idempotent, exception-safe and safe to run on EVERY request:
+ * - never overwrites an existing password,
+ * - makes admin_users.restaurant_id nullable so the platform-level
+ *   Super Admin can hold NULL (tenant-scoped staff always have a value),
+ * - never blocks the request on schema quirks.
+ */
+function ensureSuperAdminAccount($conn) {
+    if (!$conn) return;
+
+    // Column audit (idempotent ALTERs)
     $auColsRes = $conn->query("SHOW COLUMNS FROM admin_users");
+    if (!$auColsRes) return;
     $auCols = [];
-    if ($auColsRes) {
-        while ($r = $auColsRes->fetch_assoc()) {
-            $auCols[] = strtolower($r['Field']);
-        }
+    while ($r = $auColsRes->fetch_assoc()) {
+        $auCols[strtolower($r['Field'])] = strtolower((string)($r['Null'] ?? ''));
     }
-    if (!in_array('email', $auCols)) {
+    if (!isset($auCols['email'])) {
         try { $conn->query("ALTER TABLE admin_users ADD COLUMN email VARCHAR(255) DEFAULT NULL"); } catch (Throwable $e) {}
     }
-    if (!in_array('force_password_change', $auCols)) {
+    if (!isset($auCols['force_password_change'])) {
         try { $conn->query("ALTER TABLE admin_users ADD COLUMN force_password_change TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
     }
-    if (!in_array('is_super_admin', $auCols)) {
+    if (!isset($auCols['is_super_admin'])) {
         try { $conn->query("ALTER TABLE admin_users ADD COLUMN is_super_admin TINYINT(1) DEFAULT 0"); } catch (Throwable $e) {}
     }
+    if (isset($auCols['restaurant_id']) && $auCols['restaurant_id'] === 'no') {
+        try { $conn->query("ALTER TABLE admin_users MODIFY COLUMN restaurant_id INT NULL DEFAULT NULL"); } catch (Throwable $e) {}
+    }
 
-    // Provision / verify Super Admin account
-    $targetEmail = 'sovryxrms29@gmail.com';
-    $superHash = '$2y$10$tDXqmC4kMXNBTfRrrgvjT.9oTaEQKbn2LAPq841OKfXYtP8J3Qdzm';
+    // Provision / verify Super Admin account safely (NEVER overwrite existing password).
+    // No fixed password hash is shipped in source. On fresh bootstrap the operator
+    // either provides SUPER_ADMIN_PASSWORD via environment (recommended) or a strong
+    // random one-time password is generated, written to a web-guarded file
+    // (.superadmin-credentials.txt) and forced to change on first login.
+    $targetEmail = trim((string)(getenv('SUPER_ADMIN_EMAIL') ?: 'sovryxrms29@gmail.com'));
+    $saBootstrapPassword = (string)(getenv('SUPER_ADMIN_PASSWORD') ?: '');
+    $superHash = '';
+    $forceChange = 1;
 
-    $saCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '$targetEmail' OR is_super_admin = 1 ORDER BY is_super_admin DESC, id ASC LIMIT 1");
-    if ($saCheck && $saCheck->num_rows > 0) {
-        $saUser = $saCheck->fetch_assoc();
-        $stmt = $conn->prepare("UPDATE admin_users SET email = ?, password = ?, is_super_admin = 1, role = 'SUPER_ADMIN' WHERE id = ?");
-        if ($stmt) {
-            $stmt->bind_param("ssi", $targetEmail, $superHash, $saUser['id']);
-            $stmt->execute();
-            $stmt->close();
+    try {
+        $saCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '" . $conn->real_escape_string(strtolower($targetEmail)) . "' OR is_super_admin = 1 ORDER BY is_super_admin DESC, id ASC LIMIT 1");
+        if ($saCheck && $saCheck->num_rows > 0) {
+            $saUser = $saCheck->fetch_assoc();
+            // Super Admin must be platform-level (restaurant_id = NULL). Do NOT update existing password!
+            $stmt = $conn->prepare("UPDATE admin_users SET is_super_admin = 1, role = 'SUPER_ADMIN', restaurant_id = NULL WHERE id = ?");
+            if ($stmt) {
+                $stmt->bind_param("i", $saUser['id']);
+                $stmt->execute();
+                $stmt->close();
+            }
+        } else {
+            // Initial bootstrap insert ONLY if no Super Admin exists
+            $saUsedRandomPassword = false;
+            if ($saBootstrapPassword !== '') {
+                $superHash = password_hash($saBootstrapPassword, PASSWORD_DEFAULT);
+                $forceChange = 0; // Operator-provided: treat as trusted
+            } else {
+                $saBootstrapPassword = bin2hex(random_bytes(18)); // 36-char one-time password
+                $superHash = password_hash($saBootstrapPassword, PASSWORD_DEFAULT);
+                $saUsedRandomPassword = true;
+            }
+            $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, ?)");
+            if ($stmt) {
+                $stmt->bind_param("ssi", $targetEmail, $superHash, $forceChange);
+                $stmt->execute();
+                $stmt->close();
+            }
+            if ($saUsedRandomPassword) {
+                // Persist the one-time password for the operator, then require a reset on first login.
+                $credFile = __DIR__ . '/.superadmin-credentials.txt';
+                $credContent = "SUPER ADMIN ONE-TIME PASSWORD - DELETE THIS FILE IMMEDIATELY AFTER USE\n"
+                    . "Created: " . date('Y-m-d H:i:s') . "\n"
+                    . "Email:  $targetEmail\n"
+                    . "Password: $saBootstrapPassword\n"
+                    . "\nYou will be forced to set a new password on first login.\n";
+                @file_put_contents($credFile, $credContent, LOCK_EX);
+                @chmod($credFile, 0600);
+            }
         }
-    } else {
-        $stmt = $conn->prepare("INSERT INTO admin_users (username, email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES ('superadmin', ?, ?, 'Super Admin', 'SUPER_ADMIN', 1, 1, 0)");
-        if ($stmt) {
-            $stmt->bind_param("ss", $targetEmail, $superHash);
-            $stmt->execute();
-            $stmt->close();
-        }
+    } catch (Throwable $e) {
+        // Never break the request because of super admin provisioning.
     }
 
     // Backfill emails for any existing restaurant admin users missing an email address
-    $emptyUsersRes = $conn->query("SELECT u.id, u.username, u.restaurant_id, r.email as rest_email FROM admin_users u LEFT JOIN restaurants r ON u.restaurant_id = r.id WHERE u.email IS NULL OR TRIM(u.email) = ''");
-    if ($emptyUsersRes && $emptyUsersRes->num_rows > 0) {
-        while ($uRow = $emptyUsersRes->fetch_assoc()) {
-            $uId = (int)$uRow['id'];
-            $rEmail = trim($uRow['rest_email'] ?? '');
-            if ($uId === 1 && empty($rEmail)) {
-                $rEmail = 'admin@qrcafe.com';
+    try {
+        $emptyUsersRes = $conn->query("SELECT u.id, u.username, u.restaurant_id, r.email as rest_email FROM admin_users u LEFT JOIN restaurants r ON u.restaurant_id = r.id WHERE u.email IS NULL OR TRIM(u.email) = ''");
+        if ($emptyUsersRes && $emptyUsersRes->num_rows > 0) {
+            while ($uRow = $emptyUsersRes->fetch_assoc()) {
+                $uId = (int)$uRow['id'];
+                $rEmail = trim($uRow['rest_email'] ?? '');
+                if ($uId === 1 && empty($rEmail)) {
+                    $rEmail = 'admin@qrcafe.com';
+                }
+                if (empty($rEmail) || !filter_var($rEmail, FILTER_VALIDATE_EMAIL)) {
+                    $rEmail = strtolower($uRow['username']) . '@restaurant' . $uRow['restaurant_id'] . '.com';
+                }
+                $cCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '" . $conn->real_escape_string(strtolower($rEmail)) . "' AND id != $uId");
+                if ($cCheck && $cCheck->num_rows > 0) {
+                    $rEmail = strtolower($uRow['username']) . '_' . $uId . '@restaurant' . $uRow['restaurant_id'] . '.com';
+                }
+                $conn->query("UPDATE admin_users SET email = '" . $conn->real_escape_string(strtolower($rEmail)) . "' WHERE id = $uId");
             }
-            if (empty($rEmail) || !filter_var($rEmail, FILTER_VALIDATE_EMAIL)) {
-                $rEmail = strtolower($uRow['username']) . '@restaurant' . $uRow['restaurant_id'] . '.com';
-            }
-            $cCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '" . $conn->real_escape_string(strtolower($rEmail)) . "' AND id != $uId");
-            if ($cCheck && $cCheck->num_rows > 0) {
-                $rEmail = strtolower($uRow['username']) . '_' . $uId . '@restaurant' . $uRow['restaurant_id'] . '.com';
-            }
-            $conn->query("UPDATE admin_users SET email = '" . $conn->real_escape_string(strtolower($rEmail)) . "' WHERE id = $uId");
         }
+    } catch (Throwable $e) {
+        // Never break the request because of email backfill.
     }
 }
 

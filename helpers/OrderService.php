@@ -129,18 +129,31 @@ class OrderService {
             $menuItemId = intval($item['menu_item_id']);
             $qtyOrdered = intval($item['quantity']);
 
-            // Deduct menu item stock quantity if menu_items tracking enabled (tenant-scoped)
-            $uStmt = $conn->prepare("UPDATE menu_items SET stock_quantity = stock_quantity - ? WHERE id = ? AND restaurant_id = ? AND stock_quantity >= ?");
-            $uStmt->bind_param("iiii", $qtyOrdered, $menuItemId, $tenantId, $qtyOrdered);
-            $uStmt->execute();
-            if ($uStmt->affected_rows === 0) {
-                // If stock was lower than requested quantity, decrement available stock down to zero
-                $uFallback = $conn->prepare("UPDATE menu_items SET stock_quantity = 0 WHERE id = ? AND restaurant_id = ?");
-                $uFallback->bind_param("ii", $menuItemId, $tenantId);
-                $uFallback->execute();
-                $uFallback->close();
+            // Deduct menu item stock quantity if menu_items tracking enabled (tenant-scoped).
+            // NEVER silently zero stock: clamp to the available quantity, and record the
+            // shortfall as an out-of-stock alert so it is visible to management.
+            $curStmt = $conn->prepare("SELECT stock_quantity FROM menu_items WHERE id = ? AND restaurant_id = ? FOR UPDATE");
+            $curStmt->bind_param("ii", $menuItemId, $tenantId);
+            $curStmt->execute();
+            $curRow = $curStmt->get_result()->fetch_assoc();
+            $curStmt->close();
+
+            $available = max(0.0, floatval($curRow['stock_quantity'] ?? 0));
+            $actualDeducted = min($qtyOrdered, $available);
+            if ($actualDeducted > 0) {
+                $uStmt = $conn->prepare("UPDATE menu_items SET stock_quantity = stock_quantity - ? WHERE id = ? AND restaurant_id = ?");
+                $uStmt->bind_param("dii", $actualDeducted, $menuItemId, $tenantId);
+                $uStmt->execute();
+                $uStmt->close();
             }
-            $uStmt->close();
+            if ($actualDeducted < $qtyOrdered) {
+                $shortage = $qtyOrdered - $actualDeducted;
+                $alertStmt = $conn->prepare("INSERT INTO inventory_alerts (restaurant_id, inventory_item_id, alert_type, message) VALUES (?, 0, 'out_of_stock', ?)");
+                $alertMsg = "Menu item #$menuItemId short by $shortage units for Order #$orderId (only " . trim(rtrim(number_format($available, 3, '.', ''), '0'), '.') . " available)";
+                $alertStmt->bind_param("is", $tenantId, $alertMsg);
+                $alertStmt->execute();
+                $alertStmt->close();
+            }
 
             // Deduct raw ingredients if recipe exists (tenant-scoped)
             $recipeRes = $conn->prepare("SELECT ri.inventory_item_id, ri.quantity FROM recipe_items ri JOIN recipes r ON ri.recipe_id = r.id WHERE r.menu_item_id = ? AND r.restaurant_id = ?");
@@ -161,23 +174,36 @@ class OrderService {
                 $chkStmt->close();
 
                 if (!$alreadyConsumed) {
-                    $updStmt = $conn->prepare("UPDATE inventory_items SET current_stock = current_stock - ? WHERE id = ? AND restaurant_id = ? AND current_stock >= ?");
-                    $updStmt->bind_param("diid", $neededQty, $invItemId, $tenantId, $neededQty);
-                    $updStmt->execute();
-                    if ($updStmt->affected_rows === 0) {
-                        $updFb = $conn->prepare("UPDATE inventory_items SET current_stock = 0 WHERE id = ? AND restaurant_id = ?");
-                        $updFb->bind_param("ii", $invItemId, $tenantId);
-                        $updFb->execute();
-                        $updFb->close();
-                    }
-                    $updStmt->close();
+                    $curInvStmt = $conn->prepare("SELECT current_stock FROM inventory_items WHERE id = ? AND restaurant_id = ? FOR UPDATE");
+                    $curInvStmt->bind_param("ii", $invItemId, $tenantId);
+                    $curInvStmt->execute();
+                    $curInvRow = $curInvStmt->get_result()->fetch_assoc();
+                    $curInvStmt->close();
 
+                    $invAvailable = max(0.0, floatval($curInvRow['current_stock'] ?? 0));
+                    $invDeducted = min($neededQty, $invAvailable);
+                    if ($invDeducted > 0) {
+                        $updStmt = $conn->prepare("UPDATE inventory_items SET current_stock = current_stock - ? WHERE id = ? AND restaurant_id = ?");
+                        $updStmt->bind_param("dii", $invDeducted, $invItemId, $tenantId);
+                        $updStmt->execute();
+                        $updStmt->close();
+                    }
+
+                    // Ledger records the ACTUAL quantity consumed (never more than available)
                     $logStmt = $conn->prepare("INSERT INTO inventory_transactions (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, notes, created_by) VALUES (?, ?, 'consumption', ?, 'out', 'order', ?, ?, ?)");
                     $note = "POS Order #$orderId fulfillment";
                     $creator = 'system';
-                    $logStmt->bind_param("iidiss", $tenantId, $invItemId, $neededQty, $orderId, $note, $creator);
+                    $logStmt->bind_param("iidiss", $tenantId, $invItemId, $invDeducted, $orderId, $note, $creator);
                     $logStmt->execute();
                     $logStmt->close();
+
+                    if ($invDeducted < $neededQty) {
+                        $alertStmt = $conn->prepare("INSERT INTO inventory_alerts (restaurant_id, inventory_item_id, alert_type, message) VALUES (?, ?, 'out_of_stock', ?)");
+                        $alertMsg = "Insufficient stock for Order #$orderId: needed " . trim(rtrim(number_format($neededQty, 3, '.', ''), '0'), '.') . " but only " . trim(rtrim(number_format($invAvailable, 3, '.', ''), '0'), '.') . " available";
+                        $alertStmt->bind_param("iis", $tenantId, $invItemId, $alertMsg);
+                        $alertStmt->execute();
+                        $alertStmt->close();
+                    }
                 }
             }
         }

@@ -712,6 +712,9 @@ try {
             if (!$order) {
                 Response::error('Order not found or already settled', 404);
             }
+            if ((float)($order['ncr_amount'] ?? 0) > 0) {
+                Response::error('NCR is already applied to this order. Refund or re-apply after waiving the existing waiver.', 409);
+            }
 
             $preTotal = (float)BillingService::calculateOrderBill($conn, $tenantId, $orderId, 0, false)['grand_total'];
 
