@@ -99,7 +99,7 @@ echo "\n--- TEST DOMAIN 10: TENANT DELETION PURGE & ZERO-ORPHAN VERIFICATION ---
 try {
     $tempTenantId = 9999;
     $conn->query("DELETE FROM restaurants WHERE id = $tempTenantId");
-    $stmt = $conn->prepare("INSERT INTO restaurants (id, uuid, restaurant_name, restaurant_code, email, phone, status, created_at) VALUES (?, 'uuid-del-9999', 'Temp Delete Tenant', 'DEL9999', 'del@temp.com', '9800000000', 'active', NOW())");
+    $stmt = $conn->prepare("INSERT INTO restaurants (id, uuid, restaurant_name, restaurant_code, owner_name, email, phone, status, created_at) VALUES (?, 'uuid-del-9999', 'Temp Delete Tenant', 'DEL9999', 'Temp Owner', 'del@temp.com', '9800000000', 'active', NOW())");
     $stmt->bind_param("i", $tempTenantId);
     $stmt->execute();
     $stmt->close();

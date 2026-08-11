@@ -2,8 +2,8 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
-require 'Z:/Xampp/htdocs/Rms_SaaS/config.php';
-require 'Z:/Xampp/htdocs/Rms_SaaS/helpers/LoyaltyService.php';
+require_once __DIR__ . '/../../config.php';
+require_once __DIR__ . '/../../helpers/LoyaltyService.php';
 
 $conn = getDBConnection();
 if (!$conn) { fwrite(STDERR, "FATAL: no DB\n"); exit(2); }
