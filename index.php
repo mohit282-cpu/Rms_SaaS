@@ -1,8 +1,7 @@
 <?php
 // index.php - RMS Multi-Restaurant SaaS Public Landing Website & Lead Generation Portal
 require_once 'config.php';
-
-Auth::startSession();
+// Auth::startSession() is already called inside config.php — do not call again.
 $conn = getDBConnection();
 
 $requestSuccess = false;
@@ -124,7 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     // Trigger In-Dashboard Super Admin Notification
                                     $notifTitle = "🔔 New Restaurant Demo Request: {$restName}";
                                     $notifMsg = "Owner: {$ownerName} | Phone: {$phone} | Email: {$email} | Plan: {$preferredPlan}";
-                                    $conn->query("INSERT INTO notifications (restaurant_id, type, title, message, link) VALUES (NULL, 'onboarding_request', '" . $conn->real_escape_string($notifTitle) . "', '" . $conn->real_escape_string($notifMsg) . "', 'requests.php?id={$reqId}')");
+                                    $notifReqId = (int)$reqId; // cast to int — safe for interpolation
+                                    $conn->query("INSERT INTO notifications (restaurant_id, type, title, message, link) VALUES (NULL, 'onboarding_request', '" . $conn->real_escape_string($notifTitle) . "', '" . $conn->real_escape_string($notifMsg) . "', 'requests.php?id={$notifReqId}')");
 
                                     Security::logAudit("PUBLIC_ONBOARDING_REQUEST", "Submitted restaurant demo request {$requestCode} for {$restName}");
                                     $requestSuccess = true;
@@ -228,6 +228,7 @@ $csrfField = CSRF::getField();
     <meta name="theme-color" content="#0a0a0a">
     <title>RMS SaaS — Restaurant Management Platform</title>
     <meta name="description" content="Run your entire restaurant from one connected platform. Table billing, kitchen display, QR ordering, inventory, customer loyalty, and real-time analytics.">
+    <meta name="robots" content="index, follow">
     <link rel="canonical" href="<?= rmsCanonicalUrl() ?>">
 
     <meta property="og:type" content="website">
@@ -235,18 +236,23 @@ $csrfField = CSRF::getField();
     <meta property="og:title" content="RMS SaaS — Restaurant Management Platform">
     <meta property="og:description" content="Run your entire restaurant from one powerful platform. Table billing, KDS, inventory, customer loyalty, staff RBAC, and analytics.">
     <meta property="og:url" content="<?= rmsCanonicalUrl() ?>">
+    <meta property="og:image" content="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='630' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='%230a0a0a'/%3E%3Crect x='540' y='255' width='120' height='120' rx='24' fill='%23f59e0b'/%3E%3Cpath d='M595 275 570 315h22l-5 40 32-47h-22l5-33z' fill='%230a0a0a'/%3E%3Ctext x='600' y='430' text-anchor='middle' font-family='system-ui,sans-serif' font-size='42' font-weight='900' fill='%23ffffff'%3ERMS SaaS%3C/text%3E%3Ctext x='600' y='480' text-anchor='middle' font-family='system-ui,sans-serif' font-size='22' fill='%23a1a1aa'%3ERestaurant Management Platform%3C/text%3E%3C/svg%3E">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="RMS SaaS — Restaurant Management Platform">
     <meta name="twitter:description" content="Complete restaurant operating system. POS, QR ordering, KDS, inventory and real-time analytics.">
 
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f59e0b'/%3E%3Cpath d='M17.5 4 8 18h6.5L13 28l9.5-14H16l1.5-10z' fill='%230a0a0a'/%3E%3C/svg%3E">
 
+    <!-- Non-blocking font loading -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"></noscript>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- IMPORTANT: tailwind.config must be defined BEFORE the CDN script so the
+         JIT engine picks up custom theme extensions (max-w-8xl, font family etc.) -->
     <script>
+        window.tailwind = window.tailwind || {};
         tailwind.config = {
             theme: {
                 extend: {
@@ -254,8 +260,9 @@ $csrfField = CSRF::getField();
                     maxWidth: { '8xl': '1320px' }
                 }
             }
-        }
+        };
     </script>
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
         :root {
@@ -346,8 +353,9 @@ $csrfField = CSRF::getField();
             <a href="#pricing" class="mobile-link block py-2.5 text-[15px] font-medium text-zinc-300 hover:text-white">Pricing</a>
             <a href="#faq" class="mobile-link block py-2.5 text-[15px] font-medium text-zinc-300 hover:text-white">FAQ</a>
             <div class="pt-4 border-t border-[var(--border)] flex flex-col gap-2.5">
-                <a href="admin/login.php" class="w-full text-center py-2.5 rounded-lg border border-[var(--border)] text-[13px] font-semibold text-zinc-300">Login</a>
-                <a href="#request-demo" class="w-full text-center py-3 rounded-lg bg-amber-500 text-[var(--bg)] text-[13px] font-bold">Request a Restaurant Demo</a>
+                <!-- mobile-link class added so the menu closes on tap -->
+                <a href="admin/login.php" class="mobile-link w-full text-center py-2.5 rounded-lg border border-[var(--border)] text-[13px] font-semibold text-zinc-300">Login</a>
+                <a href="#request-demo" class="mobile-link w-full text-center py-3 rounded-lg bg-amber-500 text-[var(--bg)] text-[13px] font-bold">Request a Restaurant Demo</a>
             </div>
         </div>
     </header>
@@ -391,8 +399,9 @@ $csrfField = CSRF::getField();
             </div>
 
             <!-- High Quality RMS Product Application Preview -->
-            <div class="relative max-w-[1140px] mx-auto mt-14 md:mt-18">
-                <div class="rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface)]" style="box-shadow: 0 32px 64px -16px rgba(0,0,0,.8);">
+            <!-- overflow-x-auto prevents horizontal overflow on narrow viewports -->
+            <div class="relative max-w-[1140px] mx-auto mt-14 md:mt-18 overflow-x-auto">
+                <div class="rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface)] min-w-[320px]" style="box-shadow: 0 32px 64px -16px rgba(0,0,0,.8);">
                     <!-- Chrome Window Header -->
                     <div class="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--surface-2)]">
                         <div class="flex items-center gap-2">
@@ -1223,6 +1232,15 @@ $csrfField = CSRF::getField();
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-stretch max-w-[1200px] mx-auto">
                 <?php foreach ($pricingPlans as $p): ?>
+                <?php
+                    // Yearly price = monthly × 12 months × 0.80 (20% discount) — rounded to nearest 100
+                    $monthlyRaw = (int)str_replace(['NPR ', ',', ' '], '', $p['price']);
+                    $yearlyRaw  = (int)(round(($monthlyRaw * 12 * 0.80) / 100) * 100);
+                    $yearlyPrice = ($p['code'] !== 'ENTERPRISE' && $monthlyRaw > 0)
+                        ? 'NPR ' . number_format($yearlyRaw, 0, '.', ',')
+                        : 'Custom Pricing';
+                    $yearlySuffix = ($p['code'] !== 'ENTERPRISE') ? '/ year' : 'Custom contract';
+                ?>
                     <div class="<?= $p['popular'] ? 'border-2 border-amber-500 bg-[var(--surface-2)] ring-1 ring-amber-500/20 scale-[1.02]' : 'border border-[var(--border)] bg-[var(--surface)]' ?> rounded-xl p-6 flex flex-col justify-between relative">
 
                         <?php if ($p['popular']): ?>
@@ -1232,8 +1250,8 @@ $csrfField = CSRF::getField();
                         <div class="space-y-4">
                             <div>
                                 <div class="text-[12px] font-bold uppercase tracking-wider text-amber-500"><?= $p['name'] ?></div>
-                                <div class="text-[28px] font-extrabold text-white mt-1 pricing-amount" data-monthly="<?= $p['price'] ?>" data-yearly="<?= $p['code'] !== 'ENTERPRISE' ? 'NPR ' . number_format((int)str_replace(['NPR ', ','], '', $p['price']) * 10, 0, '.', ',') : 'Custom Pricing' ?>"><?= $p['price'] ?></div>
-                                <div class="text-[13px] text-zinc-500 mt-0.5 pricing-suffix" data-monthly="<?= $p['suffix'] ?: 'Custom contract' ?>" data-yearly="<?= $p['code'] !== 'ENTERPRISE' ? '/ year' : 'Custom contract' ?>"><?= $p['suffix'] ?: 'Custom contract' ?></div>
+                                <div class="text-[28px] font-extrabold text-white mt-1 pricing-amount" data-monthly="<?= htmlspecialchars($p['price']) ?>" data-yearly="<?= htmlspecialchars($yearlyPrice) ?>"><?= htmlspecialchars($p['price']) ?></div>
+                                <div class="text-[13px] text-zinc-500 mt-0.5 pricing-suffix" data-monthly="<?= htmlspecialchars($p['suffix'] ?: 'Custom contract') ?>" data-yearly="<?= htmlspecialchars($yearlySuffix) ?>"><?= htmlspecialchars($p['suffix'] ?: 'Custom contract') ?></div>
                             </div>
                             <p class="text-[13px] text-zinc-400 leading-relaxed"><?= $p['tagline'] ?></p>
 
@@ -1332,19 +1350,19 @@ $csrfField = CSRF::getField();
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label for="restaurant_name" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Restaurant Name <span class="text-amber-500">*</span></label>
-                            <input type="text" id="restaurant_name" name="restaurant_name" required placeholder="e.g. Himalayan Kitchen" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
+                            <input type="text" id="restaurant_name" name="restaurant_name" required autocomplete="organization" placeholder="e.g. Himalayan Kitchen" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
                         </div>
                         <div>
                             <label for="owner_name" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Owner Full Name <span class="text-amber-500">*</span></label>
-                            <input type="text" id="owner_name" name="owner_name" required placeholder="e.g. Ramesh Sharma" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
+                            <input type="text" id="owner_name" name="owner_name" required autocomplete="name" placeholder="e.g. Ramesh Sharma" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
                         </div>
                         <div>
                             <label for="email" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Email Address <span class="text-amber-500">*</span></label>
-                            <input type="email" id="email" name="email" required placeholder="owner@restaurant.com" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
+                            <input type="email" id="email" name="email" required autocomplete="email" placeholder="owner@restaurant.com" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
                         </div>
                         <div>
                             <label for="phone" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Contact Phone <span class="text-amber-500">*</span></label>
-                            <input type="tel" id="phone" name="phone" required placeholder="98XXXXXXXX" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
+                            <input type="tel" id="phone" name="phone" required autocomplete="tel" placeholder="98XXXXXXXX" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
                         </div>
                         <div>
                             <label for="restaurant_type" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Restaurant Type</label>
@@ -1352,30 +1370,38 @@ $csrfField = CSRF::getField();
                                 <option value="Casual Dining" selected>Casual Dining</option>
                                 <option value="Fine Dining">Fine Dining</option>
                                 <option value="Fast Food / QSR">Fast Food / QSR</option>
-                                <option value="Cafe & Bakery">Cafe & Bakery</option>
-                                <option value="Bar & Lounge">Bar & Lounge</option>
+                                <option value="Cafe &amp; Bakery">Cafe &amp; Bakery</option>
+                                <option value="Bar &amp; Lounge">Bar &amp; Lounge</option>
                             </select>
                         </div>
                         <div>
                             <label for="table_count" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Number of Tables <span class="text-amber-500">*</span></label>
-                            <input type="number" id="table_count" name="table_count" min="1" max="1000" value="10" required class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] outline-none focus:border-amber-500 transition-colors">
+                            <input type="number" id="table_count" name="table_count" min="1" max="1000" value="10" required autocomplete="off" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] outline-none focus:border-amber-500 transition-colors">
+                        </div>
+                        <div>
+                            <label for="pan_number" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">PAN / VAT Number</label>
+                            <input type="text" id="pan_number" name="pan_number" autocomplete="off" placeholder="e.g. 123456789" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
                         </div>
                         <div>
                             <label for="current_system" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Current POS / System</label>
-                            <input type="text" id="current_system" name="current_system" placeholder="e.g. Paper bills, legacy software" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
+                            <input type="text" id="current_system" name="current_system" autocomplete="off" placeholder="e.g. Paper bills, legacy software" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
                         </div>
                         <div>
                             <label for="preferred_plan" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Preferred Plan</label>
                             <select id="preferred_plan" name="preferred_plan" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] outline-none focus:border-amber-500 transition-colors">
-                                <option value="ESSENTIAL">Essential — NPR 1,500/month</option>
-                                <option value="BUSINESS" selected>Business — NPR 2,500/month</option>
-                                <option value="BUSINESS_PRO">Business Pro — NPR 4,500/month</option>
-                                <option value="ENTERPRISE">Enterprise — Custom Pricing</option>
+                                <option value="ESSENTIAL">Essential &mdash; NPR 1,500/month</option>
+                                <option value="BUSINESS" selected>Business &mdash; NPR 2,500/month</option>
+                                <option value="BUSINESS_PRO">Business Pro &mdash; NPR 4,500/month</option>
+                                <option value="ENTERPRISE">Enterprise &mdash; Custom Pricing</option>
                             </select>
                         </div>
                         <div class="sm:col-span-2">
+                            <label for="address" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Restaurant Address</label>
+                            <input type="text" id="address" name="address" autocomplete="street-address" placeholder="e.g. Thamel, Kathmandu, Nepal" class="w-full h-11 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors">
+                        </div>
+                        <div class="sm:col-span-2">
                             <label for="message" class="block text-[13px] font-semibold text-zinc-300 mb-1.5">Additional Requirements</label>
-                            <textarea id="message" name="message" rows="3" placeholder="Tell us about your restaurant setup..." class="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors"></textarea>
+                            <textarea id="message" name="message" rows="3" autocomplete="off" placeholder="Tell us about your restaurant setup..." class="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3.5 text-white text-[14px] placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors"></textarea>
                         </div>
                     </div>
 
@@ -1459,11 +1485,11 @@ $csrfField = CSRF::getField();
 
                 <!-- Legal -->
                 <div>
-                    <h4 class="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-4">Legal & Portal</h4>
+                    <h4 class="text-[12px] font-bold uppercase tracking-wider text-zinc-400 mb-4">Legal</h4>
                     <ul class="space-y-2.5 text-[13px]">
                         <li><a href="privacy-policy.php" class="text-zinc-500 hover:text-white transition-colors">Privacy Policy</a></li>
                         <li><a href="terms-of-service.php" class="text-zinc-500 hover:text-white transition-colors">Terms of Service</a></li>
-                        <li><a href="super-admin/login.php" class="text-amber-400 hover:text-white transition-colors font-bold">Super Admin</a></li>
+                        <!-- Super Admin link removed from public footer for security; accessible at /super-admin/login.php -->
                     </ul>
                 </div>
             </div>
