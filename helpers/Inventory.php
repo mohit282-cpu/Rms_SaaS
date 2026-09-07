@@ -160,10 +160,17 @@ class Inventory {
              (restaurant_id, inventory_item_id, type, quantity, direction, reference_type, reference_id, stock_before, stock_after, unit_cost, notes, created_by)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
         );
-        if (!$stmt) return false;
-        $stmt->bind_param("iissssiddsss", $restaurantId, $itemId, $type, $qty, $direction, $refTypeSql, $refIdSql, $before, $after, $unitCost, $notesSql, $creator);
+        if (!$stmt) {
+            error_log("Inventory::recordTransaction prepare error: " . $conn->error);
+            return false;
+        }
+        $stmt->bind_param("iisdssidddss", $restaurantId, $itemId, $type, $qty, $direction, $refTypeSql, $refIdSql, $before, $after, $unitCost, $notesSql, $creator);
         $ok = $stmt->execute();
+        if (!$ok) {
+            echo " [Inventory Error] " . $stmt->error . "\n";
+        }
         $stmt->close();
+
         return $ok;
     }
 
