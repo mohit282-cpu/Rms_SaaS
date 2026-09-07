@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($action === 'create') {
             $stmt = $conn->prepare("INSERT INTO menu_items (restaurant_id, name, sku, category_id, description, price, cost_price, stock_quantity, min_stock_level, preparation_time, dietary_type, status, is_popular, allergens, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             if ($stmt) {
-                $stmt->bind_param("i" . "ssisddiiissiis", $tenantId, $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path);
+                $stmt->bind_param("issisddiiisisss", $tenantId, $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path);
                 $stmt->execute();
                 $stmt->close();
             }
@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } elseif ($action === 'edit' && $id > 0) {
             $stmt = $conn->prepare("UPDATE menu_items SET name = ?, sku = ?, category_id = ?, description = ?, price = ?, cost_price = ?, stock_quantity = ?, min_stock_level = ?, preparation_time = ?, dietary_type = ?, status = ?, is_popular = ?, allergens = ?, image = ? WHERE id = ? AND restaurant_id = ?");
             if ($stmt) {
-                $stmt->bind_param("ssisddiiisssisii", $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path, $id, $tenantId);
+                $stmt->bind_param("ssisddiiisissiii", $name, $sku, $category_id, $description, $price, $cost_price, $stock_quantity, $min_stock_level, $preparation_time, $dietary_type, $status, $is_popular, $allergens, $image_path, $id, $tenantId);
                 $stmt->execute();
                 $stmt->close();
             }

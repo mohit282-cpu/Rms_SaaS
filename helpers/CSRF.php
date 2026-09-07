@@ -50,7 +50,10 @@ class CSRF {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!self::verifyToken()) {
                 http_response_code(403);
-                $isJson = (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
+                $uri = $_SERVER['REQUEST_URI'] ?? '';
+                $isJson = (strpos($uri, '/api/') !== false) ||
+                          (strpos($uri, 'action=') !== false) ||
+                          (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) ||
                           (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false);
                 
                 if ($isJson) {

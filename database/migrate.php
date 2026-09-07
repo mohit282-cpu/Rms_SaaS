@@ -20,311 +20,202 @@ if (!$conn) {
     exit(1);
 }
 
-// 1. Upgrade `tables` uniqueness constraint to (restaurant_id, table_number)
-echo "--> Auditing 'tables' index constraints...\n";
-$indexes = [];
-$res = $conn->query("SHOW INDEX FROM tables");
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        $indexes[$row['Key_name']] = true;
+// 0. Ensure schema_migrations tracker table exists
+$conn->query("CREATE TABLE IF NOT EXISTS schema_migrations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    migration_name VARCHAR(255) NOT NULL UNIQUE,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+// 1. Run all versioned .sql migration files in database/migrations/
+$migrationsDir = __DIR__ . '/migrations';
+if (is_dir($migrationsDir)) {
+    $files = glob($migrationsDir . '/*.sql');
+    sort($files);
+
+    foreach ($files as $file) {
+        $filename = basename($file);
+        
+        // Skip 005_remove_username_auth.sql if admin_users has users without email
+        if ($filename === '005_remove_username_auth.sql') {
+            $checkRes = $conn->query("SELECT COUNT(*) AS cnt FROM admin_users WHERE email IS NULL OR TRIM(email) = ''");
+            if ($checkRes) {
+                $row = $checkRes->fetch_assoc();
+                if ((int)$row['cnt'] > 0) {
+                    echo "  ℹ️ Skipping '{$filename}': {$row['cnt']} admin_users still lack email addresses.\n";
+                    continue;
+                }
+            }
+        }
+
+        $checkStmt = $conn->prepare("SELECT id FROM schema_migrations WHERE migration_name = ? LIMIT 1");
+        if ($checkStmt) {
+            $checkStmt->bind_param("s", $filename);
+            $checkStmt->execute();
+            $alreadyRun = (bool)$checkStmt->get_result()->fetch_assoc();
+            $checkStmt->close();
+
+            if ($alreadyRun) {
+                echo "  ✅ Migration '{$filename}' already applied.\n";
+                continue;
+            }
+        }
+
+        echo "--> Executing migration '{$filename}'...\n";
+        $sqlContent = @file_get_contents($file);
+        if (!empty($sqlContent)) {
+            // Remove single-line comments
+            $lines = explode("\n", $sqlContent);
+            $cleanedLines = [];
+            foreach ($lines as $line) {
+                $trimmed = trim($line);
+                if ($trimmed !== '' && strpos($trimmed, '--') !== 0 && strpos($trimmed, '#') !== 0) {
+                    $cleanedLines[] = $line;
+                }
+            }
+            $cleanSql = implode("\n", $cleanedLines);
+            $statements = array_filter(array_map('trim', explode(';', $cleanSql)));
+
+            $errorCount = 0;
+            foreach ($statements as $stmt) {
+                if (!empty($stmt)) {
+                    try {
+                        if (!$conn->query($stmt)) {
+                            $err = $conn->error;
+                            // Non-fatal if table/index/column already exists or duplicate key
+                            if (!preg_match('/(duplicate|already exists|unknown column|check that column\/key exists)/i', $err)) {
+                                $errorCount++;
+                                echo "     [Notice] " . $err . "\n";
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        $err = $e->getMessage();
+                        if (!preg_match('/(duplicate|already exists|unknown column|check that column\/key exists)/i', $err)) {
+                            $errorCount++;
+                            echo "     [Notice] " . $err . "\n";
+                        }
+                    }
+                }
+            }
+
+            // Record migration execution in tracker table
+            $insStmt = $conn->prepare("INSERT IGNORE INTO schema_migrations (migration_name) VALUES (?)");
+            if ($insStmt) {
+                $insStmt->bind_param("s", $filename);
+                $insStmt->execute();
+                $insStmt->close();
+            }
+
+            if ($errorCount === 0) {
+                echo "  ✅ Migration '{$filename}' applied successfully.\n";
+            } else {
+                echo "  ✅ Migration '{$filename}' completed with minor notices.\n";
+            }
+        }
     }
 }
 
-if (isset($indexes['table_number'])) {
-    echo "    Dropping legacy global 'table_number' unique index...\n";
-    @$conn->query("ALTER TABLE tables DROP INDEX table_number");
-}
+// 2. Audit & enforce tenant-scoped unique constraints across existing tables
+$uniqueAudits = [
+    'tables' => ['legacy' => 'table_number', 'uq' => 'uq_tenant_table', 'cols' => 'restaurant_id, table_number'],
+    'categories' => ['legacy' => 'name', 'uq' => 'uq_tenant_cat', 'cols' => 'restaurant_id, name'],
+    'inventory_categories' => ['legacy' => 'name', 'uq' => 'uq_tenant_inv_cat', 'cols' => 'restaurant_id, name'],
+    'inventory_units' => ['legacy' => 'name', 'uq' => 'uq_tenant_inv_unit', 'cols' => 'restaurant_id, name'],
+    'payment_gateways' => ['legacy' => 'name', 'uq' => 'uq_tenant_gateway', 'cols' => 'restaurant_id, name'],
+    'purchase_orders' => ['legacy' => 'po_number', 'uq' => 'uq_tenant_po', 'cols' => 'restaurant_id, po_number'],
+    'assets' => ['legacy' => 'asset_code', 'uq' => 'uq_tenant_asset', 'cols' => 'restaurant_id, asset_code'],
+    'asset_categories' => ['legacy' => 'name', 'uq' => 'uq_tenant_asset_cat', 'cols' => 'restaurant_id, name'],
+    'menu_addons' => ['legacy' => null, 'uq' => 'uq_tenant_addon', 'cols' => 'restaurant_id, name'],
+    'suppliers' => ['legacy' => null, 'uq' => 'uq_tenant_supplier', 'cols' => 'restaurant_id, company_name'],
+];
 
-if (!isset($indexes['uq_tenant_table'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, table_number)...\n";
-    $ok = @$conn->query("ALTER TABLE tables ADD UNIQUE KEY uq_tenant_table (restaurant_id, table_number)");
-    if ($ok) {
-        echo "  ✅ 'tables' unique constraint upgraded to (restaurant_id, table_number).\n";
+foreach ($uniqueAudits as $table => $cfg) {
+    echo "--> Auditing '{$table}' index constraints...\n";
+    $idxRes = $conn->query("SHOW INDEX FROM `{$table}`");
+    $indexes = [];
+    if ($idxRes) {
+        while ($r = $idxRes->fetch_assoc()) {
+            $indexes[$r['Key_name']] = true;
+        }
+    }
+
+    if (!empty($cfg['legacy']) && isset($indexes[$cfg['legacy']])) {
+        echo "    Dropping legacy global '{$cfg['legacy']}' index from {$table}...\n";
+        @$conn->query("ALTER TABLE `{$table}` DROP INDEX `{$cfg['legacy']}`");
+    }
+
+    if (!isset($indexes[$cfg['uq']])) {
+        echo "    Adding tenant-scoped UNIQUE KEY {$cfg['uq']} ({$cfg['cols']})...\n";
+        $ok = @$conn->query("ALTER TABLE `{$table}` ADD UNIQUE KEY `{$cfg['uq']}` ({$cfg['cols']})");
+        if ($ok) {
+            echo "  ✅ '{$table}' unique constraint upgraded.\n";
+        } else {
+            echo "  ℹ️ Notice: " . $conn->error . "\n";
+        }
     } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'tables' already has tenant-scoped unique key.\n";
-}
-
-// 2. Upgrade `categories` uniqueness constraint to (restaurant_id, name)
-echo "--> Auditing 'categories' index constraints...\n";
-$cat_indexes = [];
-$cres = $conn->query("SHOW INDEX FROM categories");
-if ($cres) {
-    while ($crow = $cres->fetch_assoc()) {
-        $cat_indexes[$crow['Key_name']] = true;
+        echo "  ✅ '{$table}' already has tenant-scoped unique key.\n";
     }
 }
 
-if (isset($cat_indexes['name'])) {
-    echo "    Dropping legacy global 'name' unique index...\n";
-    @$conn->query("ALTER TABLE categories DROP INDEX name");
-}
-
-if (!isset($cat_indexes['uq_tenant_cat'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, name)...\n";
-    $ok = @$conn->query("ALTER TABLE categories ADD UNIQUE KEY uq_tenant_cat (restaurant_id, name)");
-    if ($ok) {
-        echo "  ✅ 'categories' unique constraint upgraded to (restaurant_id, name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'categories' already has tenant-scoped unique key.\n";
-}
-
-// 3. Upgrade `inventory_categories` uniqueness constraint to (restaurant_id, name)
-echo "--> Auditing 'inventory_categories' index constraints...\n";
-$inv_cat_indexes = [];
-$icres = $conn->query("SHOW INDEX FROM inventory_categories");
-if ($icres) {
-    while ($icrow = $icres->fetch_assoc()) {
-        $inv_cat_indexes[$icrow['Key_name']] = true;
-    }
-}
-
-if (isset($inv_cat_indexes['name'])) {
-    echo "    Dropping legacy global 'name' unique index...\n";
-    @$conn->query("ALTER TABLE inventory_categories DROP INDEX name");
-}
-
-if (!isset($inv_cat_indexes['uq_tenant_inv_cat'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, name)...\n";
-    $ok = @$conn->query("ALTER TABLE inventory_categories ADD UNIQUE KEY uq_tenant_inv_cat (restaurant_id, name)");
-    if ($ok) {
-        echo "  ✅ 'inventory_categories' unique constraint upgraded to (restaurant_id, name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'inventory_categories' already has tenant-scoped unique key.\n";
-}
-
-// 4. Upgrade `inventory_units` uniqueness constraint to (restaurant_id, name)
-echo "--> Auditing 'inventory_units' index constraints...\n";
-$iu_indexes = [];
-$iures = $conn->query("SHOW INDEX FROM inventory_units");
-if ($iures) {
-    while ($iur = $iures->fetch_assoc()) {
-        $iu_indexes[$iur['Key_name']] = true;
-    }
-}
-
-if (isset($iu_indexes['name'])) {
-    echo "    Dropping legacy global 'name' unique index...\n";
-    @$conn->query("ALTER TABLE inventory_units DROP INDEX name");
-}
-
-if (!isset($iu_indexes['uq_tenant_inv_unit'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, name)...\n";
-    $ok = @$conn->query("ALTER TABLE inventory_units ADD UNIQUE KEY uq_tenant_inv_unit (restaurant_id, name)");
-    if ($ok) {
-        echo "  ✅ 'inventory_units' unique constraint upgraded to (restaurant_id, name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'inventory_units' already has tenant-scoped unique key.\n";
-}
-
-// 5. Upgrade `payment_gateways` uniqueness constraint to (restaurant_id, name)
-echo "--> Auditing 'payment_gateways' index constraints...\n";
-$pg_indexes = [];
-$pgres = $conn->query("SHOW INDEX FROM payment_gateways");
-if ($pgres) {
-    while ($pgr = $pgres->fetch_assoc()) {
-        $pg_indexes[$pgr['Key_name']] = true;
-    }
-}
-
-if (isset($pg_indexes['name'])) {
-    echo "    Dropping legacy global 'name' unique index...\n";
-    @$conn->query("ALTER TABLE payment_gateways DROP INDEX name");
-}
-
-if (!isset($pg_indexes['uq_tenant_gateway'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, name)...\n";
-    $ok = @$conn->query("ALTER TABLE payment_gateways ADD UNIQUE KEY uq_tenant_gateway (restaurant_id, name)");
-    if ($ok) {
-        echo "  ✅ 'payment_gateways' unique constraint upgraded to (restaurant_id, name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'payment_gateways' already has tenant-scoped unique key.\n";
-}
-
-// 6. Upgrade `purchase_orders` uniqueness constraint to (restaurant_id, po_number)
-echo "--> Auditing 'purchase_orders' index constraints...\n";
-$po_indexes = [];
-$pores = $conn->query("SHOW INDEX FROM purchase_orders");
-if ($pores) {
-    while ($por = $pores->fetch_assoc()) {
-        $po_indexes[$por['Key_name']] = true;
-    }
-}
-
-if (isset($po_indexes['po_number'])) {
-    echo "    Dropping legacy global 'po_number' unique index...\n";
-    @$conn->query("ALTER TABLE purchase_orders DROP INDEX po_number");
-}
-
-if (!isset($po_indexes['uq_tenant_po'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, po_number)...\n";
-    $ok = @$conn->query("ALTER TABLE purchase_orders ADD UNIQUE KEY uq_tenant_po (restaurant_id, po_number)");
-    if ($ok) {
-        echo "  ✅ 'purchase_orders' unique constraint upgraded to (restaurant_id, po_number).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'purchase_orders' already has tenant-scoped unique key.\n";
-}
-
-// 7. Upgrade `assets` uniqueness constraint to (restaurant_id, asset_code)
-echo "--> Auditing 'assets' index constraints...\n";
-$as_indexes = [];
-$asres = $conn->query("SHOW INDEX FROM assets");
-if ($asres) {
-    while ($asr = $asres->fetch_assoc()) {
-        $as_indexes[$asr['Key_name']] = true;
-    }
-}
-
-if (isset($as_indexes['asset_code'])) {
-    echo "    Dropping legacy global 'asset_code' unique index...\n";
-    @$conn->query("ALTER TABLE assets DROP INDEX asset_code");
-}
-
-if (!isset($as_indexes['uq_tenant_asset'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, asset_code)...\n";
-    $ok = @$conn->query("ALTER TABLE assets ADD UNIQUE KEY uq_tenant_asset (restaurant_id, asset_code)");
-    if ($ok) {
-        echo "  ✅ 'assets' unique constraint upgraded to (restaurant_id, asset_code).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'assets' already has tenant-scoped unique key.\n";
-}
-
-// 8. Upgrade `asset_categories` uniqueness constraint to (restaurant_id, name)
-echo "--> Auditing 'asset_categories' index constraints...\n";
-$ac_indexes = [];
-$acres = $conn->query("SHOW INDEX FROM asset_categories");
-if ($acres) {
-    while ($acr = $acres->fetch_assoc()) {
-        $ac_indexes[$acr['Key_name']] = true;
-    }
-}
-
-if (isset($ac_indexes['name'])) {
-    echo "    Dropping legacy global 'name' unique index...\n";
-    @$conn->query("ALTER TABLE asset_categories DROP INDEX name");
-}
-
-if (!isset($ac_indexes['uq_tenant_asset_cat'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, name)...\n";
-    $ok = @$conn->query("ALTER TABLE asset_categories ADD UNIQUE KEY uq_tenant_asset_cat (restaurant_id, name)");
-    if ($ok) {
-        echo "  ✅ 'asset_categories' unique constraint upgraded to (restaurant_id, name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'asset_categories' already has tenant-scoped unique key.\n";
-}
-
-// 9. Add `menu_addons` tenant-scoped unique constraint (restaurant_id, name)
-echo "--> Auditing 'menu_addons' index constraints...\n";
-$ma_indexes = [];
-$mares = $conn->query("SHOW INDEX FROM menu_addons");
-if ($mares) {
-    while ($mar = $mares->fetch_assoc()) {
-        $ma_indexes[$mar['Key_name']] = true;
-    }
-}
-
-if (!isset($ma_indexes['uq_tenant_addon'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, name)...\n";
-    $ok = @$conn->query("ALTER TABLE menu_addons ADD UNIQUE KEY uq_tenant_addon (restaurant_id, name)");
-    if ($ok) {
-        echo "  ✅ 'menu_addons' unique constraint added (restaurant_id, name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'menu_addons' already has tenant-scoped unique key.\n";
-}
-
-// 10. Add `suppliers` tenant-scoped unique constraint (restaurant_id, company_name)
-echo "--> Auditing 'suppliers' index constraints...\n";
-$sp_indexes = [];
-$spres = $conn->query("SHOW INDEX FROM suppliers");
-if ($spres) {
-    while ($spr = $spres->fetch_assoc()) {
-        $sp_indexes[$spr['Key_name']] = true;
-    }
-}
-
-if (!isset($sp_indexes['uq_tenant_supplier'])) {
-    echo "    Adding tenant-scoped UNIQUE KEY (restaurant_id, company_name)...\n";
-    $ok = @$conn->query("ALTER TABLE suppliers ADD UNIQUE KEY uq_tenant_supplier (restaurant_id, company_name)");
-    if ($ok) {
-        echo "  ✅ 'suppliers' unique constraint added (restaurant_id, company_name).\n";
-    } else {
-        echo "  ℹ️ Notice: " . $conn->error . "\n";
-    }
-} else {
-    echo "  ✅ 'suppliers' already has tenant-scoped unique key.\n";
-}
-
-// 11. Ensure Super Admin email column and account
-echo "--> Auditing Super Admin account & email column...\n";
+// 3. Ensure Super Admin Email Column & Provision Account safely
+echo "--> Auditing Super Admin account & credentials...\n";
 $auColsRes = $conn->query("SHOW COLUMNS FROM admin_users");
 $auCols = [];
 if ($auColsRes) {
     while ($r = $auColsRes->fetch_assoc()) {
-        $auCols[] = strtolower($r['Field']);
+        $auCols[strtolower($r['Field'])] = true;
     }
 }
-if (!in_array('email', $auCols)) {
+if (!isset($auCols['email'])) {
     echo "    Adding 'email' column to admin_users...\n";
-    @$conn->query("ALTER TABLE admin_users ADD COLUMN email VARCHAR(255) DEFAULT NULL");
+    @$conn->query("ALTER TABLE admin_users ADD COLUMN email VARCHAR(255) DEFAULT NULL UNIQUE");
 }
+if (!isset($auCols['force_password_change'])) {
+    @$conn->query("ALTER TABLE admin_users ADD COLUMN force_password_change TINYINT(1) DEFAULT 0");
+}
+if (!isset($auCols['is_super_admin'])) {
+    @$conn->query("ALTER TABLE admin_users ADD COLUMN is_super_admin TINYINT(1) DEFAULT 0");
+}
+try { @$conn->query("ALTER TABLE admin_users MODIFY COLUMN restaurant_id INT NULL DEFAULT NULL"); } catch (\Throwable $e) {}
 
-$targetEmail = 'sovryxrms29@gmail.com';
-$superHash = '$2y$10$tDXqmC4kMXNBTfRrrgvjT.9oTaEQKbn2LAPq841OKfXYtP8J3Qdzm';
-$saCheck = $conn->query("SELECT id FROM admin_users WHERE LOWER(email) = '$targetEmail' OR is_super_admin = 1 ORDER BY is_super_admin DESC, id ASC LIMIT 1");
-if ($saCheck && $saCheck->num_rows > 0) {
-    $saUser = $saCheck->fetch_assoc();
-    // Super Admin must be platform-level (restaurant_id = NULL). Do NOT update existing password!
-    $stmt = $conn->prepare("UPDATE admin_users SET is_super_admin = 1, role = 'SUPER_ADMIN', restaurant_id = NULL WHERE id = ?");
-    if ($stmt) {
-        $stmt->bind_param("i", $saUser['id']);
-        $stmt->execute();
-        $stmt->close();
-    }
-    echo "  ✅ Super Admin account verified (platform-level): $targetEmail\n";
-} else {
-    $stmt = $conn->prepare("INSERT INTO admin_users (email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES (?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, 0)");
-    if ($stmt) {
-        $stmt->bind_param("ss", $targetEmail, $superHash);
-        $stmt->execute();
-        $stmt->close();
-    }
-    echo "  ✅ Super Admin account created: $targetEmail\n";
-}
+$targetEmail = trim((string)(getenv('SUPER_ADMIN_EMAIL') ?: 'sovryxrms29@gmail.com'));
+$saPassword = (string)(getenv('SUPER_ADMIN_PASSWORD') ?: '');
 
-echo "--> Verifying restaurant admin accounts use email authentication...\n";
-$emptyUsersRes = $conn->query("SELECT u.id, u.email FROM admin_users u WHERE u.email IS NULL OR TRIM(u.email) = ''");
-if ($emptyUsersRes && $emptyUsersRes->num_rows > 0) {
-    while ($uRow = $emptyUsersRes->fetch_assoc()) {
-        echo "    ⚠️  User #{$uRow['id']} has no email address and cannot log in. Assign an email via the Super Admin 'Change Email' action.\n";
+$saCheck = $conn->prepare("SELECT id, email FROM admin_users WHERE LOWER(email) = LOWER(?) OR is_super_admin = 1 ORDER BY is_super_admin DESC, id ASC LIMIT 1");
+if ($saCheck) {
+    $saCheck->bind_param("s", $targetEmail);
+    $saCheck->execute();
+    $saUser = $saCheck->get_result()->fetch_assoc();
+    $saCheck->close();
+
+    if ($saUser) {
+        $uStmt = $conn->prepare("UPDATE admin_users SET is_super_admin = 1, role = 'SUPER_ADMIN', restaurant_id = NULL WHERE id = ?");
+        if ($uStmt) {
+            $uStmt->bind_param("i", $saUser['id']);
+            $uStmt->execute();
+            $uStmt->close();
+        }
+        echo "  ✅ Super Admin account verified (platform-level): " . ($saUser['email'] ?: $targetEmail) . "\n";
+    } else {
+        // First run provisioning: generate random password if no env var supplied
+        $forceChange = 1;
+        if ($saPassword === '') {
+            $saPassword = bin2hex(random_bytes(8)); // 16 char random password
+            echo "  🔑 Provisioned Super Admin account with generated password: {$saPassword}\n";
+            echo "  ⚠️ Set SUPER_ADMIN_PASSWORD in .env or change password immediately after first login.\n";
+        } else {
+            $forceChange = 0;
+        }
+        $superHash = password_hash($saPassword, PASSWORD_DEFAULT);
+        $iStmt = $conn->prepare("INSERT INTO admin_users (email, password, full_name, role, is_super_admin, restaurant_id, force_password_change) VALUES (?, ?, 'Super Admin', 'SUPER_ADMIN', 1, NULL, ?)");
+        if ($iStmt) {
+            $iStmt->bind_param("ssi", $targetEmail, $superHash, $forceChange);
+            $iStmt->execute();
+            $iStmt->close();
+        }
+        echo "  ✅ Super Admin account created: {$targetEmail}\n";
     }
 }
-echo "  ✅ Restaurant admin accounts verified for Email Authentication.\n";
 
 echo "=================================================================\n";
 echo "              SCHEMA MIGRATION COMPLETED SUCCESSFULLY!           \n";

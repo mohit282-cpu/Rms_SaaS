@@ -53,10 +53,12 @@ if ($requested_token !== null && $requested_token !== '') {
 // 2. Secondary Auth Path: Signed Legacy URL (menu.php?table=1&sig=...)
 elseif ($requested_table !== null && $requested_table !== '') {
     if ($conn) {
-        $tbl_safe = $conn->real_escape_string($requested_table);
         $existing_ctx = (int)($_SESSION['customer_restaurant_id'] ?? 0);
         if ($existing_ctx > 0) {
-            $t_res = $conn->query("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $existing_ctx LIMIT 1");
+            $tStmt = $conn->prepare("SELECT id, table_number, status, qr_token, restaurant_id FROM tables WHERE table_number = ? AND restaurant_id = ? LIMIT 1");
+            $tStmt->bind_param("si", $requested_table, $existing_ctx);
+            $tStmt->execute();
+            $t_res = $tStmt->get_result();
         } else {
             $t_res = null; // Unscoped table lookups are rejected to enforce tenant isolation
         }
@@ -83,6 +85,7 @@ elseif ($requested_table !== null && $requested_table !== '') {
                 }
             }
         }
+        if (isset($tStmt) && $tStmt) { $tStmt->close(); }
     }
 }
 // 3. Existing Valid Customer Session Check (Once session is pinned, never trust URL query overrides!)
@@ -137,8 +140,10 @@ $session_orders = [];
 $session_running_total = 0.0;
 
 if ($conn) {
-    $tbl_safe = $conn->real_escape_string($table_num);
-    $res = $conn->query("SELECT id, status, total_amount, batch_number FROM orders WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $resStmt = $conn->prepare("SELECT id, status, total_amount, batch_number FROM orders WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $resStmt->bind_param("si", $table_num, $tenant_id);
+    $resStmt->execute();
+    $res = $resStmt->get_result();
     if ($res) {
         while ($so = $res->fetch_assoc()) {
             $session_orders[] = $so;
@@ -146,16 +151,21 @@ if ($conn) {
             $active_order_id = $so['id'];
         }
     }
+    $resStmt->close();
 }
 // Fetch Active Addons for Modal Customizations
 $addons = [];
 if ($conn) {
-    $a_res = $conn->query("SELECT id, name, price, status FROM menu_addons WHERE status = 'active' AND restaurant_id = $tenant_id ORDER BY id ASC");
+    $aStmt = $conn->prepare("SELECT id, name, price, status FROM menu_addons WHERE status = 'active' AND restaurant_id = ? ORDER BY id ASC");
+    $aStmt->bind_param("i", $tenant_id);
+    $aStmt->execute();
+    $a_res = $aStmt->get_result();
     if ($a_res) {
         while ($a = $a_res->fetch_assoc()) {
             $addons[] = $a;
         }
     }
+    $aStmt->close();
 }
 ?>
 <!DOCTYPE html>
@@ -244,7 +254,10 @@ if ($conn) {
                 <div class="flex gap-2 overflow-x-auto no-scrollbar">
                     <?php if (!$db_error): ?>
                         <?php
-                        $categories_result = $conn->query("SELECT id, name FROM categories WHERE restaurant_id = $tenant_id ORDER BY name");
+                        $stmtCat = $conn->prepare("SELECT id, name FROM categories WHERE restaurant_id = ? ORDER BY name");
+                        $stmtCat->bind_param("i", $tenant_id);
+                        $stmtCat->execute();
+                        $categories_result = $stmtCat->get_result();
                         $categories = [];
                         while ($cat = $categories_result->fetch_assoc()) {
                             $categories[] = $cat;
@@ -281,7 +294,10 @@ if ($conn) {
                             $stmt->execute();
                             $result = $stmt->get_result();
                         } else {
-                            $result = $conn->query("SELECT $public_item_cols FROM menu_items WHERE status != 'inactive' AND restaurant_id = $tenant_id ORDER BY category_id, name");
+                            $stmt = $conn->prepare("SELECT $public_item_cols FROM menu_items WHERE status != 'inactive' AND restaurant_id = ? ORDER BY category_id, name");
+                            $stmt->bind_param("i", $tenant_id);
+                            $stmt->execute();
+                            $result = $stmt->get_result();
                         }
 
                         if ($result && $result->num_rows > 0) {

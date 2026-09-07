@@ -32,7 +32,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $error = "This restaurant has already been onboarded.";
                     } else {
                         $notes = Security::sanitize(trim($_POST['internal_notes'] ?? $req['internal_notes']));
-                        $conn->query("UPDATE restaurant_requests SET status = 'CONTACTED', internal_notes = '{$notes}' WHERE id = {$reqId}");
+                        $stmt = $conn->prepare("UPDATE restaurant_requests SET status = 'CONTACTED', internal_notes = ? WHERE id = ?");
+                        $stmt->bind_param("si", $notes, $reqId);
+                        $stmt->execute();
+                        $stmt->close();
                         Security::logAudit("REQUEST_CONTACTED", "Super Admin marked request #{$reqId} ({$req['restaurant_name']}) as CONTACTED");
                         $message = "Request status updated to CONTACTED.";
                     }
@@ -55,7 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } elseif ($action === 'update_notes') {
                     $notes = Security::sanitize(trim($_POST['internal_notes'] ?? ''));
-                    $conn->query("UPDATE restaurant_requests SET internal_notes = '{$notes}' WHERE id = {$reqId}");
+                    $stmt = $conn->prepare("UPDATE restaurant_requests SET internal_notes = ? WHERE id = ?");
+                    $stmt->bind_param("si", $notes, $reqId);
+                    $stmt->execute();
+                    $stmt->close();
                     $message = "Internal notes saved successfully.";
                 } elseif ($action === 'onboard_tenant') {
                     // Full Onboarding & Tenant Creation Workflow
@@ -176,7 +182,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $stmtCat->close();
 
                                             // Mark Request as CONVERTED & Link Tenant ID
-                                            $conn->query("UPDATE restaurant_requests SET status = 'CONVERTED', tenant_id = {$newRestId}, internal_notes = 'Onboarded to Tenant ID #{$newRestId} ({$restCode})' WHERE id = {$reqId}");
+                                            $onboardNotes = "Onboarded to Tenant ID #{$newRestId} ({$restCode})";
+                                            $stmtReq = $conn->prepare("UPDATE restaurant_requests SET status = 'CONVERTED', tenant_id = ?, internal_notes = ? WHERE id = ?");
+                                            $stmtReq->bind_param("isi", $newRestId, $onboardNotes, $reqId);
+                                            $stmtReq->execute();
+                                            $stmtReq->close();
 
                                             // Security Audit Logging (NEVER LOGGING PASSWORD)
                                             Security::logAudit("SUPER_ADMIN_CREATE_TENANT", "Onboarded request #{$reqId} into restaurant tenant #{$newRestId} ({$restCode}) with admin login email: {$email}");
@@ -190,11 +200,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 'restaurant_name' => $restName,
                                                 'owner_name' => $ownerName,
                                                 'email' => $email,
-                                                'password' => $password
+                                                'password' => $password,
+                                                'plan_name' => 'Selected'
                                             ];
-                                        } catch (Exception $e) {
+
+                                            $message = "Restaurant tenant created successfully!";
+                                        } catch (Throwable $e) {
                                             $conn->rollback();
-                                            $error = "Unable to complete restaurant onboarding: " . $e->getMessage();
+                                            $error = "Tenant onboarding failed: " . $e->getMessage();
                                         }
                                     }
                                 }
@@ -207,18 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch Active Subscription Plans for Modal Dropdown
-$plans = [];
-if ($conn) {
-    $pRes = $conn->query("SELECT * FROM subscription_plans WHERE status = 'active' ORDER BY price_monthly ASC");
-    if ($pRes) {
-        while ($p = $pRes->fetch_assoc()) {
-            $plans[] = $p;
-        }
-    }
-}
-
-// Search & Filtering & Pagination Logic
+// Search, Filter & Pagination Logic
 $search = trim($_GET['search'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $sortOrder = trim($_GET['sort'] ?? 'newest');
@@ -227,14 +229,20 @@ $limit = 10;
 $offset = ($page - 1) * $limit;
 
 $whereClauses = ["1=1"];
+$params = [];
+$types = "";
+
 if (!empty($search)) {
-    $safeSearch = $conn->real_escape_string($search);
-    $whereClauses[] = "(restaurant_name LIKE '%{$safeSearch}%' OR owner_name LIKE '%{$safeSearch}%' OR email LIKE '%{$safeSearch}%' OR phone LIKE '%{$safeSearch}%' OR pan_number LIKE '%{$safeSearch}%' OR request_code LIKE '%{$safeSearch}%' OR id = '{$safeSearch}')";
+    $whereClauses[] = "(restaurant_name LIKE ? OR owner_name LIKE ? OR email LIKE ? OR phone LIKE ?)";
+    $like = '%' . $search . '%';
+    $params[] = $like; $params[] = $like; $params[] = $like; $params[] = $like;
+    $types .= "ssss";
 }
 
 if (!empty($statusFilter)) {
-    $safeStatus = $conn->real_escape_string($statusFilter);
-    $whereClauses[] = "status = '{$safeStatus}'";
+    $whereClauses[] = "status = ?";
+    $params[] = $statusFilter;
+    $types .= "s";
 }
 
 $whereSql = implode(' AND ', $whereClauses);
@@ -245,21 +253,33 @@ elseif ($sortOrder === 'updated') $orderBy = "updated_at DESC";
 
 // Count Total Records
 $totalRecords = 0;
-$countRes = $conn->query("SELECT COUNT(*) as total FROM restaurant_requests WHERE {$whereSql}");
-if ($countRes && $cRow = $countRes->fetch_assoc()) {
-    $totalRecords = (int)$cRow['total'];
+if ($conn) {
+    $cStmt = $conn->prepare("SELECT COUNT(*) as total FROM restaurant_requests WHERE {$whereSql}");
+    if (!empty($types)) {
+        $cStmt->bind_param($types, ...$params);
+    }
+    $cStmt->execute();
+    $cRow = $cStmt->get_result()->fetch_assoc();
+    $totalRecords = (int)($cRow['total'] ?? 0);
+    $cStmt->close();
 }
 $totalPages = max(1, ceil($totalRecords / $limit));
 
-$query = "SELECT * FROM restaurant_requests WHERE {$whereSql} ORDER BY {$orderBy} LIMIT {$limit} OFFSET {$offset}";
+$query = "SELECT * FROM restaurant_requests WHERE {$whereSql} ORDER BY {$orderBy} LIMIT ? OFFSET ?";
 $requests = [];
 if ($conn) {
-    $res = $conn->query($query);
+    $qStmt = $conn->prepare($query);
+    $pTypes = $types . "ii";
+    $pParams = array_merge($params, [$limit, $offset]);
+    $qStmt->bind_param($pTypes, ...$pParams);
+    $qStmt->execute();
+    $res = $qStmt->get_result();
     if ($res) {
         while ($row = $res->fetch_assoc()) {
             $requests[] = $row;
         }
     }
+    $qStmt->close();
 }
 
 $pageTitle = 'Restaurant Onboarding Requests';

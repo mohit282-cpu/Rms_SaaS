@@ -41,10 +41,14 @@ if ($conn && $order_id > 0) {
 // Fetch Payment QR Settings
 $setting = null;
 if ($conn) {
-    $res = $conn->query("SELECT payment_note, qr_code_image FROM payment_settings WHERE is_active = 1 AND restaurant_id = $tenant_id LIMIT 1");
+    $sStmt = $conn->prepare("SELECT payment_note, qr_code_image FROM payment_settings WHERE is_active = 1 AND restaurant_id = ? LIMIT 1");
+    $sStmt->bind_param("i", $tenant_id);
+    $sStmt->execute();
+    $res = $sStmt->get_result();
     if ($res && $res->num_rows > 0) {
         $setting = $res->fetch_assoc();
     }
+    $sStmt->close();
 }
 
 // Fetch all active order batches for this dining session / table
@@ -52,13 +56,18 @@ $all_batches = [];
 $session_grand_total = 0.0;
 
 if ($conn && !empty($table_num)) {
-    $tbl_safe = $conn->real_escape_string($table_num);
-    $b_res = $conn->query("SELECT id, table_number, status, total_amount, batch_number, created_at FROM orders WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $bStmt = $conn->prepare("SELECT id, table_number, status, total_amount, batch_number, created_at FROM orders WHERE table_number = ? AND restaurant_id = ? AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+    $bStmt->bind_param("si", $table_num, $tenant_id);
+    $bStmt->execute();
+    $b_res = $bStmt->get_result();
     if ($b_res) {
+        $biStmt = $conn->prepare("SELECT oi.quantity, oi.price, m.name as item_name FROM order_items oi JOIN menu_items m ON oi.menu_item_id = m.id WHERE oi.order_id = ?");
         while ($b_row = $b_res->fetch_assoc()) {
-            $b_id = intval($b_row['id']);
+            $b_id = (int)$b_row['id'];
             $b_items = [];
-            $bi_res = $conn->query("SELECT oi.quantity, oi.price, m.name as item_name FROM order_items oi JOIN menu_items m ON oi.menu_item_id = m.id WHERE oi.order_id = $b_id");
+            $biStmt->bind_param("i", $b_id);
+            $biStmt->execute();
+            $bi_res = $biStmt->get_result();
             if ($bi_res) {
                 while ($bi = $bi_res->fetch_assoc()) {
                     $b_items[] = $bi;
@@ -66,21 +75,26 @@ if ($conn && !empty($table_num)) {
             }
             $b_row['items'] = $b_items;
             $all_batches[] = $b_row;
-            $session_grand_total += floatval($b_row['total_amount']);
+            $session_grand_total += (float)$b_row['total_amount'];
         }
+        $biStmt->close();
     }
+    $bStmt->close();
 }
 
 // Check if table status is vacant or all orders settled
 $is_session_settled = false;
 if ($conn && !empty($table_num)) {
-    $tbl_safe = $conn->real_escape_string($table_num);
-    $t_check = $conn->query("SELECT status FROM tables WHERE table_number = '$tbl_safe' AND restaurant_id = $tenant_id LIMIT 1");
+    $tStmt = $conn->prepare("SELECT status FROM tables WHERE table_number = ? AND restaurant_id = ? LIMIT 1");
+    $tStmt->bind_param("si", $table_num, $tenant_id);
+    $tStmt->execute();
+    $t_check = $tStmt->get_result();
     if ($t_check && $t_row = $t_check->fetch_assoc()) {
         if ($t_row['status'] === 'vacant') {
             $is_session_settled = true;
         }
     }
+    $tStmt->close();
     if (empty($all_batches)) {
         $is_session_settled = true;
     }

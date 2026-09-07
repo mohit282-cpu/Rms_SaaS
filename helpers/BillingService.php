@@ -37,7 +37,7 @@ class BillingService {
     }
 
     public static function formatMoneyBackend(float $amount): string {
-        return number_format($amount, 2);
+        return number_format($amount, 2, '.', '');
     }
 
     public static function formatItemTotal($quantity, $price) {
@@ -240,9 +240,12 @@ class BillingService {
         }
 
         // Fetch active order IDs for this table
-        $tEsc = $conn->real_escape_string($tableNumber);
-        $res = $conn->query("SELECT id FROM orders WHERE restaurant_id = $tenantId AND table_number = '$tEsc' AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+        $stmt = $conn->prepare("SELECT id FROM orders WHERE restaurant_id = ? AND table_number = ? AND payment_status = 'pending' AND status != 'cancelled' ORDER BY id ASC");
+        $stmt->bind_param("is", $tenantId, $tableNumber);
+        $stmt->execute();
+        $res = $stmt->get_result();
         if (!$res || $res->num_rows === 0) {
+            $stmt->close();
             return self::emptyBill();
         }
 
@@ -250,6 +253,7 @@ class BillingService {
         while ($r = $res->fetch_assoc()) {
             $orderIds[] = (int)$r['id'];
         }
+        $stmt->close();
 
         if (count($orderIds) === 1) {
             return self::calculateOrderBill($conn, $tenantId, $orderIds[0], $loyaltyPointsRedeemed, $isNCR);
@@ -261,30 +265,43 @@ class BillingService {
         $pointValue = max(0.01, (float)$loyalty['point_value']);
         $loyaltyEnabled = (int)$loyalty['is_enabled'] === 1;
 
-        $oList = implode(',', $orderIds);
-        $itemsStmt = $conn->query("
+        $inPlaceholders = implode(',', array_fill(0, count($orderIds), '?'));
+        $types = str_repeat('i', count($orderIds)) . 'i';
+        $itemParams = array_merge($orderIds, [$tenantId]);
+
+        $itemSql = "
             SELECT oi.quantity, oi.price, oi.ncr_amount
             FROM order_items oi
             JOIN orders o ON oi.order_id = o.id
-            WHERE oi.order_id IN ($oList) AND o.restaurant_id = $tenantId
-        ");
+            WHERE oi.order_id IN ($inPlaceholders) AND o.restaurant_id = ?
+        ";
+        $itemStmt = $conn->prepare($itemSql);
+        $itemStmt->bind_param($types, ...$itemParams);
+        $itemStmt->execute();
+        $itemsRes = $itemStmt->get_result();
         $subtotal = 0.0;
-        if ($itemsStmt) {
-            while ($itm = $itemsStmt->fetch_assoc()) {
+        if ($itemsRes) {
+            while ($itm = $itemsRes->fetch_assoc()) {
                 if ((float)($itm['ncr_amount'] ?? 0) > 0) continue;
                 $subtotal += round((float)$itm['price'] * (int)$itm['quantity'], 2);
             }
         }
         $subtotal = round($subtotal, 2);
+        $itemStmt->close();
 
         $discount = 0.0;
-        $ordStmt = $conn->query("SELECT discount_amount, ncr_amount FROM orders WHERE id IN ($oList) AND restaurant_id = $tenantId");
-        if ($ordStmt) {
-            while ($orow = $ordStmt->fetch_assoc()) {
+        $ordSql = "SELECT discount_amount, ncr_amount FROM orders WHERE id IN ($inPlaceholders) AND restaurant_id = ?";
+        $ordStmt = $conn->prepare($ordSql);
+        $ordStmt->bind_param($types, ...$itemParams);
+        $ordStmt->execute();
+        $ordRes = $ordStmt->get_result();
+        if ($ordRes) {
+            while ($orow = $ordRes->fetch_assoc()) {
                 $discount += round(max(0, (float)($orow['discount_amount'] ?? 0)), 2);
                 if ((float)($orow['ncr_amount'] ?? 0) > 0) $isNCR = true;
             }
         }
+        $ordStmt->close();
 
         $scEnabled = (int)$pay['service_charge_enabled'] === 1;
         $scType = $pay['service_charge_type'] ?? 'percent';

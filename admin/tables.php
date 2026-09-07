@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if (!empty($table_number)) {
             $stmt = $conn->prepare("INSERT INTO tables (restaurant_id, table_number, zone, capacity, assigned_waiter, status, qr_token) VALUES (?, ?, ?, ?, ?, 'vacant', ?)");
             if ($stmt) {
-                $stmt->bind_param("isiss" . "s", $tenantId, $table_number, $zone, $capacity, $assigned_waiter, $qr_token);
+                $stmt->bind_param("ississ", $tenantId, $table_number, $zone, $capacity, $assigned_waiter, $qr_token);
                 if ($stmt->execute()) {
                     $_SESSION['success'] = "Table '$table_number' added to $zone!";
                 } else {

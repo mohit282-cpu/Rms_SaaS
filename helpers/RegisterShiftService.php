@@ -8,124 +8,11 @@ require_once __DIR__ . '/TenantContext.php';
 class RegisterShiftService {
 
     /**
-     * Auto-provision Register Shift tables if they do not exist.
+     * Auto-provision Register Shift tables (now managed via database/migrations/).
      */
     public static function ensureRegisterShiftSchema(mysqli $conn): void {
-        static $schemaChecked = false;
-        if ($schemaChecked) return;
-        $schemaChecked = true;
-
-        // Enhance shifts table or provision register_shifts
-        $conn->query("CREATE TABLE IF NOT EXISTS shifts (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            restaurant_id INT NOT NULL DEFAULT 1,
-            register_name VARCHAR(50) NOT NULL DEFAULT 'Counter 01',
-            staff_id INT DEFAULT 1,
-            staff_name VARCHAR(100) NOT NULL,
-            open_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            close_time TIMESTAMP NULL DEFAULT NULL,
-            opening_cash DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-            closing_cash DECIMAL(10, 2) DEFAULT 0.00,
-            expected_cash DECIMAL(10, 2) DEFAULT 0.00,
-            cash_sales DECIMAL(10, 2) DEFAULT 0.00,
-            card_sales DECIMAL(10, 2) DEFAULT 0.00,
-            digital_sales DECIMAL(10, 2) DEFAULT 0.00,
-            total_refunds DECIMAL(10, 2) DEFAULT 0.00,
-            cash_refunds DECIMAL(10, 2) DEFAULT 0.00,
-            cash_in DECIMAL(10, 2) DEFAULT 0.00,
-            cash_out DECIMAL(10, 2) DEFAULT 0.00,
-            total_ncr DECIMAL(10, 2) DEFAULT 0.00,
-            variance DECIMAL(10, 2) DEFAULT 0.00,
-            status ENUM('open', 'closed') DEFAULT 'open',
-            denominations_json TEXT DEFAULT NULL,
-            notes TEXT DEFAULT NULL,
-            closed_by VARCHAR(100) DEFAULT NULL,
-            INDEX idx_shift_status (restaurant_id, status),
-            INDEX idx_shift_register (restaurant_id, register_name, status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Align missing columns on shifts if table pre-existed
-        $colsRes = $conn->query("SHOW COLUMNS FROM shifts");
-        $cols = [];
-        if ($colsRes) {
-            while ($col = $colsRes->fetch_assoc()) {
-                $cols[strtolower($col['Field'])] = true;
-            }
-        }
-        if (!isset($cols['register_name'])) {
-            @$conn->query("ALTER TABLE shifts ADD COLUMN register_name VARCHAR(50) NOT NULL DEFAULT 'Counter 01'");
-        }
-        if (!isset($cols['cash_refunds'])) {
-            @$conn->query("ALTER TABLE shifts ADD COLUMN cash_refunds DECIMAL(10, 2) DEFAULT 0.00");
-        }
-        if (!isset($cols['cash_in'])) {
-            @$conn->query("ALTER TABLE shifts ADD COLUMN cash_in DECIMAL(10, 2) DEFAULT 0.00");
-        }
-        if (!isset($cols['cash_out'])) {
-            @$conn->query("ALTER TABLE shifts ADD COLUMN cash_out DECIMAL(10, 2) DEFAULT 0.00");
-        }
-        if (!isset($cols['denominations_json'])) {
-            @$conn->query("ALTER TABLE shifts ADD COLUMN denominations_json TEXT DEFAULT NULL");
-        }
-        if (!isset($cols['closed_by'])) {
-            @$conn->query("ALTER TABLE shifts ADD COLUMN closed_by VARCHAR(100) DEFAULT NULL");
-        }
-
-        // Table for Cash Movements (Cash In / Cash Out)
-        $conn->query("CREATE TABLE IF NOT EXISTS register_cash_movements (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            restaurant_id INT NOT NULL,
-            shift_id INT NOT NULL,
-            type ENUM('cash_in', 'cash_out') NOT NULL,
-            amount DECIMAL(10, 2) NOT NULL,
-            reason VARCHAR(255) NOT NULL,
-            expense_id INT DEFAULT NULL,
-            user_id INT NOT NULL,
-            user_name VARCHAR(100) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_movement_shift (restaurant_id, shift_id),
-            INDEX idx_movement_type (type)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Table for Register Terminals
-        $conn->query("CREATE TABLE IF NOT EXISTS registers (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            restaurant_id INT NOT NULL,
-            register_name VARCHAR(50) NOT NULL,
-            status VARCHAR(20) DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY idx_tenant_register (restaurant_id, register_name)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Provision default counter register if empty
-        $tRes = $conn->query("SELECT COUNT(*) AS cnt FROM registers WHERE restaurant_id = 1");
-        if ($tRes && (int)($tRes->fetch_assoc()['cnt'] ?? 0) === 0) {
-            @$conn->query("INSERT IGNORE INTO registers (restaurant_id, register_name) VALUES (1, 'Counter 01'), (1, 'Counter 02'), (1, 'Bar Counter')");
-        }
-
-        // Add shift_id column to payment_transactions if missing
-        $pColsRes = $conn->query("SHOW COLUMNS FROM payment_transactions");
-        $pCols = [];
-        if ($pColsRes) {
-            while ($col = $pColsRes->fetch_assoc()) {
-                $pCols[strtolower($col['Field'])] = true;
-            }
-        }
-        if (!isset($pCols['shift_id'])) {
-            @$conn->query("ALTER TABLE payment_transactions ADD COLUMN shift_id INT DEFAULT NULL, ADD INDEX idx_pay_shift (restaurant_id, shift_id)");
-        }
-
-        // Add notes column to expenses table if missing
-        $expColsRes = $conn->query("SHOW COLUMNS FROM expenses");
-        $expCols = [];
-        if ($expColsRes) {
-            while ($col = $expColsRes->fetch_assoc()) {
-                $expCols[strtolower($col['Field'])] = true;
-            }
-        }
-        if (!isset($expCols['notes'])) {
-            @$conn->query("ALTER TABLE expenses ADD COLUMN notes TEXT DEFAULT NULL");
-        }
+        // Schema migrations are managed deterministically via CLI (database/migrate.php)
+        return;
     }
 
     /**
@@ -257,9 +144,14 @@ class RegisterShiftService {
 
             // Update cached cash_in / cash_out on shift table
             if ($type === 'cash_in') {
-                $conn->query("UPDATE shifts SET cash_in = cash_in + $amount WHERE id = $shiftId AND restaurant_id = $tenantId");
+                $uStmt = $conn->prepare("UPDATE shifts SET cash_in = cash_in + ? WHERE id = ? AND restaurant_id = ?");
             } else {
-                $conn->query("UPDATE shifts SET cash_out = cash_out + $amount WHERE id = $shiftId AND restaurant_id = $tenantId");
+                $uStmt = $conn->prepare("UPDATE shifts SET cash_out = cash_out + ? WHERE id = ? AND restaurant_id = ?");
+            }
+            if ($uStmt) {
+                $uStmt->bind_param("dii", $amount, $shiftId, $tenantId);
+                $uStmt->execute();
+                $uStmt->close();
             }
 
             $conn->commit();

@@ -197,30 +197,38 @@ try {
     $conn->begin_transaction();
 
     // 1. Get or create active dining session for this table with ROW LOCKING
-    $tbl_safe = $conn->real_escape_string($table_number);
     $session_id = null;
     $batch_num = 1;
 
-    $ds_res = $conn->query("SELECT id, running_total FROM dining_sessions WHERE table_number = '$tbl_safe' AND restaurant_id = {$tenantId} AND status = 'active' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+    $ds_stmt = $conn->prepare("SELECT id, running_total FROM dining_sessions WHERE table_number = ? AND restaurant_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+    $ds_stmt->bind_param("si", $table_number, $tenantId);
+    $ds_stmt->execute();
+    $ds_res = $ds_stmt->get_result();
+
     if ($ds_res && $ds_row = $ds_res->fetch_assoc()) {
-        $session_id = intval($ds_row['id']);
+        $session_id = (int)$ds_row['id'];
         // Calculate next batch number atomically
-        $b_res = $conn->query("SELECT COUNT(*) as b_cnt FROM orders WHERE dining_session_id = $session_id AND restaurant_id = {$tenantId} FOR UPDATE");
+        $b_stmt = $conn->prepare("SELECT COUNT(*) as b_cnt FROM orders WHERE dining_session_id = ? AND restaurant_id = ? FOR UPDATE");
+        $b_stmt->bind_param("ii", $session_id, $tenantId);
+        $b_stmt->execute();
+        $b_res = $b_stmt->get_result();
         if ($b_res && $b_row = $b_res->fetch_assoc()) {
-            $batch_num = intval($b_row['b_cnt']) + 1;
+            $batch_num = (int)$b_row['b_cnt'] + 1;
         }
+        $b_stmt->close();
     } else {
         // Create new active dining session
         $sess_token = bin2hex(random_bytes(16));
-        $ds_stmt = $conn->prepare("INSERT INTO dining_sessions (restaurant_id, session_token, table_number, customer_name, status, running_total) VALUES (?, ?, ?, ?, 'active', 0.00)");
-        if ($ds_stmt) {
+        $c_stmt = $conn->prepare("INSERT INTO dining_sessions (restaurant_id, session_token, table_number, customer_name, status, running_total) VALUES (?, ?, ?, ?, 'active', 0.00)");
+        if ($c_stmt) {
             $c_name_ds = !empty($customer_name) ? $customer_name : 'Guest';
-            $ds_stmt->bind_param("isss", $tenantId, $sess_token, $table_number, $c_name_ds);
-            $ds_stmt->execute();
+            $c_stmt->bind_param("isss", $tenantId, $sess_token, $table_number, $c_name_ds);
+            $c_stmt->execute();
             $session_id = $conn->insert_id;
-            $ds_stmt->close();
+            $c_stmt->close();
         }
     }
+    $ds_stmt->close();
 
     // Insert order batch
     $stmt = $conn->prepare("INSERT INTO orders (restaurant_id, table_number, customer_name, notes, status, total_amount, payment_status, dining_session_id, batch_number, idempotency_key) VALUES (?, ?, ?, ?, 'new', ?, 'pending', ?, ?, ?)");
@@ -238,11 +246,17 @@ try {
 
     // Update running total of dining session
     if ($session_id) {
-        $conn->query("UPDATE dining_sessions SET running_total = running_total + $calculated_total, status = 'active' WHERE id = $session_id AND restaurant_id = {$tenantId}");
+        $upDsStmt = $conn->prepare("UPDATE dining_sessions SET running_total = running_total + ?, status = 'active' WHERE id = ? AND restaurant_id = ?");
+        $upDsStmt->bind_param("dii", $calculated_total, $session_id, $tenantId);
+        $upDsStmt->execute();
+        $upDsStmt->close();
     }
 
     // Update table status to occupied
-    $conn->query("UPDATE tables SET status = 'occupied', guest_count = GREATEST(guest_count, 1) WHERE table_number = '$tbl_safe' AND restaurant_id = {$tenantId}");
+    $upTblStmt = $conn->prepare("UPDATE tables SET status = 'occupied', guest_count = GREATEST(guest_count, 1) WHERE table_number = ? AND restaurant_id = ?");
+    $upTblStmt->bind_param("si", $table_number, $tenantId);
+    $upTblStmt->execute();
+    $upTblStmt->close();
 
     $item_stmt = $conn->prepare("INSERT INTO order_items (restaurant_id, order_id, menu_item_id, quantity, price) VALUES (?, ?, ?, ?, ?)");
     

@@ -8,22 +8,7 @@ class RateLimiter {
      * Ensure the rate_limits table exists. Runs at most once per request.
      */
     private static function ensureTable(mysqli $conn): void {
-        if (self::$tableReady === true) return;
-
-        $found = $conn->query("SHOW TABLES LIKE 'rate_limits'");
-        $exists = $found && $found->num_rows > 0;
-        if (!$exists) {
-            $conn->query("CREATE TABLE IF NOT EXISTS rate_limits (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                rate_key VARCHAR(190) NOT NULL,
-                window_start BIGINT NOT NULL,
-                hits INT NOT NULL DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_rate_key_window (rate_key, window_start)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-            $exists = ($conn->error === '');
-        }
-        self::$tableReady = $exists;
+        self::$tableReady = true;
     }
 
     /**
@@ -45,7 +30,12 @@ class RateLimiter {
                 }
                 // Opportunistic pruning (best-effort, not on the critical path).
                 $pruneWindow = (int)floor(($now - 172800) / max(1, $actualWindow));
-                $conn->query("DELETE FROM rate_limits WHERE window_start < " . $pruneWindow);
+                $stmtPrune = $conn->prepare("DELETE FROM rate_limits WHERE window_start < ?");
+                if ($stmtPrune) {
+                    $stmtPrune->bind_param("i", $pruneWindow);
+                    $stmtPrune->execute();
+                    $stmtPrune->close();
+                }
                 return;
             }
         }

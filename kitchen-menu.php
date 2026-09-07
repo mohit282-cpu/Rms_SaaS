@@ -72,7 +72,10 @@ requireKitchenLogin();
             <?php else: ?>
                 <?php
                 $kitchen_tenant_id = (int)TenantContext::getTenantId();
-                $res = $conn->query("SELECT mi.*, c.name as category_name FROM menu_items mi LEFT JOIN categories c ON mi.category_id = c.id WHERE mi.restaurant_id = $kitchen_tenant_id ORDER BY mi.category_id, mi.name");
+                $stmt = $conn->prepare("SELECT mi.*, c.name as category_name FROM menu_items mi LEFT JOIN categories c ON mi.category_id = c.id WHERE mi.restaurant_id = ? ORDER BY mi.category_id, mi.name");
+                $stmt->bind_param("i", $kitchen_tenant_id);
+                $stmt->execute();
+                $res = $stmt->get_result();
                 if ($res && $res->num_rows > 0) {
                     while ($item = $res->fetch_assoc()) {
                         $is_out_of_stock = ($item['status'] === 'sold_out' || $item['status'] === 'inactive');

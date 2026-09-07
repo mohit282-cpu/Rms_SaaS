@@ -18,15 +18,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($restId > 0 && $conn) {
             if ($action === 'suspend') {
-                $conn->query("UPDATE restaurants SET status = 'SUSPENDED' WHERE id = {$restId}");
+                $stmt = $conn->prepare("UPDATE restaurants SET status = 'SUSPENDED' WHERE id = ?");
+                $stmt->bind_param("i", $restId);
+                $stmt->execute();
+                $stmt->close();
                 Security::logAudit("SUPER_ADMIN_SUSPEND_TENANT", "Super Admin suspended restaurant tenant ID: {$restId}");
                 $message = "Restaurant tenant account suspended successfully.";
             } elseif ($action === 'activate') {
-                $conn->query("UPDATE restaurants SET status = 'ACTIVE' WHERE id = {$restId}");
+                $stmt = $conn->prepare("UPDATE restaurants SET status = 'ACTIVE' WHERE id = ?");
+                $stmt->bind_param("i", $restId);
+                $stmt->execute();
+                $stmt->close();
                 Security::logAudit("SUPER_ADMIN_ACTIVATE_TENANT", "Super Admin activated restaurant tenant ID: {$restId}");
                 $message = "Restaurant tenant account activated successfully.";
             } elseif ($action === 'disable') {
-                $conn->query("UPDATE restaurants SET status = 'INACTIVE' WHERE id = {$restId}");
+                $stmt = $conn->prepare("UPDATE restaurants SET status = 'INACTIVE' WHERE id = ?");
+                $stmt->bind_param("i", $restId);
+                $stmt->execute();
+                $stmt->close();
                 Security::logAudit("SUPER_ADMIN_DISABLE_TENANT", "Super Admin disabled restaurant tenant ID: {$restId}");
                 $message = "Restaurant tenant account disabled successfully.";
             } elseif ($action === 'delete_restaurant') {
@@ -40,16 +49,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = "Restaurant tenant not found.";
                 } else {
                     // Check if this tenant hosts any Super Admin user accounts
-                    $saCheck = $conn->query("SELECT id FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 1");
+                    $saStmt = $conn->prepare("SELECT id FROM admin_users WHERE restaurant_id = ? AND is_super_admin = 1");
+                    $saStmt->bind_param("i", $restId);
+                    $saStmt->execute();
+                    $saCheck = $saStmt->get_result();
                     $hasSaUsers = ($saCheck && $saCheck->num_rows > 0);
+                    $saStmt->close();
 
                     // Find alternative tenant for Super Admin preservation if needed
                     $targetRestId = 1;
                     if ($hasSaUsers) {
-                        $altRes = $conn->query("SELECT id FROM restaurants WHERE id != {$restId} ORDER BY id ASC LIMIT 1");
+                        $altStmt = $conn->prepare("SELECT id FROM restaurants WHERE id != ? ORDER BY id ASC LIMIT 1");
+                        $altStmt->bind_param("i", $restId);
+                        $altStmt->execute();
+                        $altRes = $altStmt->get_result();
                         if ($altRes && $altRow = $altRes->fetch_assoc()) {
                             $targetRestId = (int)$altRow['id'];
                         }
+                        $altStmt->close();
                     }
 
                     $resDel = TenantDeletionService::deleteTenant($conn, $restId);
@@ -78,8 +95,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt->close();
 
                         // Get admin email for display
-                        $uRes = $conn->query("SELECT email FROM admin_users WHERE restaurant_id = {$restId} AND is_super_admin = 0 LIMIT 1");
+                        $uStmt = $conn->prepare("SELECT email FROM admin_users WHERE restaurant_id = ? AND is_super_admin = 0 LIMIT 1");
+                        $uStmt->bind_param("i", $restId);
+                        $uStmt->execute();
+                        $uRes = $uStmt->get_result();
                         $uName = ($uRes && $u = $uRes->fetch_assoc()) ? $u['email'] : 'Admin';
+                        $uStmt->close();
 
                         Security::logAudit("SUPER_ADMIN_RESET_PASSWORD", "Super Admin reset password for restaurant ID: {$restId} (Admin User: {$uName})");
                         $resetResult = [
@@ -154,7 +175,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['restaurant_id'] = $restId;
                 $_SESSION['is_super_admin'] = false; // Impersonation uses tenant role
                 
-                $ownerRes = $conn->query("SELECT id, email, full_name, role FROM admin_users WHERE restaurant_id = {$restId} ORDER BY id ASC LIMIT 1");
+                $oStmt = $conn->prepare("SELECT id, email, full_name, role FROM admin_users WHERE restaurant_id = ? ORDER BY id ASC LIMIT 1");
+                $oStmt->bind_param("i", $restId);
+                $oStmt->execute();
+                $ownerRes = $oStmt->get_result();
                 if ($ownerRes && $owner = $ownerRes->fetch_assoc()) {
                     $_SESSION['admin_id'] = $owner['id'];
                     $_SESSION['user_id'] = $owner['id'];
@@ -162,13 +186,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['admin_email'] = $owner['email'];
                     $_SESSION['full_name'] = $owner['full_name'];
                     $_SESSION['role'] = strtoupper($owner['role']);
+
+                    // Force password change check for impersonated account
+                    $fcStmt = $conn->prepare("SELECT force_password_change FROM admin_users WHERE id = ?");
+                    $fcStmt->bind_param("i", $owner['id']);
+                    $fcStmt->execute();
+                    $forceChangeRes = $fcStmt->get_result();
+                    if ($forceChangeRes && $fc = $forceChangeRes->fetch_assoc()) {
+                        $_SESSION['force_password_change'] = (bool)$fc['force_password_change'];
+                    }
+                    $fcStmt->close();
                 }
-                
-                // Force password change check for impersonated account
-                $forceChangeRes = $conn->query("SELECT force_password_change FROM admin_users WHERE id = " . $owner['id']);
-                if ($forceChangeRes && $fc = $forceChangeRes->fetch_assoc()) {
-                    $_SESSION['force_password_change'] = (bool)$fc['force_password_change'];
-                }
+                $oStmt->close();
 
                 header('Location: ../admin/index.php');
                 exit;

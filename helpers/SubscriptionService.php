@@ -37,7 +37,12 @@ class SubscriptionService {
 
         if (!$isOpenEnded && strtotime($endDate) < strtotime('today')) {
             // Subscription date has passed => mark EXPIRED and block access.
-            $conn->query("UPDATE restaurants SET subscription_status = 'EXPIRED' WHERE id = " . (int)$restaurantId);
+            $stmtExp = $conn->prepare("UPDATE restaurants SET subscription_status = 'EXPIRED' WHERE id = ?");
+            if ($stmtExp) {
+                $stmtExp->bind_param("i", $restaurantId);
+                $stmtExp->execute();
+                $stmtExp->close();
+            }
             return false;
         }
 

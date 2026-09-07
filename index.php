@@ -123,8 +123,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     // Trigger In-Dashboard Super Admin Notification
                                     $notifTitle = "🔔 New Restaurant Demo Request: {$restName}";
                                     $notifMsg = "Owner: {$ownerName} | Phone: {$phone} | Email: {$email} | Plan: {$preferredPlan}";
-                                    $notifReqId = (int)$reqId; // cast to int — safe for interpolation
-                                    $conn->query("INSERT INTO notifications (restaurant_id, type, title, message, link) VALUES (NULL, 'onboarding_request', '" . $conn->real_escape_string($notifTitle) . "', '" . $conn->real_escape_string($notifMsg) . "', 'requests.php?id={$notifReqId}')");
+                                    $linkStr = 'requests.php?id=' . (int)$reqId;
+                                    $typeStr = 'onboarding_request';
+                                    $nStmt = $conn->prepare("INSERT INTO notifications (restaurant_id, type, title, message, link) VALUES (NULL, ?, ?, ?, ?)");
+                                    if ($nStmt) {
+                                        $nStmt->bind_param("ssss", $typeStr, $notifTitle, $notifMsg, $linkStr);
+                                        $nStmt->execute();
+                                        $nStmt->close();
+                                    }
 
                                     Security::logAudit("PUBLIC_ONBOARDING_REQUEST", "Submitted restaurant demo request {$requestCode} for {$restName}");
                                     $requestSuccess = true;

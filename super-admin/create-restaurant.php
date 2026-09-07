@@ -113,12 +113,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Check if request is already converted
         if ($reqId > 0 && $conn) {
-            $rCheck = $conn->query("SELECT status FROM restaurant_requests WHERE id = {$reqId} LIMIT 1");
+            $rStmt = $conn->prepare("SELECT status FROM restaurant_requests WHERE id = ? LIMIT 1");
+            $rStmt->bind_param("i", $reqId);
+            $rStmt->execute();
+            $rCheck = $rStmt->get_result();
             if ($rCheck && $rRow = $rCheck->fetch_assoc()) {
                 if ($rRow['status'] === 'CONVERTED') {
                     $error = "This onboarding request has already been converted into a restaurant tenant account.";
                 }
             }
+            $rStmt->close();
         }
 
         if (empty($error)) {
@@ -234,7 +238,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                     // Update onboarding request status if converted
                                     if ($reqId > 0) {
-                                        $conn->query("UPDATE restaurant_requests SET status = 'CONVERTED', internal_notes = 'Converted to Tenant ID #{$newRestId} ({$restCode})' WHERE id = {$reqId}");
+                                        $onboardNotes = "Converted to Tenant ID #{$newRestId} ({$restCode})";
+                                        $reqUpdateStmt = $conn->prepare("UPDATE restaurant_requests SET status = 'CONVERTED', internal_notes = ? WHERE id = ?");
+                                        $reqUpdateStmt->bind_param("si", $onboardNotes, $reqId);
+                                        $reqUpdateStmt->execute();
+                                        $reqUpdateStmt->close();
                                     }
 
                                     // Record Security Audit Log (NEVER LOGGING PLAINTEXT PASSWORD!)

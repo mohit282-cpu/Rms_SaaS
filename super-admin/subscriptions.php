@@ -25,18 +25,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($restId > 0 && $conn) {
                 // Fetch Current Tenant Data & Usage
-                $rRes = $conn->query("
+                $stmtRest = $conn->prepare("
                     SELECT r.*, p.name as current_plan_name, p.max_tables as current_max_tables, p.max_staff as current_max_staff,
                     (SELECT COUNT(*) FROM tables t WHERE t.restaurant_id = r.id) as table_count,
                     (SELECT COUNT(*) FROM admin_users u WHERE u.restaurant_id = r.id) as user_count
                     FROM restaurants r
                     LEFT JOIN subscription_plans p ON r.subscription_plan_id = p.id
-                    WHERE r.id = {$restId} LIMIT 1
+                    WHERE r.id = ? LIMIT 1
                 ");
+                $stmtRest->bind_param("i", $restId);
+                $stmtRest->execute();
+                $rRes = $stmtRest->get_result();
                 $tenant = ($rRes) ? $rRes->fetch_assoc() : null;
 
                 // Fetch Target Plan Limits
-                $pRes = $conn->query("SELECT * FROM subscription_plans WHERE id = {$newPlanId} LIMIT 1");
+                $stmtPlan = $conn->prepare("SELECT * FROM subscription_plans WHERE id = ? LIMIT 1");
+                $stmtPlan->bind_param("i", $newPlanId);
+                $stmtPlan->execute();
+                $pRes = $stmtPlan->get_result();
                 $targetPlan = ($pRes) ? $pRes->fetch_assoc() : null;
 
                 if (!$tenant || !$targetPlan) {
@@ -142,29 +148,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-        } elseif ($action === 'toggle_plan_status') {
-            $planId = (int)($_POST['plan_id'] ?? 0);
-            $newStatus = Security::sanitize($_POST['status'] ?? 'inactive');
-
-            if ($planId > 0 && $conn) {
-                if ($newStatus === 'inactive') {
-                    // Check if plan is currently assigned to active tenants
-                    $checkUsage = $conn->query("SELECT COUNT(*) as cnt FROM restaurants WHERE subscription_plan_id = {$planId} AND status = 'ACTIVE'");
-                    $activeCount = ($checkUsage && $row = $checkUsage->fetch_assoc()) ? (int)$row['cnt'] : 0;
-                    
-                    if ($activeCount > 0) {
-                        $error = "This plan is currently assigned to {$activeCount} active tenant(s) and cannot be deleted or deactivated.";
-                    } else {
-                        $conn->query("UPDATE subscription_plans SET status = 'inactive' WHERE id = {$planId}");
-                        Security::logAudit("SUPER_ADMIN_DEACTIVATE_PLAN", "Deactivated subscription plan ID: {$planId}");
-                        $message = "Subscription plan tier deactivated successfully.";
-                    }
-                } else {
-                    $conn->query("UPDATE subscription_plans SET status = 'active' WHERE id = {$planId}");
-                    Security::logAudit("SUPER_ADMIN_ACTIVATE_PLAN", "Activated subscription plan ID: {$planId}");
-                    $message = "Subscription plan tier activated successfully.";
-                }
-            }
         }
     }
 }
@@ -188,26 +171,38 @@ $limit = 10;
 $offset = ($page - 1) * $limit;
 
 $whereClauses = ["1=1"];
+$params = [];
+$types = "";
+
 if (!empty($search)) {
-    $safeSearch = $conn->real_escape_string($search);
-    $whereClauses[] = "(r.restaurant_name LIKE '%{$safeSearch}%' OR r.restaurant_code LIKE '%{$safeSearch}%' OR r.owner_name LIKE '%{$safeSearch}%' OR p.name LIKE '%{$safeSearch}%')";
+    $whereClauses[] = "(r.restaurant_name LIKE ? OR r.restaurant_code LIKE ? OR r.owner_name LIKE ? OR p.name LIKE ?)";
+    $like = '%' . $search . '%';
+    $params[] = $like; $params[] = $like; $params[] = $like; $params[] = $like;
+    $types .= "ssss";
 }
 if (!empty($statusFilter)) {
-    $safeStatus = $conn->real_escape_string($statusFilter);
-    $whereClauses[] = "r.subscription_status = '{$safeStatus}'";
+    $whereClauses[] = "r.subscription_status = ?";
+    $params[] = $statusFilter;
+    $types .= "s";
 }
 $whereSql = implode(' AND ', $whereClauses);
 
 // Count Total Tenant Subscriptions
 $totalRecords = 0;
-$countRes = $conn->query("
-    SELECT COUNT(DISTINCT r.id) as total 
-    FROM restaurants r 
-    LEFT JOIN subscription_plans p ON r.subscription_plan_id = p.id 
-    WHERE {$whereSql}
-");
-if ($countRes && $cRow = $countRes->fetch_assoc()) {
-    $totalRecords = (int)$cRow['total'];
+if ($conn) {
+    $cStmt = $conn->prepare("
+        SELECT COUNT(DISTINCT r.id) as total 
+        FROM restaurants r 
+        LEFT JOIN subscription_plans p ON r.subscription_plan_id = p.id 
+        WHERE {$whereSql}
+    ");
+    if (!empty($types)) {
+        $cStmt->bind_param($types, ...$params);
+    }
+    $cStmt->execute();
+    $cRow = $cStmt->get_result()->fetch_assoc();
+    $totalRecords = (int)($cRow['total'] ?? 0);
+    $cStmt->close();
 }
 $totalPages = max(1, ceil($totalRecords / $limit));
 
@@ -216,36 +211,53 @@ $tenantSubs = [];
 if ($conn) {
     $query = "
         SELECT r.id, r.restaurant_name, r.restaurant_code, r.owner_name, r.subscription_status, r.subscription_start, r.subscription_end,
-        p.name as plan_name, p.id as plan_id, p.price_monthly, p.billing_type,
+        p.name as plan_name, p.id as plan_id, p.price_monthly,
         (SELECT COUNT(*) FROM tables t WHERE t.restaurant_id = r.id) as table_count,
         (SELECT COUNT(*) FROM admin_users u WHERE u.restaurant_id = r.id) as user_count
         FROM restaurants r
         LEFT JOIN subscription_plans p ON r.subscription_plan_id = p.id
         WHERE {$whereSql}
         ORDER BY r.id DESC
-        LIMIT {$limit} OFFSET {$offset}
+        LIMIT ? OFFSET ?
     ";
-    $res = $conn->query($query);
+    $qStmt = $conn->prepare($query);
+    $pTypes = $types . "ii";
+    $pParams = array_merge($params, [$limit, $offset]);
+    $qStmt->bind_param($pTypes, ...$pParams);
+    $qStmt->execute();
+    $res = $qStmt->get_result();
     if ($res) {
         while ($row = $res->fetch_assoc()) {
             $tenantSubs[] = $row;
         }
     }
+    $qStmt->close();
 }
 
 // Fetch History Logs if view_history GET param present
 if (isset($_GET['view_history']) && (int)$_GET['view_history'] > 0 && $conn) {
     $hId = (int)$_GET['view_history'];
-    $hRestRes = $conn->query("SELECT restaurant_name FROM restaurants WHERE id = {$hId} LIMIT 1");
-    if ($hRestRes && $hRest = $hRestRes->fetch_assoc()) {
+    $hStmt = $conn->prepare("SELECT restaurant_name FROM restaurants WHERE id = ? LIMIT 1");
+    $hStmt->bind_param("i", $hId);
+    $hStmt->execute();
+    $hRest = $hStmt->get_result()->fetch_assoc();
+    if ($hRest) {
         $historyTenantName = $hRest['restaurant_name'];
     }
-    $hLogsRes = $conn->query("SELECT * FROM audit_logs WHERE event_type IN ('SUBSCRIPTION_CHANGED', 'SUPER_ADMIN_UPDATE_SUBSCRIPTION', 'SUPER_ADMIN_CREATE_TENANT') AND (description LIKE '%tenant #{$hId}%' OR description LIKE '%restaurant ID: {$hId}%') ORDER BY id DESC LIMIT 20");
+    $hStmt->close();
+
+    $hSearch1 = '%tenant #' . $hId . '%';
+    $hSearch2 = '%restaurant ID: ' . $hId . '%';
+    $lStmt = $conn->prepare("SELECT * FROM audit_logs WHERE event_type IN ('SUBSCRIPTION_CHANGED', 'SUPER_ADMIN_UPDATE_SUBSCRIPTION', 'SUPER_ADMIN_CREATE_TENANT') AND (description LIKE ? OR description LIKE ?) ORDER BY id DESC LIMIT 20");
+    $lStmt->bind_param("ss", $hSearch1, $hSearch2);
+    $lStmt->execute();
+    $hLogsRes = $lStmt->get_result();
     if ($hLogsRes) {
         while ($l = $hLogsRes->fetch_assoc()) {
             $historyLogs[] = $l;
         }
     }
+    $lStmt->close();
 }
 
 $pageTitle = 'Subscription Governance';

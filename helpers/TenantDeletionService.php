@@ -102,26 +102,40 @@ class TenantDeletionService {
 
             // 2. Resolve Super Admin users attached to this tenant so they are not orphaned
             $hasSaUsers = false;
-            $saRes = $conn->query("SELECT COUNT(*) AS cnt FROM admin_users WHERE restaurant_id = {$restaurantId} AND is_super_admin = 1");
+            $saStmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM admin_users WHERE restaurant_id = ? AND is_super_admin = 1");
+            $saStmt->bind_param("i", $restaurantId);
+            $saStmt->execute();
+            $saRes = $saStmt->get_result();
             if ($saRes && (int)($saRes->fetch_assoc()['cnt'] ?? 0) > 0) {
                 $hasSaUsers = true;
             }
+            $saStmt->close();
 
             // Target alternative active tenant if available for super admin reassignment
             $targetRestId = 1;
             if ($hasSaUsers) {
-                $altRes = $conn->query("SELECT id FROM restaurants WHERE id != {$restaurantId} ORDER BY id ASC LIMIT 1");
+                $altStmt = $conn->prepare("SELECT id FROM restaurants WHERE id != ? ORDER BY id ASC LIMIT 1");
+                $altStmt->bind_param("i", $restaurantId);
+                $altStmt->execute();
+                $altRes = $altStmt->get_result();
                 if ($altRes && $altRow = $altRes->fetch_assoc()) {
                     $targetRestId = (int)$altRow['id'];
                 }
+                $altStmt->close();
             }
 
             // Delete non-super-admin users
-            $conn->query("DELETE FROM admin_users WHERE restaurant_id = {$restaurantId} AND is_super_admin = 0");
+            $delUsersStmt = $conn->prepare("DELETE FROM admin_users WHERE restaurant_id = ? AND is_super_admin = 0");
+            $delUsersStmt->bind_param("i", $restaurantId);
+            $delUsersStmt->execute();
+            $delUsersStmt->close();
 
             // Reassign Super Admin users to alternative tenant
             if ($hasSaUsers) {
-                $conn->query("UPDATE admin_users SET restaurant_id = {$targetRestId} WHERE restaurant_id = {$restaurantId} AND is_super_admin = 1");
+                $reassignStmt = $conn->prepare("UPDATE admin_users SET restaurant_id = ? WHERE restaurant_id = ? AND is_super_admin = 1");
+                $reassignStmt->bind_param("ii", $targetRestId, $restaurantId);
+                $reassignStmt->execute();
+                $reassignStmt->close();
             }
 
             // 3. Delete the parent restaurant record
@@ -130,7 +144,10 @@ class TenantDeletionService {
             $dRest->execute();
             $dRest->close();
 
-            $conn->query("DELETE FROM audit_logs WHERE restaurant_id = {$restaurantId}");
+            $delAuditStmt = $conn->prepare("DELETE FROM audit_logs WHERE restaurant_id = ?");
+            $delAuditStmt->bind_param("i", $restaurantId);
+            $delAuditStmt->execute();
+            $delAuditStmt->close();
             $conn->commit();
 
             if (isset($_SESSION['restaurant_id']) && (int)$_SESSION['restaurant_id'] === $restaurantId) {

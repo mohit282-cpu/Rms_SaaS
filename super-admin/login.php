@@ -52,8 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_SESSION['email'] = $user['email'];
                         $_SESSION['admin_email'] = $user['email'];
                         $_SESSION['full_name'] = $user['full_name'];
-                        $_SESSION['restaurant_id'] = (int)($user['restaurant_id'] ?? 0) > 0 ? (int)$user['restaurant_id'] : 1;
-                        $_SESSION['sa_restaurant_id'] = (int)($user['restaurant_id'] ?? 0) > 0 ? (int)$user['restaurant_id'] : 1;
+                        $_SESSION['restaurant_id'] = (int)($user['restaurant_id'] ?? 0);
+                        $_SESSION['sa_restaurant_id'] = (int)($user['restaurant_id'] ?? 0);
                         $_SESSION['force_password_change'] = (int)($user['force_password_change'] ?? 0);
 
                         Security::logAudit("SUPER_ADMIN_LOGIN", "Super Admin logged in successfully: " . $user['email']);
@@ -112,7 +112,7 @@ $csrfField = CSRF::getField();
             <?= $csrfField ?>
             <div>
                 <label class="block text-xs font-bold text-zinc-400 mb-1.5 uppercase tracking-wider">Email Address</label>
-                <input type="email" name="email" required placeholder="sovryxrms29@gmail.com" class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors font-medium" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+                <input type="email" name="email" required placeholder="admin@example.com" class="w-full h-12 bg-zinc-950 border border-zinc-800 rounded-2xl px-4 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-500 transition-colors font-medium" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
             </div>
 
             <div>

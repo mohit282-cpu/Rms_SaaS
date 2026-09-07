@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 } elseif ($action === 'edit' && $id > 0) {
                     $stmt = $conn->prepare("UPDATE categories SET name = ?, description = ?, parent_id = ?, icon = ?, display_order = ?, status = ? WHERE id = ? AND restaurant_id = ?");
                     if ($stmt) {
-                        $stmt->bind_param("ssisiisii", $name, $description, $parent_id, $icon, $display_order, $status, $id, $tenantId);
+                        $stmt->bind_param("ssisiisi", $name, $description, $parent_id, $icon, $display_order, $status, $id, $tenantId);
                         $stmt->execute();
                         $stmt->close();
                     }

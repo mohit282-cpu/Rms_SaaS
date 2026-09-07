@@ -353,7 +353,7 @@ try {
                 $transactionId = 'PAY-' . strtoupper(bin2hex(random_bytes(6)));
                 $referenceId = strtoupper($paymentMethod) . '-' . $transactionId . ($cashReceived > 0 ? ':CASH' . number_format($cashReceived, 2, '.', '') : '');
                 $payStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, shift_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, NOW())");
-                $payStmt->bind_param("iiisisds", $tenantId, $activeShiftId, $transactionId, $orderId, $gatewayName, $grandTotal, $referenceId);
+                $payStmt->bind_param("iisisds", $tenantId, $activeShiftId, $transactionId, $orderId, $gatewayName, $grandTotal, $referenceId);
                 $payStmt->execute();
                 $payStmt->close();
 
@@ -507,7 +507,7 @@ try {
                 $gatewayName = ($paymentMethod === 'digital') ? 'digital_qr' : $paymentMethod;
                 $payStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, shift_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'paid', ?, NOW())");
                 $refId = strtoupper($paymentMethod) . '-' . $txnId;
-                $payStmt->bind_param("iiisisds", $tenantId, $activeShiftId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
+                $payStmt->bind_param("iisisds", $tenantId, $activeShiftId, $txnId, $orderId, $gatewayName, $splitAmount, $refId);
                 $payStmt->execute();
                 $payStmt->close();
 
@@ -516,7 +516,7 @@ try {
 
                 if ($newRemaining <= 0.01) {
                     $updStmt = $conn->prepare("UPDATE orders SET payment_status = 'paid', payment_method = ?, status = 'completed', customer_id = ?, updated_at = NOW() WHERE id = ? AND restaurant_id = ?");
-                    $updStmt->bind_param("sii", $gatewayName, $customerId, $orderId, $tenantId);
+                    $updStmt->bind_param("siii", $gatewayName, $customerId, $orderId, $tenantId);
                     $updStmt->execute();
                     $updStmt->close();
 
@@ -775,7 +775,7 @@ try {
                 $originalMethod = strtolower($order['payment_method'] ?? 'cash');
                 $refReason = strtoupper($originalMethod) . ':Refund-' . substr($reason, 0, 80);
                 $rfStmt = $conn->prepare("INSERT INTO payment_transactions (restaurant_id, shift_id, transaction_id, order_id, gateway_name, amount, status, reference_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 'refunded', ?, NOW())");
-                $rfStmt->bind_param("iiisds", $tenantId, $activeShiftId, $refundTxn, $orderId, $originalMethod, $paidTotal, $refReason);
+                $rfStmt->bind_param("iisisds", $tenantId, $activeShiftId, $refundTxn, $orderId, $originalMethod, $paidTotal, $refReason);
                 $rfStmt->execute();
                 $rfStmt->close();
 
