@@ -82,7 +82,7 @@ Options -Indexes
 </IfModule>
 
 # ─────────────────────────────────────────────
-# Browser Caching
+# Browser Caching & Expirations
 # ─────────────────────────────────────────────
 <IfModule mod_expires.c>
     ExpiresActive On
@@ -97,14 +97,30 @@ Options -Indexes
 </IfModule>
 
 # ─────────────────────────────────────────────
-# MIME Types (for servers missing WebP/SVG registration)
+# MIME Types & PWA Headers
 # ─────────────────────────────────────────────
 <IfModule mod_mime.c>
     AddType image/webp              .webp
     AddType image/svg+xml           .svg .svgz
     AddType application/javascript  .js
     AddType text/css                .css
+    AddType application/manifest+json .webmanifest .json
 </IfModule>
+
+# Ensure Service Worker is never aggressively cached by browser HTTP cache
+<Files "service-worker.js">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires 0
+    </IfModule>
+</Files>
+
+<Files "manifest.json">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "max-age=86400, public"
+    </IfModule>
+</Files>
 
 # ─────────────────────────────────────────────
 # Default Page

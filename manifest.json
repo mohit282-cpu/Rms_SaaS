@@ -1,22 +1,45 @@
 {
-  "name": "QR Cafe & Restaurant",
-  "short_name": "QR Cafe",
-  "description": "Mobile Digital Menu, Kitchen Display & Order Management System",
+  "name": "RMS SaaS - Restaurant Management & Operating System",
+  "short_name": "RMS SaaS",
+  "description": "Cloud Restaurant Management, POS, KDS & QR Digital Menu Operating System",
   "start_url": "index.php",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#0c0907",
-  "theme_color": "#0c0907",
-  "orientation": "portrait-primary",
+  "orientation": "any",
+  "theme_color": "#FF5700",
+  "background_color": "#09090b",
+  "categories": ["food", "business", "productivity"],
   "icons": [
     {
       "src": "images/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "images/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "images/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "images/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "images/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
+

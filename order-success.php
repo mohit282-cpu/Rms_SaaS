@@ -108,9 +108,16 @@ $menu_url = 'menu.php?token=' . $table_qr_token;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#09090b">
-    <title>Order #<?php echo $order_id; ?> Status - QR Cafe</title>
+    <meta name="theme-color" content="#FF5700">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RMS Order Status">
+    <title>Order #<?php echo $order_id; ?> Status - RMS SaaS</title>
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="images/icon-180.png">
+    <link rel="icon" type="image/png" href="images/favicon.png">
+    <link rel="stylesheet" href="css/modern.css">
+    <script src="js/pwa-app.js" defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {

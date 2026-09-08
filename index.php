@@ -230,12 +230,20 @@ $csrfField = CSRF::getField();
 <html lang="en" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0a0a0a">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#FF5700">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RMS SaaS">
     <title>RMS SaaS — Restaurant Management Platform</title>
     <meta name="description" content="Run your entire restaurant from one connected platform. Table billing, kitchen display, QR ordering, inventory, customer loyalty, and real-time analytics.">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="<?= rmsCanonicalUrl() ?>">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="images/icon-180.png">
+    <link rel="icon" type="image/png" href="images/favicon.png">
+    <link rel="stylesheet" href="css/modern.css">
+    <script src="js/pwa-app.js" defer></script>
 
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="RMS SaaS">

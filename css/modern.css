@@ -1867,3 +1867,167 @@ h6 {
     color: var(--gray);
     margin-left: 8px;
 }
+
+/* ==================== PWA STANDALONE & TOUCH UX ==================== */
+@media all and (display-mode: standalone) {
+    body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        user-select: none;
+        -webkit-user-select: none;
+    }
+}
+
+/* Touch Targets Optimization */
+button, input[type="button"], input[type="submit"], a.btn, .touch-target {
+    min-height: 44px;
+    touch-action: manipulation;
+}
+
+/* PWA Offline Network Toast */
+.rms-network-toast {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 99999;
+    width: 90%;
+    max-width: 480px;
+    padding: 12px 18px;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.rms-toast-offline {
+    background: rgba(225, 29, 72, 0.94);
+    color: #ffffff;
+    border: 1px solid rgba(244, 63, 94, 0.6);
+}
+
+.rms-toast-online {
+    background: rgba(16, 185, 129, 0.94);
+    color: #ffffff;
+    border: 1px solid rgba(52, 211, 153, 0.6);
+}
+
+.rms-toast-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rms-toast-icon {
+    font-size: 1.2rem;
+}
+
+/* PWA Installation Toast */
+.rms-install-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 99990;
+    max-width: 400px;
+    width: calc(100% - 40px);
+    animation: rmsSlideUp 0.4s ease-out forwards;
+}
+
+.rms-install-card {
+    background: rgba(24, 24, 27, 0.96);
+    color: #ffffff;
+    border: 1px solid rgba(255, 87, 0, 0.35);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.rms-install-icon {
+    width: 42px;
+    height: 42px;
+    background: linear-gradient(135deg, #FF5700, #d97706);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    color: #ffffff;
+    flex-shrink: 0;
+}
+
+.rms-install-info {
+    flex: 1;
+    min-width: 180px;
+}
+
+.rms-install-title {
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: #ffffff;
+}
+
+.rms-install-desc {
+    font-size: 0.75rem;
+    color: #a1a1aa;
+    margin-top: 2px;
+}
+
+.rms-install-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.rms-btn-install {
+    flex: 1;
+    background: #FF5700;
+    color: #ffffff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.rms-btn-install:hover {
+    background: #e04d00;
+}
+
+.rms-btn-dismiss {
+    background: rgba(255, 255, 255, 0.08);
+    color: #d4d4d8;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.rms-btn-dismiss:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+@keyframes rmsSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

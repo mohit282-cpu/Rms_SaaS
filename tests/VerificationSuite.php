@@ -336,6 +336,74 @@ $restoreEngineReady = (strpos($restoreHelpOutput, 'RMS SaaS DATABASE RESTORE ENG
 assertTest($restoreEngineReady, "CLI Database Restore Engine verified operational");
 
 // ---------------------------------------------------------
+// TEST SUITE 18: Progressive Web App (PWA) & SW Manifest Integrity
+// ---------------------------------------------------------
+echo "\n[SUITE 18] Progressive Web App (PWA) & Service Worker Integrity...\n";
+
+// 18.1 Manifest file validation
+$manifestPath = $baseDir . '/manifest.json';
+$manifestExists = is_file($manifestPath);
+assertTest($manifestExists, "manifest.json exists at root");
+
+if ($manifestExists) {
+    $manifestData = json_decode((string)file_get_contents($manifestPath), true);
+    $validManifest = is_array($manifestData) &&
+        ($manifestData['display'] ?? '') === 'standalone' &&
+        ($manifestData['theme_color'] ?? '') === '#FF5700' &&
+        ($manifestData['start_url'] ?? '') === 'index.php' &&
+        !empty($manifestData['icons']) &&
+        count($manifestData['icons']) >= 4;
+    assertTest($validManifest, "manifest.json contains valid PWA metadata, standalone mode, brand colors (#FF5700) and icon set");
+}
+
+// 18.2 PWA Icon System validation
+$requiredIcons = ['icon-192.png', 'icon-512.png', 'icon-180.png', 'icon-512-maskable.png', 'favicon.png'];
+$iconsValid = true;
+foreach ($requiredIcons as $icon) {
+    $iconPath = $baseDir . '/images/' . $icon;
+    if (!is_file($iconPath) || filesize($iconPath) < 100) {
+        $iconsValid = false;
+        break;
+    }
+}
+assertTest($iconsValid, "All required PWA icons (192, 512, 180, maskable, favicon) exist and are valid PNG assets");
+
+// 18.3 Service Worker validation
+$swPath = $baseDir . '/service-worker.js';
+$swExists = is_file($swPath);
+assertTest($swExists, "service-worker.js exists at root");
+
+if ($swExists) {
+    $swContent = (string)file_get_contents($swPath);
+    $swValid = (strpos($swContent, 'CACHE_NAME') !== false) &&
+        (strpos($swContent, 'NEVER_CACHE_PATTERNS') !== false) &&
+        (strpos($swContent, 'self.skipWaiting()') !== false) &&
+        (strpos($swContent, 'self.clients.claim()') !== false);
+    assertTest($swValid, "service-worker.js implements static asset caching, cache versioning, and API/dynamic non-caching safety");
+}
+
+// 18.4 PWA Client Engine script validation
+$pwaAppPath = $baseDir . '/js/pwa-app.js';
+$pwaAppExists = is_file($pwaAppPath);
+assertTest($pwaAppExists, "js/pwa-app.js exists");
+
+if ($pwaAppExists) {
+    $pwaAppContent = (string)file_get_contents($pwaAppPath);
+    $pwaAppValid = (strpos($pwaAppContent, 'serviceWorker.register') !== false) &&
+        (strpos($pwaAppContent, 'beforeinstallprompt') !== false) &&
+        (strpos($pwaAppContent, 'online') !== false) &&
+        (strpos($pwaAppContent, 'offline') !== false);
+    assertTest($pwaAppValid, "js/pwa-app.js contains Service Worker registration, network status listeners, and install prompt UI");
+}
+
+// 18.5 Apache .htaccess PWA headers validation
+$htaccessPath = $baseDir . '/.htaccess';
+$htaccessContent = is_file($htaccessPath) ? (string)file_get_contents($htaccessPath) : '';
+$htaccessPwaValid = (strpos($htaccessContent, 'application/manifest+json') !== false) &&
+    (strpos($htaccessContent, 'service-worker.js') !== false);
+assertTest($htaccessPwaValid, ".htaccess configures PWA manifest MIME type and Service Worker no-cache headers");
+
+// ---------------------------------------------------------
 // FINAL SUMMARY REPORT
 // ---------------------------------------------------------
 echo "\n========================================================\n";
